@@ -8,7 +8,7 @@ P0/P1 基础环境：
 
 - Go Core API。
 - HTTP framework: Gin。
-- Provider 配置占位和连通性测试。
+- DB 驱动的 Provider 配置、模型切换和连通性测试。
 - Skill Pack 本地扫描。
 - Context Preview 调试接口。
 - Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
@@ -70,7 +70,13 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 
 - `GET /healthz`
 - `GET /api/providers`
+- `POST /api/providers`
+- `GET /api/providers/{provider_id}`
+- `PUT /api/providers/{provider_id}`
+- `DELETE /api/providers/{provider_id}`
 - `POST /api/providers/test`
+- `GET /api/provider-routes`
+- `PUT /api/provider-routes/{task_type}`
 - `GET /api/skills`
 - `POST /api/skills`
 - `POST /api/skills/reload`
@@ -113,6 +119,22 @@ minio/minio:RELEASE.2025-09-07T16-13-09Z
 ```
 
 ## Provider 初始化
+
+`.env` 只作为 bootstrap 和本地 fallback。Go 启动时会把缺失的默认 Provider seed 到 `provider_configs`，不会覆盖数据库里已经通过 API 修改过的模型、base URL、密钥来源或任务路由。
+
+运行时切换 Provider/model 走数据库 API：
+
+```bash
+curl -s -X PUT http://localhost:8080/api/providers/deepseek-default \
+  -H 'Content-Type: application/json' \
+  -d '{"provider_type":"deepseek","base_url":"https://api.deepseek.com","chat_endpoint_path":"/chat/completions","chat_model":"deepseek-v4-flash","api_key_ref":"DEEPSEEK_API_KEY","supports_streaming":true,"supports_json":true,"enabled":true}'
+
+curl -s -X PUT http://localhost:8080/api/provider-routes/question_generation \
+  -H 'Content-Type: application/json' \
+  -d '{"provider_id":"deepseek-default","fallback_provider_id":"openai-compatible-default"}'
+```
+
+如果要把 API key 写入数据库，必须设置 `PROVIDER_KEY_ENCRYPTION_SECRET`，接口会用 AES-GCM 加密后保存；响应只返回 `api_key_configured`，不会回显 key。未设置加密 secret 时，请使用 `api_key_ref` 指向 `.env` 中的 fallback 变量。
 
 DeepSeek 默认使用 OpenAI-compatible 格式：
 

@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS provider_configs (
     base_url TEXT NOT NULL,
     chat_endpoint_path TEXT,
     api_key_ref TEXT,
+    api_key_source TEXT NOT NULL DEFAULT 'env_ref' CHECK (api_key_source IN ('env_ref', 'db_encrypted', 'none')),
+    api_key_ciphertext TEXT,
     chat_model TEXT,
     embedding_model TEXT,
     supports_streaming BOOLEAN NOT NULL DEFAULT FALSE,
@@ -23,6 +25,8 @@ CREATE TABLE IF NOT EXISTS provider_configs (
 );
 
 ALTER TABLE provider_configs ADD COLUMN IF NOT EXISTS chat_endpoint_path TEXT;
+ALTER TABLE provider_configs ADD COLUMN IF NOT EXISTS api_key_source TEXT NOT NULL DEFAULT 'env_ref';
+ALTER TABLE provider_configs ADD COLUMN IF NOT EXISTS api_key_ciphertext TEXT;
 
 CREATE TABLE IF NOT EXISTS provider_task_routes (
     task_type TEXT PRIMARY KEY,

@@ -28,11 +28,11 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	}
 
 	providerRegistry := provider.NewRegistry()
-	dbStore, err := store.Open(cfg.DatabaseURL)
+	dbStore, err := store.Open(cfg.DatabaseURL, cfg.ProviderKeyEncryptionSecret)
 	if err != nil {
 		return nil, err
 	}
-	if err := dbStore.UpsertProviderConfigs(context.Background(), providerRegistry.List()); err != nil {
+	if err := dbStore.SeedProviderConfigs(context.Background(), providerRegistry.List()); err != nil {
 		_ = dbStore.Close()
 		return nil, err
 	}

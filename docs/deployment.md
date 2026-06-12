@@ -37,6 +37,15 @@ curl -s -X POST http://localhost:8080/api/skills/reload
 - `migrations/001_init.sql`：建表、索引、pgvector 扩展。
 - `migrations/002_seed_defaults.sql`：默认用户、Provider、任务路由、基础代码题库 seed。
 
+Provider seed 只在记录缺失时插入。模型、base URL、密钥来源和 task route 的运行时切换应通过 Go API 写入数据库，不依赖修改 `.env` 后重启。
+
+API key 有两种来源：
+
+- `env_ref`：数据库保存变量名，例如 `DEEPSEEK_API_KEY`，Go 从 `.env` 读取，适合作为本地 fallback。
+- `db_encrypted`：接口提交 `api_key`，Go 使用 `PROVIDER_KEY_ENCRYPTION_SECRET` 做 AES-GCM 加密后写库，适合运行时切换。
+
+未设置 `PROVIDER_KEY_ENCRYPTION_SECRET` 时，接口会拒绝把 API key 写入数据库。
+
 ## 中间件版本策略
 
 不要用 `latest` 作为默认版本。默认镜像固定为：

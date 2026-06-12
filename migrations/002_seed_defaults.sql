@@ -8,6 +8,7 @@ INSERT INTO provider_configs (
     base_url,
     chat_endpoint_path,
     api_key_ref,
+    api_key_source,
     chat_model,
     supports_streaming,
     supports_json,
@@ -20,6 +21,7 @@ VALUES
         'https://api.deepseek.com',
         '/chat/completions',
         'DEEPSEEK_API_KEY',
+        'env_ref',
         'deepseek-v4-flash',
         TRUE,
         TRUE,
@@ -31,6 +33,7 @@ VALUES
         'https://api.openai.com/v1',
         '/chat/completions',
         'OPENAI_COMPATIBLE_API_KEY',
+        'env_ref',
         NULL,
         TRUE,
         TRUE,
@@ -42,20 +45,13 @@ VALUES
         '',
         NULL,
         'EMBEDDING_API_KEY',
+        'env_ref',
         NULL,
         FALSE,
         TRUE,
         FALSE
     )
-ON CONFLICT (provider_id) DO UPDATE SET
-    provider_type = EXCLUDED.provider_type,
-    base_url = EXCLUDED.base_url,
-    chat_endpoint_path = EXCLUDED.chat_endpoint_path,
-    api_key_ref = EXCLUDED.api_key_ref,
-    chat_model = EXCLUDED.chat_model,
-    supports_streaming = EXCLUDED.supports_streaming,
-    supports_json = EXCLUDED.supports_json,
-    updated_at = now();
+ON CONFLICT (provider_id) DO NOTHING;
 
 INSERT INTO provider_task_routes (task_type, provider_id, fallback_provider_id)
 VALUES
@@ -64,10 +60,7 @@ VALUES
     ('follow_up_decision', 'deepseek-default', 'openai-compatible-default'),
     ('summary', 'deepseek-default', 'openai-compatible-default'),
     ('memory_extraction', 'deepseek-default', 'openai-compatible-default')
-ON CONFLICT (task_type) DO UPDATE SET
-    provider_id = EXCLUDED.provider_id,
-    fallback_provider_id = EXCLUDED.fallback_provider_id,
-    updated_at = now();
+ON CONFLICT (task_type) DO NOTHING;
 
 INSERT INTO code_question_sets (set_id, display_name, description, source, source_url, question_type)
 VALUES

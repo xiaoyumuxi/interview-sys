@@ -40,7 +40,13 @@ func NewRouter(deps Dependencies) http.Handler {
 
 	group := router.Group("/api")
 	group.GET("/providers", api.listProviders)
+	group.POST("/providers", api.createProvider)
+	group.GET("/providers/:provider_id", api.getProvider)
+	group.PUT("/providers/:provider_id", api.updateProvider)
+	group.DELETE("/providers/:provider_id", api.deleteProvider)
 	group.POST("/providers/test", api.testProvider)
+	group.GET("/provider-routes", api.listProviderRoutes)
+	group.PUT("/provider-routes/:task_type", api.updateProviderRoute)
 	group.GET("/skills", api.listSkills)
 	group.POST("/skills", api.createSkill)
 	group.POST("/skills/reload", api.reloadSkills)
@@ -68,10 +74,65 @@ func (h apiHandler) health(c *gin.Context) {
 }
 
 func (h apiHandler) listProviders(c *gin.Context) {
+	items, err := h.deps.Store.ListProviders(c.Request.Context())
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "provider_list_failed", err.Error())
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"schema_version": "provider.list.v1",
-		"items":          h.deps.ProviderRegistry.List(),
+		"items":          items,
 	})
+}
+
+func (h apiHandler) createProvider(c *gin.Context) {
+	var req provider.SaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	item, err := h.deps.Store.SaveProvider(c.Request.Context(), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "provider_save_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"schema_version": "provider.item.v1", "item": item})
+}
+
+func (h apiHandler) getProvider(c *gin.Context) {
+	item, ok, err := h.deps.Store.GetProvider(c.Request.Context(), c.Param("provider_id"))
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "provider_get_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeGinError(c, http.StatusNotFound, "provider_not_found", "provider_id is not registered")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "provider.item.v1", "item": item})
+}
+
+func (h apiHandler) updateProvider(c *gin.Context) {
+	var req provider.SaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	req.ProviderID = c.Param("provider_id")
+	item, err := h.deps.Store.SaveProvider(c.Request.Context(), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "provider_save_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "provider.item.v1", "item": item})
+}
+
+func (h apiHandler) deleteProvider(c *gin.Context) {
+	if err := h.deps.Store.DeleteProvider(c.Request.Context(), c.Param("provider_id")); err != nil {
+		writeGinError(c, http.StatusBadRequest, "provider_delete_failed", err.Error())
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h apiHandler) testProvider(c *gin.Context) {
@@ -80,7 +141,51 @@ func (h apiHandler) testProvider(c *gin.Context) {
 		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, h.deps.ProviderRegistry.Test(c.Request.Context(), req))
+	cfg, apiKey, ok, err := h.deps.Store.ProviderTestConfig(c.Request.Context(), req.ProviderID)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "provider_test_failed", err.Error())
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, provider.TestResponse{SchemaVersion: "provider.test.v1", ProviderID: req.ProviderID, OK: false, Message: "provider not found"})
+		return
+	}
+	if !cfg.Enabled {
+		c.JSON(http.StatusOK, provider.TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: false, Message: "provider is disabled"})
+		return
+	}
+	if cfg.ProviderType == provider.TypeEmbedding {
+		c.JSON(http.StatusOK, provider.TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: apiKey != "", Message: "embedding provider config is present"})
+		return
+	}
+	if err := provider.TestChat(c.Request.Context(), cfg, apiKey, req.Prompt); err != nil {
+		c.JSON(http.StatusOK, provider.TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: false, Message: err.Error(), Endpoint: provider.ChatEndpoint(cfg), Model: cfg.ChatModel})
+		return
+	}
+	c.JSON(http.StatusOK, provider.TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: true, Message: "chat completion request succeeded", Endpoint: provider.ChatEndpoint(cfg), Model: cfg.ChatModel})
+}
+
+func (h apiHandler) listProviderRoutes(c *gin.Context) {
+	items, err := h.deps.Store.ListProviderRoutes(c.Request.Context())
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "provider_routes_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "provider.routes.v1", "items": items})
+}
+
+func (h apiHandler) updateProviderRoute(c *gin.Context) {
+	var req provider.SaveRouteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	item, err := h.deps.Store.SaveProviderRoute(c.Request.Context(), c.Param("task_type"), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "provider_route_save_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "provider.route.v1", "item": item})
 }
 
 func (h apiHandler) listSkills(c *gin.Context) {

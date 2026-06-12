@@ -36,8 +36,8 @@ func TestChatEndpoint(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := chatEndpoint(test.cfg); got != test.want {
-				t.Fatalf("chatEndpoint() = %q, want %q", got, test.want)
+			if got := ChatEndpoint(test.cfg); got != test.want {
+				t.Fatalf("ChatEndpoint() = %q, want %q", got, test.want)
 			}
 		})
 	}
