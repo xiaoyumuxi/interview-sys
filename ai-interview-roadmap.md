@@ -21,6 +21,7 @@
 ```text
 P0 需求冻结与技术底座确认
 P1 Provider + Skill + Context Preview
+P1.5 Python AI Runtime Foundation
 P2 Retrieval Harness MVP
 P2.5 Coding Question Bank MVP
 P3 Memory Candidate + Profile Projection
@@ -153,6 +154,36 @@ agent_trace
 Token: 80万 - 150万
 时间: 4 - 7 天
 ```
+
+---
+
+## 4.5 P1.5: Python AI Runtime Foundation
+
+### 目标
+
+建立独立 Python AI Runtime，让 Go Core API 不承载 Prompt、Agent 编排和结构化输出修复。
+
+### 功能清单
+
+- FastAPI Runtime 服务。
+- OpenAI-compatible / DeepSeek Chat Adapter。
+- Prompt 安全边界。
+- 结构化 JSON 输出解析。
+- Runtime task endpoint。
+- 支持 question_generation、answer_evaluation、follow_up_decision、summary、memory_extraction。
+
+### 不做内容
+
+- 不直接写长期画像。
+- 不推进 Go 面试状态机。
+- 不在 Python 内做幂等和 single-flight。
+
+### 验收标准
+
+- `GET /healthz` 可用。
+- `POST /api/runtime/tasks` dry-run 可返回 prompt messages。
+- Provider 配置缺失时给出明确错误。
+- Go 后续可以通过 HTTP 调用 Runtime。
 
 ---
 

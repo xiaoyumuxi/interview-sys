@@ -1,0 +1,16 @@
+[project]
+name = "ai-interview-python-runtime"
+version = "0.1.0"
+description = "Python AI Runtime for the AI interview training platform."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi==0.115.14",
+    "uvicorn[standard]==0.35.0",
+    "pydantic==2.11.7",
+    "pydantic-settings==2.10.1",
+    "python-dotenv==1.1.1",
+    "httpx==0.28.1",
+]
+
+[dependency-groups]
+dev = []

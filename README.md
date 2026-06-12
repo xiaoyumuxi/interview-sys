@@ -12,6 +12,7 @@ P0/P1 基础环境：
 - Skill Pack 本地扫描。
 - Context Preview 调试接口。
 - Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
+- Python AI Runtime 基础骨架。
 
 ## 本地启动
 
@@ -34,6 +35,20 @@ cp .env.example .env
 docker compose up -d
 ./scripts/init-db.sh
 go run ./cmd/api
+```
+
+启动 Python Runtime：
+
+```bash
+docker compose --profile runtime up -d python-runtime
+```
+
+本地运行 Python Runtime：
+
+```bash
+cd python-runtime
+uv sync
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
 
 健康检查：
@@ -60,6 +75,11 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `POST /api/skills/reload`
 - `GET /api/skills/{skill_id}`
 - `POST /api/context/preview`
+
+Python Runtime:
+
+- `GET http://localhost:8090/healthz`
+- `POST http://localhost:8090/api/runtime/tasks`
 
 ## SQL 初始化
 

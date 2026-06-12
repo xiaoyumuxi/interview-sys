@@ -49,6 +49,22 @@ services:
       timeout: 5s
       retries: 10
 
+  python-runtime:
+    profiles:
+      - runtime
+    build:
+      context: ./python-runtime
+    container_name: ai-interview-python-runtime
+    env_file:
+      - .env
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
   redis_data:
