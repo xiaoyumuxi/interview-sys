@@ -53,13 +53,15 @@
 - agent trace 落库。
 - CodeTop100 / 后端工程题库基础 schema 和查询 API。
 - Docker Compose 中间件固定版本和初始化脚本。
+- Provider 配置的 CRUD API 和加密存储。
+- Go Interview Runtime 基础状态机。
+- Go 侧 answer idempotency 和 Redis single-flight。
+- Redis Stream interview event queue。
+- PostgreSQL runtime snapshot。
 
 未完成：
 
-- Provider 配置的 CRUD API 和加密存储。
-- Go 侧 single-flight / idempotency。
-- Interview Runtime 状态机。
-- Redis 热状态和 PostgreSQL snapshot 恢复。
+- Redis Stream consumer group workers。
 - Memory candidate / review / profile projection。
 - Retrieval Harness 多索引检索。
 - 代码执行 judge worker。

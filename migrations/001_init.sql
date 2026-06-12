@@ -150,3 +150,55 @@ CREATE TABLE IF NOT EXISTS agent_traces (
     output JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS interview_sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES app_users(user_id) ON DELETE SET NULL,
+    skill_id TEXT NOT NULL,
+    session_status TEXT NOT NULL DEFAULT 'READY' CHECK (session_status IN ('DRAFT', 'READY', 'IN_PROGRESS', 'FINISHED', 'ABANDONED', 'FAILED')),
+    flow_status TEXT NOT NULL DEFAULT 'INIT' CHECK (flow_status IN ('INIT', 'ASKING', 'EVALUATING', 'FOLLOW_UP', 'COMPLETED')),
+    phase TEXT NOT NULL DEFAULT 'technical',
+    current_question_id TEXT REFERENCES code_questions(question_id) ON DELETE SET NULL,
+    current_question_number INTEGER NOT NULL DEFAULT 0,
+    answer_round INTEGER NOT NULL DEFAULT 0,
+    follow_up_count INTEGER NOT NULL DEFAULT 0,
+    max_follow_ups INTEGER NOT NULL DEFAULT 1,
+    total_score NUMERIC(6,2) NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_sessions_user_status ON interview_sessions (user_id, session_status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS interview_turns (
+    turn_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES interview_sessions(session_id) ON DELETE CASCADE,
+    question_id TEXT REFERENCES code_questions(question_id) ON DELETE SET NULL,
+    question_number INTEGER NOT NULL,
+    answer_round INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    answer_hash TEXT NOT NULL,
+    user_answer TEXT NOT NULL,
+    evaluation JSONB NOT NULL DEFAULT '{}'::jsonb,
+    follow_up_needed BOOLEAN NOT NULL DEFAULT FALSE,
+    follow_up_question TEXT NOT NULL DEFAULT '',
+    score NUMERIC(6,2) NOT NULL DEFAULT 0,
+    trace_id TEXT REFERENCES agent_traces(trace_id) ON DELETE SET NULL,
+    response JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (session_id, request_id),
+    UNIQUE (session_id, question_number, answer_round, answer_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_turns_session_created ON interview_turns (session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS interview_runtime_snapshots (
+    session_id TEXT PRIMARY KEY REFERENCES interview_sessions(session_id) ON DELETE CASCADE,
+    snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source TEXT NOT NULL DEFAULT 'postgres',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -83,6 +83,11 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/skills/{skill_id}`
 - `POST /api/context/preview`
 - `POST /api/agent/tasks`
+- `POST /api/interview-sessions`
+- `GET /api/interview-sessions/{session_id}`
+- `POST /api/interview-sessions/{session_id}/answers`
+- `POST /api/interview-sessions/{session_id}/finalize`
+- `GET /api/interview-sessions/{session_id}/trace`
 - `GET /api/coding/question-sets`
 - `GET /api/coding/questions`
 - `GET /api/coding/questions/{question_id}`
@@ -101,6 +106,16 @@ Python Runtime:
 ```bash
 ./scripts/init-db.sh
 ```
+
+## Interview Runtime
+
+Go 维护面试运行时状态机和幂等边界：
+
+- `interview_sessions` 区分 `session_status` 和 `flow_status`。
+- `interview_turns` 用 `request_id` 与 `session_id + question_number + answer_round + answer_hash` 做重复提交回放。
+- `interview_runtime_snapshots` 保存 PostgreSQL 冷快照，Redis 丢失后仍能恢复业务事实。
+- Redis single-flight 折叠同一答案的重复 AI 评估调用。
+- Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，后续 judge、report、memory extraction 可以拆成 consumer group 异步处理。
 
 ## 中间件版本
 

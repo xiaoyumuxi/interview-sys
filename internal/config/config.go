@@ -13,6 +13,7 @@ type Config struct {
 	LogLevel                    slog.Level
 	DatabaseURL                 string
 	RedisAddr                   string
+	InterviewEventsStream       string
 	MinIOEndpoint               string
 	SkillsDir                   string
 	AIRuntimeURL                string
@@ -27,6 +28,7 @@ func Load() Config {
 		LogLevel:                    parseLogLevel(env("LOG_LEVEL", "info")),
 		DatabaseURL:                 env("DATABASE_URL", "postgres://ai_interview:ai_interview@localhost:5432/ai_interview?sslmode=disable"),
 		RedisAddr:                   env("REDIS_ADDR", "localhost:6379"),
+		InterviewEventsStream:       env("INTERVIEW_EVENTS_STREAM", "interview:events"),
 		MinIOEndpoint:               env("MINIO_ENDPOINT", "localhost:9000"),
 		SkillsDir:                   env("SKILLS_DIR", "skills"),
 		AIRuntimeURL:                env("AI_RUNTIME_URL", "http://localhost:8090"),

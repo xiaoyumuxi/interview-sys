@@ -9,6 +9,7 @@ import (
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
+	"ai-interview-platform/internal/interview"
 	"ai-interview-platform/internal/provider"
 	airuntime "ai-interview-platform/internal/runtime"
 	"ai-interview-platform/internal/skill"
@@ -26,6 +27,7 @@ type Dependencies struct {
 	Store            *store.Store
 	CodingStore      *coding.Store
 	RuntimeClient    *airuntime.Client
+	InterviewService *interview.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -53,6 +55,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/skills/:skill_id", api.getSkill)
 	group.POST("/context/preview", api.contextPreview)
 	group.POST("/agent/tasks", api.runAgentTask)
+	group.POST("/interview-sessions", api.createInterviewSession)
+	group.GET("/interview-sessions/:session_id", api.getInterviewSession)
+	group.POST("/interview-sessions/:session_id/answers", api.submitInterviewAnswer)
+	group.POST("/interview-sessions/:session_id/finalize", api.finalizeInterviewSession)
+	group.GET("/interview-sessions/:session_id/trace", api.getInterviewTrace)
 	group.GET("/coding/question-sets", api.listQuestionSets)
 	group.GET("/coding/questions", api.listQuestions)
 	group.GET("/coding/questions/:question_id", api.getQuestion)
@@ -313,6 +320,61 @@ func (h apiHandler) runtimeProvider(c *gin.Context, taskType string) *airuntime.
 		return nil
 	}
 	return provider
+}
+
+func (h apiHandler) createInterviewSession(c *gin.Context) {
+	var req interview.CreateSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	item, err := h.deps.InterviewService.CreateSession(c.Request.Context(), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "interview_session_create_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"schema_version": "interview.session.v1", "item": item})
+}
+
+func (h apiHandler) getInterviewSession(c *gin.Context) {
+	item, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.session.v1", "item": item})
+}
+
+func (h apiHandler) submitInterviewAnswer(c *gin.Context) {
+	var req interview.SubmitAnswerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	resp, err := h.deps.InterviewService.SubmitAnswer(c.Request.Context(), c.Param("session_id"), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "interview_answer_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h apiHandler) finalizeInterviewSession(c *gin.Context) {
+	item, err := h.deps.InterviewService.Finalize(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "interview_finalize_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.session.v1", "item": item})
+}
+
+func (h apiHandler) getInterviewTrace(c *gin.Context) {
+	items, err := h.deps.InterviewService.Trace(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "interview_trace_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.trace.v1", "items": items})
 }
 
 func (h apiHandler) listQuestionSets(c *gin.Context) {
