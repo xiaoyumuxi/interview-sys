@@ -15,6 +15,12 @@ P0/P1 基础环境：
 - Python AI Runtime 基础骨架。
 - Go / Python 边界说明：[docs/language-boundaries.md](/Users/yaoyao/Documents/SelfProject/docs/language-boundaries.md)
 
+任务清单与阶段计划：
+
+- [ai-interview-roadmap.md](/Users/yaoyao/Documents/SelfProject/ai-interview-roadmap.md)
+- [ai-interview-backend-plan.md](/Users/yaoyao/Documents/SelfProject/ai-interview-backend-plan.md)
+- [project-reference-map.md](/Users/yaoyao/Documents/SelfProject/project-reference-map.md)
+
 ## 本地启动
 
 傻瓜式初始化：

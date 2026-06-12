@@ -16,23 +16,75 @@
 
 ---
 
+## 1.5 当前任务清单
+
+### 已完成
+
+- [x] Go Core API 基础服务、Gin 路由和健康检查。
+- [x] Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
+- [x] 跨平台 bootstrap / init-db / middleware manifest 检查脚本。
+- [x] Provider 配置入库，支持 DeepSeek 和 OpenAI-compatible。
+- [x] `.env` fallback + 数据库 Provider 配置 + API 切换模型和任务路由。
+- [x] Provider API key 支持数据库 AES-GCM 加密保存，接口不回显密钥。
+- [x] Skill Pack 本地扫描、创建、热加载、lint 和提示词注入基础校验。
+- [x] Java 后端 Skill 覆盖通用后端、网络、分布式、MySQL、Redis、Spring、算法、代码题和项目经历。
+- [x] Context Preview 和 Agent Trace 基础链路。
+- [x] Python AI Runtime 基础骨架，使用 `uv` 管理依赖。
+- [x] Python Runtime 支持 prompt 安全边界、结构化 JSON 解析和 Runtime task endpoint。
+- [x] Go / Python 职责边界文档化：Go 管状态机和业务事实，Python 管 AI 推理。
+- [x] CodeTop100 / 后端工程题库 schema、seed 和查询 API。
+- [x] Interview Runtime session / flow / turn 三层状态机。
+- [x] Answer 提交改为异步 `202 Accepted`，由 Redis Stream worker 处理评估。
+- [x] PostgreSQL local outbox `async_messages`，支持 Redis Stream 补投和重试。
+- [x] Redis single-flight、短 TTL Redis 协调、数据库幂等约束和 stale turn reclaim。
+- [x] 不在数据库中保存 `locked_by` / `locked_until` 这类持久锁字段。
+- [x] PostgreSQL runtime snapshot，用于 Redis 丢失后的业务事实恢复。
+
+### 下一批待做
+
+- [ ] 拆出独立 worker 进程，API 进程只负责入队和查询。
+- [ ] 增强 Redis Stream 兜底：pending message reclaim、dead-letter / poison message 策略、消费滞后监控。
+- [ ] Memory candidate / review / profile projection。
+- [ ] Retrieval Harness 多索引检索：full-text、summary、vector、recent history、approved memory。
+- [ ] 代码执行 judge worker：Docker sandbox、资源限制、无网络、测试结果追踪。
+- [ ] Final report generation：面试总结、薄弱点、代码题表现和复习建议。
+- [ ] Evaluation Harness：评估样例集、成本统计、质量回归。
+- [ ] 前端接入准备：异步 trace 轮询、状态展示、报告页接口契约。
+
+### 参考项目对齐
+
+继续开发时先回看 [project-reference-map.md](/Users/yaoyao/Documents/SelfProject/project-reference-map.md)，每个模块按下面来源落地：
+
+| 任务 | 主要参考项目 | 当前取舍 |
+| --- | --- | --- |
+| 独立 worker、Redis Stream 兜底、异步 answer pipeline | AI-Meeting, interview-guide | 借鉴异步任务和恢复思想，Go 侧以 PostgreSQL outbox 为事实源 |
+| Interview Runtime 状态机、追问推进、恢复和 finalize | AI-Meeting, TechSpar | 状态推进放 Go，Python 不直接改 session |
+| Provider、Skill、结构化输出和统一评估 | interview-guide | 保留 Skill Pack 组织方式，Provider 配置走数据库/API |
+| Memory candidate、profile projection、SM-2 复习 | TechSpar | 不自动写长期画像，必须先进入人工审核 |
+| Retrieval Harness、RAG debug、轻量 KG | interview-guide, GraphRAG/RAPTOR 设计参考 | 不照搬普通 topK RAG，先做可解释多索引检索 |
+| 代码题、白板、反作弊、候选人/邀请扩展 | aural-oss | 当前只做个人训练 MVP，SaaS 能力作为预留 |
+| 前端接入、报告页、问答回放、会话恢复 UX | AI-Meeting-Frontend | 后端接口提前兼容，当前不改前端 |
+
+---
+
 ## 2. 总体阶段
 
 ```text
-P0 需求冻结与技术底座确认
-P1 Provider + Skill + Context Preview
-P1.5 Python AI Runtime Foundation
-P2 Retrieval Harness MVP
-P2.5 Coding Question Bank MVP
-P3 Memory Candidate + Profile Projection
-P4 Interview Runtime MVP
-P5 Retrieval Harness 增强版
-P6 Evaluation Harness + 成本/质量评估
-P7 前端接入准备
-P8 语音、搜索、招聘扩展预留
+[x] P0 需求冻结与技术底座确认
+[x] P1 Provider + Skill + Context Preview
+[x] P1.5 Python AI Runtime Foundation
+[ ] P2 Retrieval Harness MVP
+[x] P2.5 Coding Question Bank MVP
+[ ] P3 Memory Candidate + Profile Projection
+[x] P4 Interview Runtime MVP
+[ ] P4.5 Async Worker Hardening
+[ ] P5 Retrieval Harness 增强版
+[ ] P6 Evaluation Harness + 成本/质量评估
+[ ] P7 前端接入准备
+[ ] P8 语音、搜索、招聘扩展预留
 ```
 
-建议先做到 P4，形成最小后端闭环。P5/P6 是为了让系统更有说服力，避免 RAG 和画像被质疑。
+当前已经做到 P4 的 Go 后端闭环：Provider、Skill、Context Preview、Python Runtime、代码题库、异步 Interview Runtime 已可串起来。下一步优先补 P4.5，把内置 worker 拆成独立进程并完善 Redis Stream 兜底，再进入 P3/P5。
 
 ---
 

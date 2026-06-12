@@ -36,6 +36,9 @@ Go Core API
   - Knowledge Base
   - Coding Question Bank
   - Interview Runtime
+  - Interview session / flow / turn 状态机
+  - PostgreSQL local outbox
+  - Redis Stream worker contract
   - Memory Review
   - Context Preview
   - Trace / Debug
@@ -66,6 +69,46 @@ Storage
 - Python 负责 AI 推理、Prompt、RAG、记忆候选提取、Agent 编排。
 - Python 不直接更新长期画像，不直接推进面试状态。
 - 所有 AI 输出必须结构化，且带 schema version。
+- 异步任务先写 PostgreSQL local outbox，再由 Redis Stream 分发；Redis 只做短期调度、fan-out 和协调。
+- 数据库不保存 `locked_by` / `locked_until` 这类持久锁字段；并发控制依赖状态机、幂等约束、`FOR UPDATE SKIP LOCKED` 和短 TTL Redis 协调。
+
+### 2.1 当前落地清单
+
+- [x] Go Core API、Gin 路由、PostgreSQL、Redis、MinIO 基础环境。
+- [x] Provider 配置、密钥来源、任务路由和模型切换 API。
+- [x] DeepSeek 和 OpenAI-compatible Provider 兼容。
+- [x] Skill Pack 扫描、创建、热加载、lint 和提示词注入基础校验。
+- [x] Java 后端 Skill 覆盖通用后端、网络、分布式、系统设计、算法和代码题。
+- [x] Context Preview、Python Runtime 调用和 `agent_traces`。
+- [x] Python AI Runtime、prompt 安全边界和结构化 JSON 解析。
+- [x] CodeTop100 / 后端工程题库 schema、seed 和查询 API。
+- [x] Interview Runtime session / flow / turn 三层状态机。
+- [x] Answer 提交异步化：API 返回 `202 Accepted`，worker 消费 Redis Stream 后评估。
+- [x] PostgreSQL local outbox `async_messages`，支持 Redis Stream 补投、重试和 dedup。
+- [x] Redis single-flight、短 TTL Redis 协调、stale turn reclaim 和数据库幂等。
+- [x] PostgreSQL runtime snapshot。
+
+### 2.2 后续任务清单
+
+- [ ] 独立 worker 进程：把当前 API 内置 worker 拆出。
+- [ ] Redis Stream 兜底增强：pending reclaim、dead-letter、poison message、消费延迟指标。
+- [ ] Retrieval Harness MVP：多索引检索、证据选择、debug trace。
+- [ ] Memory candidate / review / profile projection。
+- [ ] Docker sandbox judge worker。
+- [ ] Final report generation。
+- [ ] Evaluation Harness 和成本/质量回归。
+- [ ] 前端接入异步 trace 和报告接口。
+
+### 2.3 参考项目对齐原则
+
+详细索引见 [project-reference-map.md](/Users/yaoyao/Documents/SelfProject/project-reference-map.md)。后续实现不能只按当前仓库文档闭门推进，需要按模块回看原项目：
+
+- `AI-Meeting`：优先参考面试状态机、追问推进、answer pipeline、single-flight、恢复和 finalize。
+- `interview-guide`：优先参考 Skill Pack、Provider 配置、结构化输出、统一评估、知识库基础和 Redis Stream 异步任务。
+- `TechSpar`：优先参考长期画像、弱点/强项、SM-2 复习、LangGraph flow 和训练闭环；本项目保留人工审核边界。
+- `AI-Meeting-Frontend`：优先参考未来前端面试页、报告页、问答回放、会话恢复和 ASR/TTS 接口契约。
+- `aural-oss`：只作为未来招聘 SaaS、候选人、邀请、反作弊、代码题和白板能力预留，不进入当前 MVP 主链路。
+- GraphRAG / RAPTOR / HyDE / RAG-Fusion：只作为 Retrieval Harness 设计参考，第一版按轻量、可解释、可回放实现。
 
 ---
 
