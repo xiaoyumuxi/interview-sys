@@ -1,4 +1,13 @@
-.PHONY: run test fmt docker-up docker-down
+.PHONY: bootstrap init-db check-middleware run test fmt docker-up docker-down
+
+bootstrap:
+	./scripts/bootstrap.sh
+
+init-db:
+	./scripts/init-db.sh
+
+check-middleware:
+	./scripts/check-middleware.sh
 
 run:
 	go run ./cmd/api

@@ -22,6 +22,7 @@
 P0 需求冻结与技术底座确认
 P1 Provider + Skill + Context Preview
 P2 Retrieval Harness MVP
+P2.5 Coding Question Bank MVP
 P3 Memory Candidate + Profile Projection
 P4 Interview Runtime MVP
 P5 Retrieval Harness 增强版
@@ -175,6 +176,46 @@ retrieval_planner
 evidence_selector
 rag_debug
 ```
+
+---
+
+## 5.5 P2.5: Coding Question Bank MVP
+
+### 目标
+
+把编程考核作为独立模块纳入后端，而不是只在 Prompt 中口头要求。
+
+### 核心模块
+
+```text
+code_question_bank
+test_case_manager
+submission_record
+code_evaluation_trace
+judge_worker_contract
+```
+
+### 功能清单
+
+- 代码题集合。
+- 题目标签、难度、题面、输入输出格式。
+- 样例测试和隐藏测试。
+- 参考解法和复杂度说明。
+- 提交记录和人工/自动评估结果。
+- 为未来 Docker sandbox judge worker 预留契约。
+
+### 不做内容
+
+- 第一版不直接开放不受限代码执行。
+- 不在 Go API 进程内执行用户代码。
+- 不允许 judge worker 默认访问网络。
+
+### 验收标准
+
+- 数据库中有可查询的代码题库和测试用例。
+- Java 后端 Skill 能选择至少一道代码题作为考核项。
+- 报告中能记录代码题表现。
+- 后续可以无破坏接入独立 judge worker。
 
 ### 功能清单
 

@@ -34,6 +34,7 @@ Go Core API
   - Provider 配置
   - Skill Registry
   - Knowledge Base
+  - Coding Question Bank
   - Interview Runtime
   - Memory Review
   - Context Preview
@@ -51,6 +52,7 @@ Python AI Runtime
   - Memory Candidate Extraction
   - Context Retrieval Harness
   - RAG / KG / Search Adapter
+  - Code Evaluation Adapter
 
 Storage
   - PostgreSQL + pgvector
@@ -149,11 +151,17 @@ skills/
     skill.meta.yml
     SKILL.md
     references/
+      backend-foundation.md
       java.md
+      network.md
+      distributed.md
       mysql.md
       redis.md
       spring.md
       system-design.md
+      algorithm.md
+      coding.md
+      project.md
 ```
 
 ### 4.2 skill.meta.yml
@@ -183,6 +191,60 @@ categories:
     label: 项目经历
     priority: ALWAYS_ONE
 ```
+
+Java 后端 Skill 第一版不能只覆盖 Java/MySQL/Redis/Spring，还必须覆盖：
+
+```text
+通用后端基础
+计算机网络
+分布式系统
+系统设计
+算法与数据结构
+编程题/代码题库
+项目经历
+```
+
+代码题库是独立模块，不应只藏在 Skill prompt 中。
+
+### 4.5 Coding Question Bank
+
+后端需要维护可复用代码题库：
+
+```text
+code_question_set
+code_question
+code_question_test_case
+code_submission
+code_evaluation_trace
+```
+
+题目字段：
+
+```text
+question_id
+title
+difficulty: easy | medium | hard
+topic_tags
+prompt
+input_format
+output_format
+constraints
+sample_tests
+hidden_tests
+reference_solution
+rubric
+status
+```
+
+MVP 阶段可以先支持题库管理、人审和离线测试；后续再做隔离代码执行。
+
+代码执行要求：
+
+- 使用 Docker / 独立 worker 沙箱。
+- 禁止容器联网。
+- 限制 CPU、内存、进程数、运行时间和文件系统。
+- 每次执行记录 submission、test result、stdout/stderr、资源使用和 trace。
+- 代码题评估结果进入面试报告和记忆候选，但不能直接写长期画像。
 
 ### 4.3 SKILL.md
 

@@ -29,6 +29,8 @@ skills/{skill_id}/
 ## 对本项目的落地
 
 - `java-backend` 继续作为第一版验收 Skill。
+- `java-backend` 不能只包含 Java/MySQL/Redis/Spring，必须覆盖通用后端、网络、分布式、系统设计、算法与代码题。
+- 代码题库是独立业务模块，Skill 只负责选择和解释为什么考这道题。
 - P1 先做本地扫描和 Context Preview，不急着引入复杂 marketplace。
 - P2 再把 references 入库，建立 full-text、summary、vector 多索引。
 - 后续可以增加 `skill.lint`，检查：缺少分类、引用文件不存在、description 过长、禁用事项缺失、Prompt 注入风险。

@@ -1,12 +1,24 @@
 schemaVersion: skill.meta.v1
 id: java-backend
-displayName: Java 后端
-description: Java / MySQL / Redis / Spring / 项目实战
+displayName: Java 后端全栈面试
+description: Java / 通用后端 / 网络 / 分布式 / MySQL / Redis / Spring / 系统设计 / 算法与代码题 / 项目实战
 categories:
+  - key: BACKEND_FOUNDATION
+    label: 通用后端基础
+    priority: CORE
+    ref: backend-foundation.md
   - key: JAVA
     label: Java
     priority: CORE
     ref: java.md
+  - key: NETWORK
+    label: 计算机网络
+    priority: CORE
+    ref: network.md
+  - key: DISTRIBUTED
+    label: 分布式系统
+    priority: CORE
+    ref: distributed.md
   - key: MYSQL
     label: MySQL
     priority: CORE
@@ -19,6 +31,19 @@ categories:
     label: Spring
     priority: NORMAL
     ref: spring.md
+  - key: SYSTEM_DESIGN
+    label: 系统设计
+    priority: CORE
+    ref: system-design.md
+  - key: ALGORITHM
+    label: 算法与数据结构
+    priority: NORMAL
+    ref: algorithm.md
+  - key: CODING
+    label: 编程题
+    priority: ALWAYS_ONE
+    ref: coding.md
   - key: PROJECT
     label: 项目经历
     priority: ALWAYS_ONE
+    ref: project.md

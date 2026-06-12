@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     container_name: ai-interview-postgres
     environment:
       POSTGRES_DB: ai_interview
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: ai-interview-redis
     ports:
       - "6379:6379"
@@ -32,11 +32,11 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
     container_name: ai-interview-minio
     environment:
-      MINIO_ROOT_USER: ai_interview
-      MINIO_ROOT_PASSWORD: ai_interview_secret
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ai_interview}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ai_interview_secret}
     ports:
       - "9000:9000"
       - "9001:9001"

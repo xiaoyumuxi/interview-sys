@@ -14,9 +14,24 @@ P0/P1 基础环境：
 
 ## 本地启动
 
+傻瓜式初始化：
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Windows PowerShell：
+
+```powershell
+./scripts/bootstrap.ps1
+```
+
+手动启动：
+
 ```bash
 cp .env.example .env
 docker compose up -d
+./scripts/init-db.sh
 go run ./cmd/api
 ```
 
@@ -42,6 +57,32 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/skills`
 - `GET /api/skills/{skill_id}`
 - `POST /api/context/preview`
+
+## SQL 初始化
+
+建表 SQL 在 [migrations/001_init.sql](/Users/yaoyao/Documents/SelfProject/migrations/001_init.sql)，默认数据在 [migrations/002_seed_defaults.sql](/Users/yaoyao/Documents/SelfProject/migrations/002_seed_defaults.sql)。
+
+重新应用初始化脚本：
+
+```bash
+./scripts/init-db.sh
+```
+
+## 中间件版本
+
+默认固定为同时支持 `linux/amd64` 和 `linux/arm64` 的镜像：
+
+```text
+pgvector/pgvector:pg16
+redis:7-alpine
+minio/minio:RELEASE.2025-09-07T16-13-09Z
+```
+
+检查 manifest：
+
+```bash
+./scripts/check-middleware.sh
+```
 
 ## Provider 初始化
 
