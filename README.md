@@ -75,6 +75,10 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `POST /api/skills/reload`
 - `GET /api/skills/{skill_id}`
 - `POST /api/context/preview`
+- `POST /api/agent/tasks`
+- `GET /api/coding/question-sets`
+- `GET /api/coding/questions`
+- `GET /api/coding/questions/{question_id}`
 
 Python Runtime:
 

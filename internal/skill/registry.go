@@ -169,6 +169,18 @@ func (r *Registry) List() []Skill {
 	return items
 }
 
+func (r *Registry) All() []Skill {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]Skill, 0, len(r.skills))
+	for _, item := range r.skills {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	return items
+}
+
 func (r *Registry) Get(id string) (Skill, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

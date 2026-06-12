@@ -95,6 +95,12 @@ ON CONFLICT (set_id) DO UPDATE SET
     question_type = EXCLUDED.question_type,
     updated_at = now();
 
+DELETE FROM code_question_sets
+WHERE set_id = 'backend-coding-basic'
+  AND NOT EXISTS (
+      SELECT 1 FROM code_questions WHERE code_questions.set_id = code_question_sets.set_id
+  );
+
 INSERT INTO code_questions (
     question_id,
     set_id,

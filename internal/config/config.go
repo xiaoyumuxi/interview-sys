@@ -15,6 +15,7 @@ type Config struct {
 	RedisAddr     string
 	MinIOEndpoint string
 	SkillsDir     string
+	AIRuntimeURL  string
 	TokenBudget   int
 }
 
@@ -27,6 +28,7 @@ func Load() Config {
 		RedisAddr:     env("REDIS_ADDR", "localhost:6379"),
 		MinIOEndpoint: env("MINIO_ENDPOINT", "localhost:9000"),
 		SkillsDir:     env("SKILLS_DIR", "skills"),
+		AIRuntimeURL:  env("AI_RUNTIME_URL", "http://localhost:8090"),
 		TokenBudget:   envInt("CONTEXT_TOKEN_BUDGET", 12000),
 	}
 }
