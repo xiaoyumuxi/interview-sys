@@ -25,6 +25,9 @@ skills/{skill_id}/
 - procedural 内容尽量写成“输入 -> 步骤 -> 输出”的确定流程。
 - 所有上下文片段都要保留 source、score、reason，避免进入 Prompt 后不可追踪。
 - 第三方 Skill 或用户上传 Skill 不能直接信任，要做 schema 校验、来源标记和禁止越权指令检查。
+- Skill 创建入口必须拒绝明显提示词注入，例如要求忽略上文、泄露 system prompt、越权读取 developer message。
+- 热加载已有本地 Skill 时不要直接阻断服务启动，但要在 API 返回 lint warnings/errors，方便人工修正。
+- Registry 是读多写少的共享快照，因此用 `sync.RWMutex` 做原子替换；只有在后续做文件监听、异步导入、索引任务队列时才引入 channel。
 
 ## 对本项目的落地
 

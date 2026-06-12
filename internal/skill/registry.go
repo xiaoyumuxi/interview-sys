@@ -19,6 +19,7 @@ type Skill struct {
 	Categories    []Category  `json:"categories"`
 	Instructions  string      `json:"instructions,omitempty"`
 	References    []Reference `json:"references,omitempty"`
+	Lint          LintResult  `json:"lint"`
 	LoadedAt      string      `json:"loaded_at"`
 	SchemaVersion string      `json:"schema_version"`
 }
@@ -34,6 +35,12 @@ type Reference struct {
 	SourceID string `json:"source_id"`
 	Content  string `json:"content"`
 	Tokens   int    `json:"tokens"`
+}
+
+type LintResult struct {
+	OK       bool     `json:"ok"`
+	Warnings []string `json:"warnings,omitempty"`
+	Errors   []string `json:"errors,omitempty"`
 }
 
 type CreateRequest struct {
@@ -140,6 +147,7 @@ func (r *Registry) scan() (map[string]Skill, error) {
 		}
 		item.Instructions = string(instructions)
 		item.References = loadReferences(skillDir, item)
+		item.Lint = lintSkill(skillDir, item)
 		item.LoadedAt = time.Now().Format(time.RFC3339)
 		item.SchemaVersion = "skill.v1"
 		loaded[item.ID] = item
@@ -199,6 +207,24 @@ func validateCreateRequest(req CreateRequest) error {
 			return err
 		}
 	}
+	item := Skill{
+		ID:           req.ID,
+		DisplayName:  req.DisplayName,
+		Description:  req.Description,
+		Categories:   req.Categories,
+		Instructions: req.Instructions,
+	}
+	for name, content := range req.References {
+		item.References = append(item.References, Reference{
+			SourceID: req.ID + "/" + name,
+			Content:  content,
+			Tokens:   estimateTokens(content),
+		})
+	}
+	lint := lintSkill("", item)
+	if len(lint.Errors) > 0 {
+		return fmt.Errorf("skill lint failed: %s", strings.Join(lint.Errors, "; "))
+	}
 	return nil
 }
 
@@ -245,6 +271,133 @@ func renderMeta(req CreateRequest) string {
 		builder.WriteString("\n")
 	}
 	return builder.String()
+}
+
+func lintSkill(skillDir string, item Skill) LintResult {
+	var warnings []string
+	var errors []string
+
+	if !skillIDPattern.MatchString(item.ID) {
+		errors = append(errors, "skill id must be kebab-case")
+	}
+	if len(item.Description) > 240 {
+		warnings = append(warnings, "description is long; keep it concise for retrieval")
+	}
+	if strings.TrimSpace(item.Instructions) == "" {
+		errors = append(errors, "SKILL.md instructions are required")
+	}
+	if len(item.Categories) == 0 {
+		warnings = append(warnings, "skill has no categories")
+	}
+	if !containsAnyFold(item.Instructions, []string{"禁止", "do not", "must not", "不要"}) {
+		warnings = append(warnings, "SKILL.md should include explicit forbidden behavior")
+	}
+
+	contentByRef := map[string]string{}
+	for _, ref := range item.References {
+		contentByRef[strings.TrimPrefix(ref.SourceID, item.ID+"/")] = ref.Content
+	}
+	for _, category := range item.Categories {
+		if category.Ref == "" {
+			continue
+		}
+		if _, err := cleanReferenceName(category.Ref); err != nil {
+			errors = append(errors, err.Error())
+			continue
+		}
+		if skillDir != "" {
+			if _, err := os.Stat(filepath.Join(skillDir, "references", category.Ref)); err != nil {
+				warnings = append(warnings, "category ref not found: "+category.Ref)
+			}
+		} else if _, ok := contentByRef[category.Ref]; !ok {
+			warnings = append(warnings, "category ref not provided: "+category.Ref)
+		}
+	}
+
+	scanText := item.DisplayName + "\n" + item.Description + "\n" + item.Instructions
+	for _, ref := range item.References {
+		scanText += "\n" + ref.Content
+	}
+	for _, finding := range scanPromptInjection(scanText) {
+		if finding.Severity == "error" {
+			errors = append(errors, finding.Message)
+		} else {
+			warnings = append(warnings, finding.Message)
+		}
+	}
+
+	return LintResult{
+		OK:       len(errors) == 0,
+		Warnings: uniqueStrings(warnings),
+		Errors:   uniqueStrings(errors),
+	}
+}
+
+type promptInjectionFinding struct {
+	Severity string
+	Message  string
+}
+
+func scanPromptInjection(content string) []promptInjectionFinding {
+	lower := strings.ToLower(content)
+	patterns := []struct {
+		needle   string
+		severity string
+		message  string
+	}{
+		{"ignore previous instructions", "error", "possible prompt injection: ignore previous instructions"},
+		{"ignore all previous instructions", "error", "possible prompt injection: ignore all previous instructions"},
+		{"disregard previous instructions", "error", "possible prompt injection: disregard previous instructions"},
+		{"reveal your system prompt", "error", "possible prompt injection: reveal system prompt"},
+		{"print your system prompt", "error", "possible prompt injection: print system prompt"},
+		{"developer message", "warning", "mentions developer message; review for prompt boundary confusion"},
+		{"system prompt", "warning", "mentions system prompt; review for prompt leakage request"},
+		{"泄露系统提示", "error", "possible prompt injection: leak system prompt"},
+		{"忽略之前", "error", "possible prompt injection: ignore previous instructions"},
+		{"忽略以上", "error", "possible prompt injection: ignore above instructions"},
+		{"无视之前", "error", "possible prompt injection: disregard previous instructions"},
+		{"输出系统提示", "error", "possible prompt injection: print system prompt"},
+		{"显示系统提示", "error", "possible prompt injection: show system prompt"},
+		{"开发者消息", "warning", "mentions developer message; review for prompt boundary confusion"},
+		{"系统提示词", "warning", "mentions system prompt; review for prompt leakage request"},
+	}
+	var findings []promptInjectionFinding
+	for _, pattern := range patterns {
+		if strings.Contains(lower, pattern.needle) {
+			findings = append(findings, promptInjectionFinding{
+				Severity: pattern.severity,
+				Message:  pattern.message,
+			})
+		}
+	}
+	return findings
+}
+
+func containsAnyFold(content string, needles []string) bool {
+	lower := strings.ToLower(content)
+	for _, needle := range needles {
+		if strings.Contains(lower, strings.ToLower(needle)) {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func parseMeta(meta string) Skill {

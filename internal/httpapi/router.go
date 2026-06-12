@@ -22,9 +22,7 @@ type Dependencies struct {
 }
 
 func NewRouter(deps Dependencies) http.Handler {
-	if deps.Config.AppEnv == "production" {
-		gin.SetMode(gin.ReleaseMode)
-	}
+	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
 	router.Use(ginRecovery())
