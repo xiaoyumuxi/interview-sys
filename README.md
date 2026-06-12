@@ -42,3 +42,20 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/skills`
 - `GET /api/skills/{skill_id}`
 - `POST /api/context/preview`
+
+## Provider 初始化
+
+DeepSeek 默认使用 OpenAI-compatible 格式：
+
+```text
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_CHAT_ENDPOINT_PATH=/chat/completions
+DEEPSEEK_CHAT_MODEL=deepseek-v4-flash
+```
+
+普通 OpenAI-compatible Provider 默认使用：
+
+```text
+OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
+OPENAI_COMPATIBLE_CHAT_ENDPOINT_PATH=/chat/completions
+```

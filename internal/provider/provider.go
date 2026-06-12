@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -24,11 +26,13 @@ type Config struct {
 	ProviderID        string `json:"provider_id"`
 	ProviderType      Type   `json:"provider_type"`
 	BaseURL           string `json:"base_url"`
+	ChatEndpointPath  string `json:"chat_endpoint_path,omitempty"`
 	ChatModel         string `json:"chat_model,omitempty"`
 	EmbeddingModel    string `json:"embedding_model,omitempty"`
 	SupportsStreaming bool   `json:"supports_streaming"`
 	SupportsJSON      bool   `json:"supports_json"`
 	Enabled           bool   `json:"enabled"`
+	APIKeyConfigured  bool   `json:"api_key_configured"`
 }
 
 type Registry struct {
@@ -41,27 +45,32 @@ func NewRegistry() *Registry {
 			ProviderID:        "deepseek-default",
 			ProviderType:      TypeDeepSeek,
 			BaseURL:           env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-			ChatModel:         env("DEEPSEEK_CHAT_MODEL", "deepseek-chat"),
+			ChatEndpointPath:  env("DEEPSEEK_CHAT_ENDPOINT_PATH", "/chat/completions"),
+			ChatModel:         env("DEEPSEEK_CHAT_MODEL", "deepseek-v4-flash"),
 			SupportsStreaming: true,
 			SupportsJSON:      true,
 			Enabled:           env("DEEPSEEK_API_KEY", "") != "",
+			APIKeyConfigured:  env("DEEPSEEK_API_KEY", "") != "",
 		},
 		{
 			ProviderID:        "openai-compatible-default",
 			ProviderType:      TypeOpenAICompatible,
-			BaseURL:           env("OPENAI_COMPATIBLE_BASE_URL", ""),
-			ChatModel:         env("OPENAI_COMPATIBLE_CHAT_MODEL", ""),
+			BaseURL:           env("OPENAI_COMPATIBLE_BASE_URL", "https://api.openai.com/v1"),
+			ChatEndpointPath:  env("OPENAI_COMPATIBLE_CHAT_ENDPOINT_PATH", "/chat/completions"),
+			ChatModel:         env("OPENAI_COMPATIBLE_CHAT_MODEL", env("OPENAI_CHAT_MODEL", "")),
 			SupportsStreaming: true,
 			SupportsJSON:      true,
-			Enabled:           env("OPENAI_COMPATIBLE_API_KEY", "") != "" && env("OPENAI_COMPATIBLE_BASE_URL", "") != "",
+			Enabled:           openAICompatibleAPIKey() != "" && env("OPENAI_COMPATIBLE_CHAT_MODEL", env("OPENAI_CHAT_MODEL", "")) != "",
+			APIKeyConfigured:  openAICompatibleAPIKey() != "",
 		},
 		{
-			ProviderID:     "embedding-default",
-			ProviderType:   TypeEmbedding,
-			BaseURL:        env("EMBEDDING_BASE_URL", ""),
-			EmbeddingModel: env("EMBEDDING_MODEL", ""),
-			SupportsJSON:   true,
-			Enabled:        env("EMBEDDING_API_KEY", "") != "" && env("EMBEDDING_BASE_URL", "") != "",
+			ProviderID:       "embedding-default",
+			ProviderType:     TypeEmbedding,
+			BaseURL:          env("EMBEDDING_BASE_URL", ""),
+			EmbeddingModel:   env("EMBEDDING_MODEL", ""),
+			SupportsJSON:     true,
+			Enabled:          env("EMBEDDING_API_KEY", "") != "" && env("EMBEDDING_BASE_URL", "") != "",
+			APIKeyConfigured: env("EMBEDDING_API_KEY", "") != "",
 		},
 	}
 	return &Registry{items: items}
@@ -81,6 +90,8 @@ type TestResponse struct {
 	ProviderID    string `json:"provider_id"`
 	OK            bool   `json:"ok"`
 	Message       string `json:"message"`
+	Endpoint      string `json:"endpoint,omitempty"`
+	Model         string `json:"model,omitempty"`
 }
 
 func (r *Registry) Test(ctx context.Context, req TestRequest) TestResponse {
@@ -95,9 +106,23 @@ func (r *Registry) Test(ctx context.Context, req TestRequest) TestResponse {
 		return TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: true, Message: "embedding provider config is present"}
 	}
 	if err := testChat(ctx, cfg, req.Prompt); err != nil {
-		return TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: false, Message: err.Error()}
+		return TestResponse{
+			SchemaVersion: "provider.test.v1",
+			ProviderID:    cfg.ProviderID,
+			OK:            false,
+			Message:       err.Error(),
+			Endpoint:      chatEndpoint(cfg),
+			Model:         cfg.ChatModel,
+		}
 	}
-	return TestResponse{SchemaVersion: "provider.test.v1", ProviderID: cfg.ProviderID, OK: true, Message: "chat completion request succeeded"}
+	return TestResponse{
+		SchemaVersion: "provider.test.v1",
+		ProviderID:    cfg.ProviderID,
+		OK:            true,
+		Message:       "chat completion request succeeded",
+		Endpoint:      chatEndpoint(cfg),
+		Model:         cfg.ChatModel,
+	}
 }
 
 func (r *Registry) find(providerID string) (Config, bool) {
@@ -124,7 +149,8 @@ func testChat(ctx context.Context, cfg Config, prompt string) error {
 			{"role": "system", "content": "You are a provider connectivity checker."},
 			{"role": "user", "content": prompt},
 		},
-		"stream": false,
+		"stream":      false,
+		"temperature": 0,
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -133,7 +159,7 @@ func testChat(ctx context.Context, cfg Config, prompt string) error {
 
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	endpoint := strings.TrimRight(cfg.BaseURL, "/") + "/v1/chat/completions"
+	endpoint := chatEndpoint(cfg)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return err
@@ -147,7 +173,12 @@ func testChat(ctx context.Context, cfg Config, prompt string) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return errors.New("provider returned " + response.Status)
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		message := strings.TrimSpace(string(body))
+		if message == "" {
+			message = response.Status
+		}
+		return fmt.Errorf("provider returned %s: %s", response.Status, message)
 	}
 	return nil
 }
@@ -157,10 +188,25 @@ func apiKeyFor(providerType Type) string {
 	case TypeDeepSeek:
 		return env("DEEPSEEK_API_KEY", "")
 	case TypeOpenAICompatible:
-		return env("OPENAI_COMPATIBLE_API_KEY", "")
+		return openAICompatibleAPIKey()
 	default:
 		return ""
 	}
+}
+
+func openAICompatibleAPIKey() string {
+	return env("OPENAI_COMPATIBLE_API_KEY", env("OPENAI_API_KEY", ""))
+}
+
+func chatEndpoint(cfg Config) string {
+	path := strings.TrimSpace(cfg.ChatEndpointPath)
+	if path == "" {
+		path = "/chat/completions"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return strings.TrimRight(cfg.BaseURL, "/") + path
 }
 
 func env(key, fallback string) string {

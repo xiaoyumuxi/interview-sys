@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS provider_configs (
     provider_id TEXT PRIMARY KEY,
     provider_type TEXT NOT NULL,
     base_url TEXT NOT NULL,
+    chat_endpoint_path TEXT,
     api_key_ref TEXT,
     chat_model TEXT,
     embedding_model TEXT,
