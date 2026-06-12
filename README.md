@@ -112,10 +112,12 @@ Python Runtime:
 Go 维护面试运行时状态机和幂等边界：
 
 - `interview_sessions` 区分 `session_status` 和 `flow_status`。
-- `interview_turns` 用 `request_id` 与 `session_id + question_number + answer_round + answer_hash` 做重复提交回放。
+- `POST /api/interview-sessions/{session_id}/answers` 返回 `202 Accepted`，先创建 queued turn，再由 Redis Stream worker 异步评估。
+- `interview_turns` 用 `turn_status` 记录 `queued/running/completed/failed`，并用 `request_id` 与 `session_id + question_number + answer_round + answer_hash` 做重复提交回放。
 - `interview_runtime_snapshots` 保存 PostgreSQL 冷快照，Redis 丢失后仍能恢复业务事实。
 - Redis single-flight 折叠同一答案的重复 AI 评估调用。
-- Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，后续 judge、report、memory extraction 可以拆成 consumer group 异步处理。
+- Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，API 进程内置 consumer group worker 会消费 answer evaluation；后续 judge、report、memory extraction 可以继续拆成独立 worker。
+- 查询 `GET /api/interview-sessions/{session_id}` 或 `GET /api/interview-sessions/{session_id}/trace` 获取异步结果。
 
 ## 中间件版本
 

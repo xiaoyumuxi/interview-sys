@@ -356,6 +356,10 @@ func (h apiHandler) submitInterviewAnswer(c *gin.Context) {
 		writeGinError(c, http.StatusBadRequest, "interview_answer_failed", err.Error())
 		return
 	}
+	if accepted, _ := resp["accepted"].(bool); accepted {
+		c.JSON(http.StatusAccepted, resp)
+		return
+	}
 	c.JSON(http.StatusOK, resp)
 }
 

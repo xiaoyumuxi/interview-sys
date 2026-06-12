@@ -182,18 +182,26 @@ CREATE TABLE IF NOT EXISTS interview_turns (
     request_id TEXT NOT NULL,
     answer_hash TEXT NOT NULL,
     user_answer TEXT NOT NULL,
+    turn_status TEXT NOT NULL DEFAULT 'queued' CHECK (turn_status IN ('queued', 'running', 'completed', 'failed')),
     evaluation JSONB NOT NULL DEFAULT '{}'::jsonb,
     follow_up_needed BOOLEAN NOT NULL DEFAULT FALSE,
     follow_up_question TEXT NOT NULL DEFAULT '',
     score NUMERIC(6,2) NOT NULL DEFAULT 0,
     trace_id TEXT REFERENCES agent_traces(trace_id) ON DELETE SET NULL,
     response JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_text TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (session_id, request_id),
     UNIQUE (session_id, question_number, answer_round, answer_hash)
 );
 
+ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS turn_status TEXT NOT NULL DEFAULT 'completed';
+ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS error_text TEXT NOT NULL DEFAULT '';
+ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS idx_interview_turns_session_created ON interview_turns (session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_interview_turns_status ON interview_turns (turn_status, updated_at);
 
 CREATE TABLE IF NOT EXISTS interview_runtime_snapshots (
     session_id TEXT PRIMARY KEY REFERENCES interview_sessions(session_id) ON DELETE CASCADE,

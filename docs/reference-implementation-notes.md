@@ -57,11 +57,12 @@
 - Go Interview Runtime 基础状态机。
 - Go 侧 answer idempotency 和 Redis single-flight。
 - Redis Stream interview event queue。
+- Redis Stream consumer group worker for answer evaluation。
 - PostgreSQL runtime snapshot。
 
 未完成：
 
-- Redis Stream consumer group workers。
+- 独立 worker 进程、失败重试扫描和 pending reclaim。
 - Memory candidate / review / profile projection。
 - Retrieval Harness 多索引检索。
 - 代码执行 judge worker。

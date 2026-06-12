@@ -30,6 +30,11 @@ const (
 	FlowEvaluating = "EVALUATING"
 	FlowFollowUp   = "FOLLOW_UP"
 	FlowCompleted  = "COMPLETED"
+
+	TurnQueued    = "queued"
+	TurnRunning   = "running"
+	TurnCompleted = "completed"
+	TurnFailed    = "failed"
 )
 
 type Service struct {
@@ -43,6 +48,31 @@ type Service struct {
 
 func NewService(db *sql.DB, store *store.Store, engine *contextengine.Engine, runtime *airuntime.Client, flights *singleflight.RedisFlight, queue *workqueue.Stream) *Service {
 	return &Service{db: db, store: store, engine: engine, runtime: runtime, flights: flights, queue: queue}
+}
+
+func (s *Service) StartWorker(ctx context.Context) {
+	const group = "interview-workers"
+	consumer := "api-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	s.queue.EnsureGroup(ctx, group)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			messages, err := s.queue.ReadGroup(ctx, group, consumer, 8, 2*time.Second)
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			for _, message := range messages {
+				if s.handleStreamMessage(ctx, message.Values) {
+					s.queue.Ack(ctx, group, message.ID)
+				}
+			}
+		}
+	}()
 }
 
 type CreateSessionRequest struct {
@@ -107,7 +137,10 @@ type Turn struct {
 	Score            float64        `json:"score"`
 	TraceID          string         `json:"trace_id,omitempty"`
 	Response         map[string]any `json:"response"`
+	TurnStatus       string         `json:"turn_status"`
+	ErrorText        string         `json:"error_text,omitempty"`
 	CreatedAt        string         `json:"created_at"`
+	UpdatedAt        string         `json:"updated_at"`
 }
 
 func (s *Service) CreateSession(ctx context.Context, req CreateSessionRequest) (Session, error) {
@@ -200,44 +233,7 @@ func (s *Service) SubmitAnswer(ctx context.Context, sessionID string, req Submit
 		return nil, errors.New("interview session is already finished")
 	}
 
-	_, _ = s.db.ExecContext(ctx, `
-UPDATE interview_sessions
-SET session_status=$2, flow_status=$3, updated_at=now()
-WHERE session_id=$1 AND flow_status <> $4`,
-		sessionID, SessionInProgress, FlowEvaluating, FlowCompleted)
-
-	flightKey := strings.Join([]string{
-		"interview-evaluation",
-		sessionID,
-		strconv.Itoa(session.CurrentQuestionNumber),
-		strconv.Itoa(session.AnswerRound),
-		answerHash,
-	}, "|")
-	s.queue.Publish(ctx, workqueue.Event{Type: "interview.answer_submitted", SessionID: sessionID, Payload: map[string]any{"request_id": requestID, "question_number": session.CurrentQuestionNumber, "answer_round": session.AnswerRound}})
-
-	result, err := s.flights.Execute(ctx, flightKey, func(runCtx context.Context) (string, error) {
-		payload, err := s.evaluateAnswer(runCtx, session, answer, req.DryRun)
-		if err != nil {
-			return "", err
-		}
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return "", err
-		}
-		return string(encoded), nil
-	})
-	if err != nil {
-		if errors.Is(err, singleflight.ErrInFlight) {
-			return nil, errors.New("current answer is processing, please retry later")
-		}
-		_, _ = s.db.ExecContext(ctx, `UPDATE interview_sessions SET session_status=$2, last_error=$3, updated_at=now() WHERE session_id=$1`, sessionID, SessionFailed, err.Error())
-		return nil, err
-	}
-	var evaluationPayload evaluationPayload
-	if err := json.Unmarshal([]byte(result.Value), &evaluationPayload); err != nil {
-		return nil, err
-	}
-	response, err := s.persistAnswerResult(ctx, session, req, requestID, answerHash, answer, evaluationPayload, result.Replay)
+	response, turnID, err := s.enqueueAnswer(ctx, session, req, requestID, answerHash, answer)
 	if err != nil {
 		if replay, ok, replayErr := s.findReplay(ctx, sessionID, requestID, session.CurrentQuestionNumber, session.AnswerRound, answerHash); replayErr != nil {
 			return nil, replayErr
@@ -246,6 +242,16 @@ WHERE session_id=$1 AND flow_status <> $4`,
 		}
 		return nil, err
 	}
+	s.queue.Publish(ctx, workqueue.Event{
+		Type:      "interview.answer_submitted",
+		SessionID: sessionID,
+		Payload: map[string]any{
+			"turn_id":         turnID,
+			"request_id":      requestID,
+			"question_number": session.CurrentQuestionNumber,
+			"answer_round":    session.AnswerRound,
+		},
+	})
 	return response, nil
 }
 
@@ -268,6 +274,166 @@ WHERE session_id=$1`,
 
 func (s *Service) Trace(ctx context.Context, sessionID string) ([]Turn, error) {
 	return s.loadTurns(ctx, sessionID)
+}
+
+func (s *Service) enqueueAnswer(ctx context.Context, session Session, req SubmitAnswerRequest, requestID string, answerHash string, answer string) (map[string]any, string, error) {
+	turnID := store.NewID("turn")
+	response := map[string]any{
+		"schema_version":  "interview.answer.accepted.v1",
+		"session_id":      session.SessionID,
+		"turn_id":         turnID,
+		"turn_status":     TurnQueued,
+		"request_id":      requestID,
+		"question_id":     session.CurrentQuestionID,
+		"question_number": session.CurrentQuestionNumber,
+		"answer_round":    session.AnswerRound,
+		"accepted":        true,
+		"dry_run":         req.DryRun,
+		"poll_url":        "/api/interview-sessions/" + session.SessionID + "/trace",
+		"stream_event":    "interview.answer_submitted",
+	}
+	responseJSON, _ := json.Marshal(response)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO interview_turns (
+  turn_id, session_id, question_id, question_number, answer_round, request_id, answer_hash,
+  user_answer, turn_status, response, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`,
+		turnID, session.SessionID, nullEmpty(session.CurrentQuestionID), session.CurrentQuestionNumber,
+		session.AnswerRound, requestID, answerHash, answer, TurnQueued, responseJSON,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	_, err = tx.ExecContext(ctx, `
+UPDATE interview_sessions
+SET session_status=$2, flow_status=$3, updated_at=now()
+WHERE session_id=$1 AND flow_status <> $4`,
+		session.SessionID, SessionInProgress, FlowEvaluating, FlowCompleted)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, "", err
+	}
+	_ = s.refreshSnapshot(ctx, session.SessionID, "answer_queued")
+	return response, turnID, nil
+}
+
+func (s *Service) handleStreamMessage(ctx context.Context, values map[string]any) bool {
+	eventType, _ := values["event_type"].(string)
+	if eventType != "interview.answer_submitted" {
+		return true
+	}
+	payloadText, _ := values["payload"].(string)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(payloadText), &payload); err != nil {
+		return true
+	}
+	turnID := stringFromMap(payload, "turn_id")
+	if turnID == "" {
+		return true
+	}
+	return s.ProcessTurn(ctx, turnID) == nil
+}
+
+func (s *Service) ProcessTurn(ctx context.Context, turnID string) error {
+	turn, err := s.loadTurn(ctx, turnID)
+	if err != nil {
+		return err
+	}
+	if turn.TurnID == "" || turn.TurnStatus == TurnCompleted {
+		return nil
+	}
+	if turn.TurnStatus == TurnFailed {
+		return nil
+	}
+	session, err := s.loadSession(ctx, turn.SessionID, false)
+	if err != nil {
+		return err
+	}
+	if session.SessionID == "" {
+		return sql.ErrNoRows
+	}
+	claimed, err := s.claimTurn(ctx, turnID)
+	if err != nil || !claimed {
+		return err
+	}
+	flightKey := strings.Join([]string{
+		"interview-evaluation",
+		turn.SessionID,
+		strconv.Itoa(turn.QuestionNumber),
+		strconv.Itoa(turn.AnswerRound),
+		turn.AnswerHash,
+	}, "|")
+	result, err := s.flights.Execute(ctx, flightKey, func(runCtx context.Context) (string, error) {
+		payload, err := s.evaluateAnswer(runCtx, session, turn.UserAnswer, boolFromMap(turn.Response, "dry_run"))
+		if err != nil {
+			return "", err
+		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
+	})
+	if err != nil {
+		if errors.Is(err, singleflight.ErrInFlight) {
+			_, _ = s.db.ExecContext(ctx, `UPDATE interview_turns SET turn_status=$2, updated_at=now() WHERE turn_id=$1`, turnID, TurnQueued)
+			return err
+		}
+		_ = s.markTurnFailed(ctx, turnID, turn.SessionID, err)
+		return nil
+	}
+	var evaluationPayload evaluationPayload
+	if err := json.Unmarshal([]byte(result.Value), &evaluationPayload); err != nil {
+		_ = s.markTurnFailed(ctx, turnID, turn.SessionID, err)
+		return nil
+	}
+	return s.persistAnswerResult(ctx, session, turn, evaluationPayload, result.Replay)
+}
+
+func (s *Service) claimTurn(ctx context.Context, turnID string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
+UPDATE interview_turns
+SET turn_status=$2, updated_at=now()
+WHERE turn_id=$1 AND turn_status=$3`,
+		turnID, TurnRunning, TurnQueued)
+	if err != nil {
+		return false, err
+	}
+	count, _ := result.RowsAffected()
+	return count > 0, nil
+}
+
+func (s *Service) markTurnFailed(ctx context.Context, turnID string, sessionID string, cause error) error {
+	message := cause.Error()
+	response := map[string]any{
+		"schema_version": "interview.answer.failed.v1",
+		"session_id":     sessionID,
+		"turn_id":        turnID,
+		"turn_status":    TurnFailed,
+		"error":          message,
+	}
+	raw, _ := json.Marshal(response)
+	_, err := s.db.ExecContext(ctx, `
+UPDATE interview_turns
+SET turn_status=$2, error_text=$3, response=$4, updated_at=now()
+WHERE turn_id=$1`, turnID, TurnFailed, message, raw)
+	if err != nil {
+		return err
+	}
+	_, _ = s.db.ExecContext(ctx, `
+UPDATE interview_sessions
+SET session_status=$2, last_error=$3, updated_at=now()
+WHERE session_id=$1`, sessionID, SessionFailed, message)
+	s.queue.Publish(ctx, workqueue.Event{Type: "interview.answer_failed", SessionID: sessionID, Payload: response})
+	_ = s.refreshSnapshot(ctx, sessionID, "answer_failed")
+	return nil
 }
 
 type evaluationPayload struct {
@@ -331,7 +497,7 @@ func (s *Service) evaluateAnswer(ctx context.Context, session Session, answer st
 	}, nil
 }
 
-func (s *Service) persistAnswerResult(ctx context.Context, session Session, req SubmitAnswerRequest, requestID string, answerHash string, answer string, payload evaluationPayload, replay bool) (map[string]any, error) {
+func (s *Service) persistAnswerResult(ctx context.Context, session Session, turn Turn, payload evaluationPayload, replay bool) error {
 	nextFlow := FlowAsking
 	nextStatus := SessionInProgress
 	nextQuestionID := session.CurrentQuestionID
@@ -350,7 +516,7 @@ func (s *Service) persistAnswerResult(ctx context.Context, session Session, req 
 		}
 		nextQuestion, ok, err := s.questionByNumber(ctx, questionType, session.CurrentQuestionNumber+1)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if ok {
 			nextQuestionID = nextQuestion.QuestionID
@@ -368,6 +534,8 @@ func (s *Service) persistAnswerResult(ctx context.Context, session Session, req 
 	response := map[string]any{
 		"schema_version":       "interview.answer.v1",
 		"session_id":           session.SessionID,
+		"turn_id":              turn.TurnID,
+		"turn_status":          TurnCompleted,
 		"trace_id":             payload.TraceID,
 		"score":                payload.Score,
 		"evaluation":           payload.Evaluation,
@@ -383,20 +551,19 @@ func (s *Service) persistAnswerResult(ctx context.Context, session Session, req 
 	evalJSON, _ := json.Marshal(payload.Evaluation)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO interview_turns (
-  turn_id, session_id, question_id, question_number, answer_round, request_id, answer_hash,
-  user_answer, evaluation, follow_up_needed, follow_up_question, score, trace_id, response
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		store.NewID("turn"), session.SessionID, nullEmpty(session.CurrentQuestionID), session.CurrentQuestionNumber,
-		session.AnswerRound, requestID, answerHash, answer, evalJSON, followUpNeeded,
-		payload.FollowUpQuestion, payload.Score, nullEmpty(payload.TraceID), responseJSON,
+UPDATE interview_turns
+SET turn_status=$2, evaluation=$3, follow_up_needed=$4, follow_up_question=$5,
+    score=$6, trace_id=$7, response=$8, error_text='', updated_at=now()
+WHERE turn_id=$1 AND turn_status=$9`,
+		turn.TurnID, TurnCompleted, evalJSON, followUpNeeded,
+		payload.FollowUpQuestion, payload.Score, nullEmpty(payload.TraceID), responseJSON, TurnRunning,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	_, err = tx.ExecContext(ctx, `
 UPDATE interview_sessions
@@ -409,14 +576,14 @@ WHERE session_id=$1`,
 		nextAnswerRound, nextFollowUpCount, payload.Score, finished,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return err
 	}
 	s.queue.Publish(ctx, workqueue.Event{Type: "interview.answer_evaluated", SessionID: session.SessionID, Payload: response})
 	_ = s.refreshSnapshot(ctx, session.SessionID, "answer")
-	return response, nil
+	return nil
 }
 
 func (s *Service) loadSession(ctx context.Context, sessionID string, includeTurns bool) (Session, error) {
@@ -473,7 +640,8 @@ WHERE session_id=$1`, sessionID).Scan(
 func (s *Service) loadTurns(ctx context.Context, sessionID string) ([]Turn, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT turn_id, session_id, COALESCE(question_id,''), question_number, answer_round, request_id, answer_hash,
-       user_answer, evaluation, follow_up_needed, follow_up_question, score, COALESCE(trace_id,''), response, created_at
+       user_answer, turn_status, evaluation, follow_up_needed, follow_up_question, score, COALESCE(trace_id,''),
+       response, error_text, created_at, updated_at
 FROM interview_turns
 WHERE session_id=$1
 ORDER BY created_at`, sessionID)
@@ -485,21 +653,49 @@ ORDER BY created_at`, sessionID)
 	for rows.Next() {
 		var turn Turn
 		var evalRaw, responseRaw []byte
-		var createdAt time.Time
+		var createdAt, updatedAt time.Time
 		if err := rows.Scan(&turn.TurnID, &turn.SessionID, &turn.QuestionID, &turn.QuestionNumber, &turn.AnswerRound,
-			&turn.RequestID, &turn.AnswerHash, &turn.UserAnswer, &evalRaw, &turn.FollowUpNeeded,
-			&turn.FollowUpQuestion, &turn.Score, &turn.TraceID, &responseRaw, &createdAt); err != nil {
+			&turn.RequestID, &turn.AnswerHash, &turn.UserAnswer, &turn.TurnStatus, &evalRaw, &turn.FollowUpNeeded,
+			&turn.FollowUpQuestion, &turn.Score, &turn.TraceID, &responseRaw, &turn.ErrorText, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(evalRaw, &turn.Evaluation)
 		_ = json.Unmarshal(responseRaw, &turn.Response)
 		turn.CreatedAt = createdAt.Format(time.RFC3339)
+		turn.UpdatedAt = updatedAt.Format(time.RFC3339)
 		turns = append(turns, turn)
 	}
 	if turns == nil {
 		turns = []Turn{}
 	}
 	return turns, rows.Err()
+}
+
+func (s *Service) loadTurn(ctx context.Context, turnID string) (Turn, error) {
+	var turn Turn
+	var evalRaw, responseRaw []byte
+	var createdAt, updatedAt time.Time
+	err := s.db.QueryRowContext(ctx, `
+SELECT turn_id, session_id, COALESCE(question_id,''), question_number, answer_round, request_id, answer_hash,
+       user_answer, turn_status, evaluation, follow_up_needed, follow_up_question, score, COALESCE(trace_id,''),
+       response, error_text, created_at, updated_at
+FROM interview_turns
+WHERE turn_id=$1`, turnID).Scan(
+		&turn.TurnID, &turn.SessionID, &turn.QuestionID, &turn.QuestionNumber, &turn.AnswerRound,
+		&turn.RequestID, &turn.AnswerHash, &turn.UserAnswer, &turn.TurnStatus, &evalRaw, &turn.FollowUpNeeded,
+		&turn.FollowUpQuestion, &turn.Score, &turn.TraceID, &responseRaw, &turn.ErrorText, &createdAt, &updatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return Turn{}, nil
+	}
+	if err != nil {
+		return Turn{}, err
+	}
+	_ = json.Unmarshal(evalRaw, &turn.Evaluation)
+	_ = json.Unmarshal(responseRaw, &turn.Response)
+	turn.CreatedAt = createdAt.Format(time.RFC3339)
+	turn.UpdatedAt = updatedAt.Format(time.RFC3339)
+	return turn, nil
 }
 
 func (s *Service) findReplay(ctx context.Context, sessionID string, requestID string, questionNumber int, answerRound int, answerHash string) (map[string]any, bool, error) {

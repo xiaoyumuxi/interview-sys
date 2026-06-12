@@ -62,6 +62,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	stream := workqueue.NewStream(redisClient, logger, cfg.InterviewEventsStream)
 	flights := singleflight.NewRedisFlight(redisClient, 65*time.Second, 10*time.Minute)
 	interviewService := interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream)
+	interviewService.StartWorker(context.Background())
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:           cfg,
