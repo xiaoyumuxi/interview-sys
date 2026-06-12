@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"ai-interview-platform/internal/auth"
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
@@ -46,6 +47,11 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		_ = dbStore.Close()
 		return nil, err
 	}
+	authService := auth.NewService(cfg, dbStore)
+	if _, err := authService.BootstrapRoot(context.Background(), "root", cfg.RootDisplayName, cfg.RootEmail, cfg.RootPassword); err != nil {
+		_ = dbStore.Close()
+		return nil, err
+	}
 
 	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
 	codingStore := coding.NewStore(dbStore.DB())
@@ -75,6 +81,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		ContextEngine:    engine,
 		Store:            dbStore,
 		CodingStore:      codingStore,
+		AuthService:      authService,
 		RuntimeClient:    runtimeClient,
 		InterviewService: interviewService,
 	})

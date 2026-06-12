@@ -43,6 +43,7 @@
 已完成：
 
 - Gin API 基础。
+- Auth/User：JWT access token + JWT refresh token，密码 bcrypt 哈希，refresh token 只保存哈希。
 - PostgreSQL 连接。
 - Provider 配置启动同步入库。
 - Skill Pack 扫描、热加载、创建、lint。

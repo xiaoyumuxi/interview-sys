@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"ai-interview-platform/internal/auth"
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
@@ -26,6 +27,7 @@ type Dependencies struct {
 	ContextEngine    *contextengine.Engine
 	Store            *store.Store
 	CodingStore      *coding.Store
+	AuthService      *auth.Service
 	RuntimeClient    *airuntime.Client
 	InterviewService *interview.Service
 }
@@ -40,18 +42,26 @@ func NewRouter(deps Dependencies) http.Handler {
 	api := apiHandler{deps: deps}
 	router.GET("/healthz", api.health)
 
+	authGroup := router.Group("/api/auth")
+	authGroup.POST("/register", api.register)
+	authGroup.POST("/login", api.login)
+	authGroup.POST("/refresh", api.refreshToken)
+	authGroup.POST("/logout", api.logout)
+	authGroup.GET("/me", api.requireAuth(), api.me)
+
 	group := router.Group("/api")
-	group.GET("/providers", api.listProviders)
-	group.POST("/providers", api.createProvider)
-	group.GET("/providers/:provider_id", api.getProvider)
-	group.PUT("/providers/:provider_id", api.updateProvider)
-	group.DELETE("/providers/:provider_id", api.deleteProvider)
-	group.POST("/providers/test", api.testProvider)
-	group.GET("/provider-routes", api.listProviderRoutes)
-	group.PUT("/provider-routes/:task_type", api.updateProviderRoute)
+	group.Use(api.requireAuth())
+	group.GET("/providers", api.requireRoot(), api.listProviders)
+	group.POST("/providers", api.requireRoot(), api.createProvider)
+	group.GET("/providers/:provider_id", api.requireRoot(), api.getProvider)
+	group.PUT("/providers/:provider_id", api.requireRoot(), api.updateProvider)
+	group.DELETE("/providers/:provider_id", api.requireRoot(), api.deleteProvider)
+	group.POST("/providers/test", api.requireRoot(), api.testProvider)
+	group.GET("/provider-routes", api.requireRoot(), api.listProviderRoutes)
+	group.PUT("/provider-routes/:task_type", api.requireRoot(), api.updateProviderRoute)
 	group.GET("/skills", api.listSkills)
-	group.POST("/skills", api.createSkill)
-	group.POST("/skills/reload", api.reloadSkills)
+	group.POST("/skills", api.requireRoot(), api.createSkill)
+	group.POST("/skills/reload", api.requireRoot(), api.reloadSkills)
 	group.GET("/skills/:skill_id", api.getSkill)
 	group.POST("/context/preview", api.contextPreview)
 	group.POST("/agent/tasks", api.runAgentTask)
@@ -328,6 +338,7 @@ func (h apiHandler) createInterviewSession(c *gin.Context) {
 		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
+	req.UserID = currentUserID(c)
 	item, err := h.deps.InterviewService.CreateSession(c.Request.Context(), req)
 	if err != nil {
 		writeGinError(c, http.StatusBadRequest, "interview_session_create_failed", err.Error())
@@ -342,6 +353,10 @@ func (h apiHandler) getInterviewSession(c *gin.Context) {
 		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
 		return
 	}
+	if !canAccessUser(c, item.UserID) {
+		writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.session.v1", "item": item})
 }
 
@@ -349,6 +364,15 @@ func (h apiHandler) submitInterviewAnswer(c *gin.Context) {
 	var req interview.SubmitAnswerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	current, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+		return
+	}
+	if !canAccessUser(c, current.UserID) {
+		writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
 		return
 	}
 	resp, err := h.deps.InterviewService.SubmitAnswer(c.Request.Context(), c.Param("session_id"), req)
@@ -364,6 +388,15 @@ func (h apiHandler) submitInterviewAnswer(c *gin.Context) {
 }
 
 func (h apiHandler) finalizeInterviewSession(c *gin.Context) {
+	current, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+		return
+	}
+	if !canAccessUser(c, current.UserID) {
+		writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+		return
+	}
 	item, err := h.deps.InterviewService.Finalize(c.Request.Context(), c.Param("session_id"))
 	if err != nil {
 		writeGinError(c, http.StatusBadRequest, "interview_finalize_failed", err.Error())
@@ -373,6 +406,15 @@ func (h apiHandler) finalizeInterviewSession(c *gin.Context) {
 }
 
 func (h apiHandler) getInterviewTrace(c *gin.Context) {
+	current, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+		return
+	}
+	if !canAccessUser(c, current.UserID) {
+		writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+		return
+	}
 	items, err := h.deps.InterviewService.Trace(c.Request.Context(), c.Param("session_id"))
 	if err != nil {
 		writeGinError(c, http.StatusInternalServerError, "interview_trace_failed", err.Error())

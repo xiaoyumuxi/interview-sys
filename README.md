@@ -66,10 +66,20 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8090
 curl http://localhost:8080/healthz
 ```
 
+登录默认 root：
+
+```bash
+ACCESS_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"root@example.local","password":"RootChangeMe123!"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["tokens"]["access_token"])')
+```
+
 Context Preview：
 
 ```bash
 curl -s -X POST http://localhost:8080/api/context/preview \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"task_type":"question_generation","skill_id":"java-backend"}'
 ```
@@ -77,6 +87,11 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 ## API
 
 - `GET /healthz`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 - `GET /api/providers`
 - `POST /api/providers`
 - `GET /api/providers/{provider_id}`
@@ -112,6 +127,27 @@ Python Runtime:
 - `GET http://localhost:8090/api/runtime/memory/profile`
 - `GET http://localhost:8090/api/runtime/memory/search`
 - `GET http://localhost:8090/api/runtime/reviews/due`
+
+## Auth
+
+Go Core API 使用双 Token 鉴权：
+
+- Access Token：JWT，默认 15 分钟过期，通过 `Authorization: Bearer <token>` 访问受保护 API。
+- Refresh Token：JWT，默认 30 天过期，数据库只保存 SHA-256 哈希；刷新时会轮换并作废旧 refresh token。
+- 用户密码使用 bcrypt 哈希保存，不保存明文密码。
+- `/api/auth/register` 创建普通用户，`/api/auth/login` 返回 access/refresh token pair。
+- 除 `/healthz` 和 `/api/auth/*` 外，`/api/*` 默认需要 access token。
+- Provider 配置和 Skill 写操作需要 `root` 角色。
+
+默认 root 账号由 API 启动时 bootstrap：
+
+```text
+ROOT_EMAIL=root@example.local
+ROOT_PASSWORD=RootChangeMe123!
+ROOT_DISPLAY_NAME=Root
+```
+
+本地调试可以设置 `AUTH_DISABLED=true`，此时请求会以 `root` 身份执行；正常开发和部署不要开启。
 
 ## SQL 初始化
 

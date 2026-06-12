@@ -75,6 +75,7 @@ Storage
 ### 2.1 当前落地清单
 
 - [x] Go Core API、Gin 路由、PostgreSQL、Redis、MinIO 基础环境。
+- [x] Auth / User：JWT 双 Token、bcrypt 密码哈希、refresh token 哈希存储、默认 root。
 - [x] Provider 配置、密钥来源、任务路由和模型切换 API。
 - [x] DeepSeek 和 OpenAI-compatible Provider 兼容。
 - [x] Skill Pack 扫描、创建、热加载、lint 和提示词注入基础校验。

@@ -1,5 +1,5 @@
-INSERT INTO app_users (user_id, display_name)
-VALUES ('local-user', 'Local User')
+INSERT INTO app_users (user_id, display_name, email, password_hash, role, status)
+VALUES ('local-user', 'Local User', NULL, '', 'user', 'active')
 ON CONFLICT (user_id) DO NOTHING;
 
 INSERT INTO provider_configs (

@@ -21,6 +21,7 @@
 ### 已完成
 
 - [x] Go Core API 基础服务、Gin 路由和健康检查。
+- [x] Go Auth/User：JWT 双 Token、bcrypt 密码哈希、refresh token 哈希存储、默认 root。
 - [x] Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
 - [x] 跨平台 bootstrap / init-db / middleware manifest 检查脚本。
 - [x] Provider 配置入库，支持 DeepSeek 和 OpenAI-compatible。

@@ -9,6 +9,7 @@ Go 负责确定性业务事实、状态推进、幂等和对外 API。
 Go 当前负责：
 
 - HTTP API 和路由入口。
+- Auth / User、JWT 双 Token、root 权限和用户隔离。
 - Provider 配置、密钥来源、任务路由和模型切换。
 - Skill Registry、Skill 扫描、热加载和 lint。
 - Context Preview 的基础组装和调试接口。

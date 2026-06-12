@@ -21,6 +21,14 @@ type Config struct {
 	AIRuntimeURL                string
 	TokenBudget                 int
 	ProviderKeyEncryptionSecret string
+	AuthDisabled                bool
+	JWTAccessSecret             string
+	JWTRefreshSecret            string
+	AccessTokenTTLMinutes       int
+	RefreshTokenTTLDays         int
+	RootEmail                   string
+	RootPassword                string
+	RootDisplayName             string
 }
 
 func Load() Config {
@@ -38,6 +46,14 @@ func Load() Config {
 		AIRuntimeURL:                env("AI_RUNTIME_URL", "http://localhost:8090"),
 		TokenBudget:                 envInt("CONTEXT_TOKEN_BUDGET", 12000),
 		ProviderKeyEncryptionSecret: env("PROVIDER_KEY_ENCRYPTION_SECRET", ""),
+		AuthDisabled:                envBool("AUTH_DISABLED", false),
+		JWTAccessSecret:             env("JWT_ACCESS_SECRET", "local-dev-access-secret-change-me"),
+		JWTRefreshSecret:            env("JWT_REFRESH_SECRET", "local-dev-refresh-secret-change-me"),
+		AccessTokenTTLMinutes:       envInt("ACCESS_TOKEN_TTL_MINUTES", 15),
+		RefreshTokenTTLDays:         envInt("REFRESH_TOKEN_TTL_DAYS", 30),
+		RootEmail:                   env("ROOT_EMAIL", "root@example.local"),
+		RootPassword:                env("ROOT_PASSWORD", "RootChangeMe123!"),
+		RootDisplayName:             env("ROOT_DISPLAY_NAME", "Root"),
 	}
 }
 
