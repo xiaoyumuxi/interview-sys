@@ -1,4 +1,4 @@
-.PHONY: bootstrap init-db check-middleware run run-runtime test test-python fmt docker-up docker-down
+.PHONY: bootstrap init-db check-middleware run run-worker run-runtime test test-python fmt docker-up docker-down
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -11,6 +11,9 @@ check-middleware:
 
 run:
 	go run ./cmd/api
+
+run-worker:
+	go run ./cmd/worker
 
 run-runtime:
 	cd python-runtime && uv run uvicorn app.main:app --host 0.0.0.0 --port 8090

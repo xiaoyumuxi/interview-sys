@@ -58,12 +58,13 @@
 - Go 侧 answer idempotency 和 Redis single-flight。
 - PostgreSQL local message outbox, row-level claim, and short TTL Redis coordination without persisted lock fields.
 - Redis Stream interview event queue。
-- Redis Stream consumer group worker for answer evaluation。
+- 独立 `cmd/worker` Redis Stream consumer group worker for answer evaluation。
+- Redis Stream pending reclaim and dead-letter / poison message fallback。
 - PostgreSQL runtime snapshot。
 
 未完成：
 
-- 独立 worker 进程、失败重试扫描和 pending reclaim。
-- Memory candidate / review / profile projection。
+- Redis Stream 消费延迟指标和 worker 可观测性。
+- Python Runtime Memory candidate / review / profile projection。
 - Retrieval Harness 多索引检索。
 - 代码执行 judge worker。

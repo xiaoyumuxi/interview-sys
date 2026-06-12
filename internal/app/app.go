@@ -59,10 +59,13 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		logger.Warn("redis unavailable; single-flight and stream queue will degrade", "addr", cfg.RedisAddr, "error", err)
 	}
-	stream := workqueue.NewStream(redisClient, logger, cfg.InterviewEventsStream)
+	stream := workqueue.NewStreamWithDeadLetter(redisClient, logger, cfg.InterviewEventsStream, cfg.InterviewDeadLetterStream)
 	flights := singleflight.NewRedisFlight(redisClient, 65*time.Second, 10*time.Minute)
 	interviewService := interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream)
-	interviewService.StartWorker(context.Background())
+	if cfg.EnableEmbeddedWorker {
+		logger.Warn("embedded interview worker is enabled; prefer running cmd/worker in normal development and deployment")
+		interviewService.StartWorker(context.Background(), interview.DefaultWorkerOptions("api"))
+	}
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:           cfg,

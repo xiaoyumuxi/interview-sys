@@ -12,9 +12,10 @@ import (
 )
 
 type Stream struct {
-	client *redis.Client
-	logger *slog.Logger
-	name   string
+	client         *redis.Client
+	logger         *slog.Logger
+	name           string
+	deadLetterName string
 }
 
 type Event struct {
@@ -24,7 +25,14 @@ type Event struct {
 }
 
 func NewStream(client *redis.Client, logger *slog.Logger, name string) *Stream {
-	return &Stream{client: client, logger: logger, name: name}
+	return NewStreamWithDeadLetter(client, logger, name, name+":dead")
+}
+
+func NewStreamWithDeadLetter(client *redis.Client, logger *slog.Logger, name string, deadLetterName string) *Stream {
+	if deadLetterName == "" {
+		deadLetterName = name + ":dead"
+	}
+	return &Stream{client: client, logger: logger, name: name, deadLetterName: deadLetterName}
 }
 
 func (s *Stream) Publish(ctx context.Context, event Event) {
@@ -97,11 +105,95 @@ func (s *Stream) Ack(ctx context.Context, group string, ids ...string) {
 	}
 }
 
+func (s *Stream) ClaimPending(ctx context.Context, group string, consumer string, minIdle time.Duration, count int) ([]redis.XMessage, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("stream is unavailable")
+	}
+	messages, _, err := s.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   s.name,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  minIdle,
+		Start:    "0-0",
+		Count:    int64(count),
+	}).Result()
+	return messages, err
+}
+
+func (s *Stream) PendingOverDelivery(ctx context.Context, group string, minIdle time.Duration, maxDeliveries int64, count int64) ([]redis.XPendingExt, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("stream is unavailable")
+	}
+	items, err := s.client.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: s.name,
+		Group:  group,
+		Start:  "-",
+		End:    "+",
+		Count:  count,
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]redis.XPendingExt, 0, len(items))
+	for _, item := range items {
+		if item.Idle >= minIdle && item.RetryCount >= maxDeliveries {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (s *Stream) DeadLetter(ctx context.Context, group string, message redis.XMessage, reason string) {
+	if s == nil || s.client == nil {
+		return
+	}
+	values := map[string]any{
+		"source_stream":     s.name,
+		"source_message_id": message.ID,
+		"reason":            reason,
+		"created_at":        time.Now().Format(time.RFC3339Nano),
+	}
+	for key, value := range message.Values {
+		values[key] = value
+	}
+	if err := s.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: s.deadLetterName,
+		MaxLen: 10000,
+		Approx: true,
+		Values: values,
+	}).Err(); err != nil {
+		s.logger.Warn("dead-letter stream event failed", "stream", s.name, "dead_letter_stream", s.deadLetterName, "message_id", message.ID, "error", err)
+		return
+	}
+	s.Ack(ctx, group, message.ID)
+}
+
+func (s *Stream) DeadLetterByID(ctx context.Context, group string, messageID string, reason string) {
+	if s == nil || s.client == nil || messageID == "" {
+		return
+	}
+	streams, err := s.client.XRange(ctx, s.name, messageID, messageID).Result()
+	if err != nil || len(streams) == 0 {
+		if err != nil {
+			s.logger.Warn("load pending message for dead-letter failed", "stream", s.name, "message_id", messageID, "error", err)
+		}
+		return
+	}
+	s.DeadLetter(ctx, group, streams[0], reason)
+}
+
 func (s *Stream) Name() string {
 	if s == nil {
 		return ""
 	}
 	return s.name
+}
+
+func (s *Stream) DeadLetterName() string {
+	if s == nil {
+		return ""
+	}
+	return s.deadLetterName
 }
 
 func (s *Stream) TryLock(ctx context.Context, key string, ttl time.Duration) (string, bool, error) {

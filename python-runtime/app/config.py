@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_compatible_chat_model: str = ""
     openai_compatible_api_key: str = ""
     llm_timeout_seconds: float = 30.0
+    memory_db_path: str = "data/runtime_memory.sqlite3"
 
 
 settings = Settings()

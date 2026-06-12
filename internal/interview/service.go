@@ -17,6 +17,8 @@ import (
 	"ai-interview-platform/internal/singleflight"
 	"ai-interview-platform/internal/store"
 	"ai-interview-platform/internal/workqueue"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -50,12 +52,78 @@ func NewService(db *sql.DB, store *store.Store, engine *contextengine.Engine, ru
 	return &Service{db: db, store: store, engine: engine, runtime: runtime, flights: flights, queue: queue}
 }
 
-func (s *Service) StartWorker(ctx context.Context) {
-	const group = "interview-workers"
-	consumer := "api-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	s.queue.EnsureGroup(ctx, group)
-	go s.dispatchOutboxLoop(ctx)
-	go s.reclaimStaleTurnsLoop(ctx)
+type WorkerOptions struct {
+	Group                string
+	Consumer             string
+	BatchSize            int
+	Block                time.Duration
+	PendingMinIdle       time.Duration
+	MaxDeliveries        int64
+	OutboxBatchSize      int
+	OutboxInterval       time.Duration
+	StaleTurnInterval    time.Duration
+	PendingReclaimPeriod time.Duration
+}
+
+func DefaultWorkerOptions(role string) WorkerOptions {
+	if strings.TrimSpace(role) == "" {
+		role = "worker"
+	}
+	return WorkerOptions{
+		Group:                "interview-workers",
+		Consumer:             role + "-" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		BatchSize:            8,
+		Block:                2 * time.Second,
+		PendingMinIdle:       30 * time.Second,
+		MaxDeliveries:        5,
+		OutboxBatchSize:      25,
+		OutboxInterval:       300 * time.Millisecond,
+		StaleTurnInterval:    30 * time.Second,
+		PendingReclaimPeriod: 10 * time.Second,
+	}
+}
+
+func (o WorkerOptions) withDefaults() WorkerOptions {
+	defaults := DefaultWorkerOptions("worker")
+	if o.Group == "" {
+		o.Group = defaults.Group
+	}
+	if o.Consumer == "" {
+		o.Consumer = defaults.Consumer
+	}
+	if o.BatchSize <= 0 {
+		o.BatchSize = defaults.BatchSize
+	}
+	if o.Block <= 0 {
+		o.Block = defaults.Block
+	}
+	if o.PendingMinIdle <= 0 {
+		o.PendingMinIdle = defaults.PendingMinIdle
+	}
+	if o.MaxDeliveries <= 0 {
+		o.MaxDeliveries = defaults.MaxDeliveries
+	}
+	if o.OutboxBatchSize <= 0 {
+		o.OutboxBatchSize = defaults.OutboxBatchSize
+	}
+	if o.OutboxInterval <= 0 {
+		o.OutboxInterval = defaults.OutboxInterval
+	}
+	if o.StaleTurnInterval <= 0 {
+		o.StaleTurnInterval = defaults.StaleTurnInterval
+	}
+	if o.PendingReclaimPeriod <= 0 {
+		o.PendingReclaimPeriod = defaults.PendingReclaimPeriod
+	}
+	return o
+}
+
+func (s *Service) StartWorker(ctx context.Context, opts WorkerOptions) {
+	opts = opts.withDefaults()
+	s.queue.EnsureGroup(ctx, opts.Group)
+	go s.dispatchOutboxLoop(ctx, opts.OutboxBatchSize, opts.OutboxInterval)
+	go s.reclaimStaleTurnsLoop(ctx, opts.StaleTurnInterval)
+	go s.reclaimPendingLoop(ctx, opts)
 	go func() {
 		for {
 			select {
@@ -63,18 +131,22 @@ func (s *Service) StartWorker(ctx context.Context) {
 				return
 			default:
 			}
-			messages, err := s.queue.ReadGroup(ctx, group, consumer, 8, 2*time.Second)
+			messages, err := s.queue.ReadGroup(ctx, opts.Group, opts.Consumer, opts.BatchSize, opts.Block)
 			if err != nil {
 				time.Sleep(time.Second)
 				continue
 			}
-			for _, message := range messages {
-				if s.handleStreamMessage(ctx, message.Values) {
-					s.queue.Ack(ctx, group, message.ID)
-				}
-			}
+			s.handleMessages(ctx, opts.Group, messages)
 		}
 	}()
+}
+
+func (s *Service) handleMessages(ctx context.Context, group string, messages []redis.XMessage) {
+	for _, message := range messages {
+		if s.handleStreamMessage(ctx, message.Values) {
+			s.queue.Ack(ctx, group, message.ID)
+		}
+	}
 }
 
 type outboxMessage struct {
@@ -86,7 +158,7 @@ type outboxMessage struct {
 	MaxAttempts int
 }
 
-func (s *Service) dispatchOutboxLoop(ctx context.Context) {
+func (s *Service) dispatchOutboxLoop(ctx context.Context, batchSize int, interval time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -98,9 +170,9 @@ func (s *Service) dispatchOutboxLoop(ctx context.Context) {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		s.dispatchOutboxBatch(ctx, 25)
+		s.dispatchOutboxBatch(ctx, batchSize)
 		s.queue.Unlock(context.Background(), "lock:async_messages:dispatch:"+s.queue.Name(), token)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(interval)
 	}
 }
 
@@ -198,14 +270,42 @@ SET status='failed', last_error=$2, updated_at=now()
 WHERE message_id=$1`, message.MessageID, cause.Error())
 }
 
-func (s *Service) reclaimStaleTurnsLoop(ctx context.Context) {
+func (s *Service) reclaimStaleTurnsLoop(ctx context.Context, interval time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(30 * time.Second):
+		case <-time.After(interval):
 			s.reclaimStaleTurns(ctx)
 		}
+	}
+}
+
+func (s *Service) reclaimPendingLoop(ctx context.Context, opts WorkerOptions) {
+	ticker := time.NewTicker(opts.PendingReclaimPeriod)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.deadLetterPoisonMessages(ctx, opts)
+			messages, err := s.queue.ClaimPending(ctx, opts.Group, opts.Consumer, opts.PendingMinIdle, opts.BatchSize)
+			if err != nil {
+				continue
+			}
+			s.handleMessages(ctx, opts.Group, messages)
+		}
+	}
+}
+
+func (s *Service) deadLetterPoisonMessages(ctx context.Context, opts WorkerOptions) {
+	items, err := s.queue.PendingOverDelivery(ctx, opts.Group, opts.PendingMinIdle, opts.MaxDeliveries, int64(opts.BatchSize))
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		s.queue.DeadLetterByID(ctx, opts.Group, item.ID, fmt.Sprintf("pending delivery count exceeded max_deliveries=%d", opts.MaxDeliveries))
 	}
 }
 

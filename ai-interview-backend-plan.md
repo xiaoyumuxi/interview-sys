@@ -87,13 +87,14 @@ Storage
 - [x] PostgreSQL local outbox `async_messages`，支持 Redis Stream 补投、重试和 dedup。
 - [x] Redis single-flight、短 TTL Redis 协调、stale turn reclaim 和数据库幂等。
 - [x] PostgreSQL runtime snapshot。
+- [x] 独立 `cmd/worker` 进程，API 默认只负责入队和查询。
+- [x] Redis Stream pending reclaim、dead-letter / poison message 兜底。
 
 ### 2.2 后续任务清单
 
-- [ ] 独立 worker 进程：把当前 API 内置 worker 拆出。
-- [ ] Redis Stream 兜底增强：pending reclaim、dead-letter、poison message、消费延迟指标。
+- [ ] Redis Stream 消费延迟指标和 worker 可观测性。
 - [ ] Retrieval Harness MVP：多索引检索、证据选择、debug trace。
-- [ ] Memory candidate / review / profile projection。
+- [ ] Python Runtime Memory candidate / review / profile projection。
 - [ ] Docker sandbox judge worker。
 - [ ] Final report generation。
 - [ ] Evaluation Harness 和成本/质量回归。
@@ -946,13 +947,14 @@ POST   /api/rag/debug
 ### 12.4 Memory
 
 ```text
-GET    /api/memory/candidates
-POST   /api/memory/candidates/{id}/approve
-POST   /api/memory/candidates/{id}/reject
-POST   /api/memory/candidates/{id}/edit
-GET    /api/memory/profile
-GET    /api/memory/search
-GET    /api/reviews/due
+GET    /api/runtime/memory/candidates
+POST   /api/runtime/memory/candidates
+POST   /api/runtime/memory/candidates/{id}/approve
+POST   /api/runtime/memory/candidates/{id}/reject
+POST   /api/runtime/memory/candidates/{id}/edit
+GET    /api/runtime/memory/profile
+GET    /api/runtime/memory/search
+GET    /api/runtime/reviews/due
 ```
 
 ### 12.5 Interview

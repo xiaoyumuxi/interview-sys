@@ -10,15 +10,26 @@ Python Runtime 负责非确定性 AI 推理：
 - Follow-up Decision。
 - Summary。
 - Memory Candidate Extraction。
+- Memory review。
+- Profile Projection。
+- Review scheduler。
 - 后续 Retrieval Harness / LangGraph Flow。
 
-Go Core API 仍负责状态机、幂等、single-flight、落库、审计、Provider 路由和人工审核。Python 不直接推进面试状态，不直接写长期画像，不决定 Provider task routing。
+Go Core API 仍负责状态机、幂等、single-flight、审计和 Provider 路由。Memory candidate、review、profile projection 和 review scheduler 放在 Python Runtime；Python 不直接推进面试状态，不决定 Provider task routing。
 
 ## API
 
 ```text
 GET  /healthz
 POST /api/runtime/tasks
+GET  /api/runtime/memory/candidates
+POST /api/runtime/memory/candidates
+POST /api/runtime/memory/candidates/{candidate_id}/approve
+POST /api/runtime/memory/candidates/{candidate_id}/reject
+POST /api/runtime/memory/candidates/{candidate_id}/edit
+GET  /api/runtime/memory/profile
+GET  /api/runtime/memory/search
+GET  /api/runtime/reviews/due
 ```
 
 `POST /api/runtime/tasks` 支持：

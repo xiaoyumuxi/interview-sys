@@ -39,12 +39,13 @@
 - [x] Redis single-flight、短 TTL Redis 协调、数据库幂等约束和 stale turn reclaim。
 - [x] 不在数据库中保存 `locked_by` / `locked_until` 这类持久锁字段。
 - [x] PostgreSQL runtime snapshot，用于 Redis 丢失后的业务事实恢复。
+- [x] 独立 `cmd/worker` 进程，API 默认只负责入队和查询。
+- [x] Redis Stream pending message reclaim 和 dead-letter / poison message 兜底。
 
 ### 下一批待做
 
-- [ ] 拆出独立 worker 进程，API 进程只负责入队和查询。
-- [ ] 增强 Redis Stream 兜底：pending message reclaim、dead-letter / poison message 策略、消费滞后监控。
-- [ ] Memory candidate / review / profile projection。
+- [ ] Redis Stream 消费滞后监控和 worker 指标。
+- [ ] Python Runtime Memory candidate / review / profile projection。
 - [ ] Retrieval Harness 多索引检索：full-text、summary、vector、recent history、approved memory。
 - [ ] 代码执行 judge worker：Docker sandbox、资源限制、无网络、测试结果追踪。
 - [ ] Final report generation：面试总结、薄弱点、代码题表现和复习建议。
@@ -77,14 +78,14 @@
 [x] P2.5 Coding Question Bank MVP
 [ ] P3 Memory Candidate + Profile Projection
 [x] P4 Interview Runtime MVP
-[ ] P4.5 Async Worker Hardening
+[x] P4.5 Async Worker Hardening
 [ ] P5 Retrieval Harness 增强版
 [ ] P6 Evaluation Harness + 成本/质量评估
 [ ] P7 前端接入准备
 [ ] P8 语音、搜索、招聘扩展预留
 ```
 
-当前已经做到 P4 的 Go 后端闭环：Provider、Skill、Context Preview、Python Runtime、代码题库、异步 Interview Runtime 已可串起来。下一步优先补 P4.5，把内置 worker 拆成独立进程并完善 Redis Stream 兜底，再进入 P3/P5。
+当前已经做到 P4.5 的 Go 后端闭环：Provider、Skill、Context Preview、Python Runtime、代码题库、异步 Interview Runtime 和独立 worker 已可串起来。下一步优先进入 P3/P5，补 Memory candidate / review / profile projection 和 Retrieval Harness 多索引检索。
 
 ---
 

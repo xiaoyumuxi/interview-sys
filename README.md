@@ -20,6 +20,7 @@ P0/P1 基础环境：
 - [ai-interview-roadmap.md](/Users/yaoyao/Documents/SelfProject/ai-interview-roadmap.md)
 - [ai-interview-backend-plan.md](/Users/yaoyao/Documents/SelfProject/ai-interview-backend-plan.md)
 - [project-reference-map.md](/Users/yaoyao/Documents/SelfProject/project-reference-map.md)
+- [docs/go-python-responsibilities.md](/Users/yaoyao/Documents/SelfProject/docs/go-python-responsibilities.md)
 
 ## 本地启动
 
@@ -42,6 +43,7 @@ cp .env.example .env
 docker compose up -d
 ./scripts/init-db.sh
 go run ./cmd/api
+go run ./cmd/worker
 ```
 
 启动 Python Runtime：
@@ -102,6 +104,14 @@ Python Runtime:
 
 - `GET http://localhost:8090/healthz`
 - `POST http://localhost:8090/api/runtime/tasks`
+- `GET http://localhost:8090/api/runtime/memory/candidates`
+- `POST http://localhost:8090/api/runtime/memory/candidates`
+- `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/approve`
+- `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/reject`
+- `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/edit`
+- `GET http://localhost:8090/api/runtime/memory/profile`
+- `GET http://localhost:8090/api/runtime/memory/search`
+- `GET http://localhost:8090/api/runtime/reviews/due`
 
 ## SQL 初始化
 
@@ -126,7 +136,9 @@ Go 维护面试运行时状态机和幂等边界：
 - `interview_runtime_snapshots` 保存 PostgreSQL 冷快照，Redis 丢失后仍能恢复业务事实。
 - Redis single-flight 折叠同一答案的重复 AI 评估调用。
 - 本地消息表 `async_messages` 先落库，再由 dispatcher 补投 Redis Stream `INTERVIEW_EVENTS_STREAM`；Redis 掉线时消息会留在数据库里等待重试。
-- Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，API 进程内置 consumer group worker 会消费 answer evaluation；后续 judge、report、memory extraction 可以继续拆成独立 worker。
+- Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，独立 `cmd/worker` 进程会消费 answer evaluation；API 进程默认只负责入队和查询。
+- Worker 会 reclaim Redis Stream pending message；超过投递上限的 poison message 会进入 `INTERVIEW_DEAD_LETTER_STREAM`。
+- 本地兼容模式可以设置 `ENABLE_EMBEDDED_WORKER=true`，让 API 进程内启动 worker，但常规开发和部署应使用独立 worker。
 - 查询 `GET /api/interview-sessions/{session_id}` 或 `GET /api/interview-sessions/{session_id}/trace` 获取异步结果。
 
 ## 中间件版本
