@@ -28,13 +28,17 @@ func NewStream(client *redis.Client, logger *slog.Logger, name string) *Stream {
 }
 
 func (s *Stream) Publish(ctx context.Context, event Event) {
+	_, _ = s.PublishWithID(ctx, event)
+}
+
+func (s *Stream) PublishWithID(ctx context.Context, event Event) (string, error) {
 	if s == nil || s.client == nil {
-		return
+		return "", errors.New("stream is unavailable")
 	}
 	payload, err := json.Marshal(event.Payload)
 	if err != nil {
 		s.logger.Warn("marshal stream event failed", "event_type", event.Type, "error", err)
-		return
+		return "", err
 	}
 	cmd := s.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: s.name,
@@ -49,7 +53,9 @@ func (s *Stream) Publish(ctx context.Context, event Event) {
 	})
 	if err := cmd.Err(); err != nil {
 		s.logger.Warn("publish stream event failed", "stream", s.name, "event_type", event.Type, "error", err)
+		return "", err
 	}
+	return cmd.Val(), nil
 }
 
 func (s *Stream) EnsureGroup(ctx context.Context, group string) {
@@ -89,4 +95,35 @@ func (s *Stream) Ack(ctx context.Context, group string, ids ...string) {
 	if err := s.client.XAck(ctx, s.name, group, ids...).Err(); err != nil {
 		s.logger.Warn("ack stream messages failed", "stream", s.name, "group", group, "error", err)
 	}
+}
+
+func (s *Stream) Name() string {
+	if s == nil {
+		return ""
+	}
+	return s.name
+}
+
+func (s *Stream) TryLock(ctx context.Context, key string, ttl time.Duration) (string, bool, error) {
+	if s == nil || s.client == nil || key == "" {
+		return "", false, errors.New("stream is unavailable")
+	}
+	token := time.Now().Format(time.RFC3339Nano)
+	ok, err := s.client.SetNX(ctx, key, token, ttl).Result()
+	if err != nil || !ok {
+		return token, ok, err
+	}
+	return token, true, nil
+}
+
+func (s *Stream) Unlock(ctx context.Context, key string, token string) {
+	if s == nil || s.client == nil || key == "" {
+		return
+	}
+	const script = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0`
+	_ = s.client.Eval(ctx, script, []string{key}, token).Err()
 }

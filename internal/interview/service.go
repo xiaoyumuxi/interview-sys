@@ -54,6 +54,8 @@ func (s *Service) StartWorker(ctx context.Context) {
 	const group = "interview-workers"
 	consumer := "api-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	s.queue.EnsureGroup(ctx, group)
+	go s.dispatchOutboxLoop(ctx)
+	go s.reclaimStaleTurnsLoop(ctx)
 	go func() {
 		for {
 			select {
@@ -73,6 +75,163 @@ func (s *Service) StartWorker(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+type outboxMessage struct {
+	MessageID   string
+	EventType   string
+	AggregateID string
+	Payload     []byte
+	Attempts    int
+	MaxAttempts int
+}
+
+func (s *Service) dispatchOutboxLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		token, ok, err := s.queue.TryLock(ctx, "lock:async_messages:dispatch:"+s.queue.Name(), 10*time.Second)
+		if err != nil || !ok {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		s.dispatchOutboxBatch(ctx, 25)
+		s.queue.Unlock(context.Background(), "lock:async_messages:dispatch:"+s.queue.Name(), token)
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func (s *Service) dispatchOutboxBatch(ctx context.Context, limit int) {
+	messages, err := s.claimOutboxMessages(ctx, limit)
+	if err != nil {
+		return
+	}
+	for _, message := range messages {
+		var payload map[string]any
+		if err := json.Unmarshal(message.Payload, &payload); err != nil {
+			s.markOutboxFailed(ctx, message, err)
+			continue
+		}
+		redisID, err := s.queue.PublishWithID(ctx, workqueue.Event{
+			Type:      message.EventType,
+			SessionID: message.AggregateID,
+			Payload:   payload,
+		})
+		if err != nil {
+			s.releaseOutboxForRetry(ctx, message, err)
+			continue
+		}
+		_, _ = s.db.ExecContext(ctx, `
+UPDATE async_messages
+SET status='dispatched', redis_message_id=$2, dispatched_at=now(),
+    last_error='', updated_at=now()
+WHERE message_id=$1`, message.MessageID, redisID)
+	}
+}
+
+func (s *Service) claimOutboxMessages(ctx context.Context, limit int) ([]outboxMessage, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `
+SELECT message_id, event_type, aggregate_id, payload, attempts, max_attempts
+FROM async_messages
+WHERE status IN ('pending','failed')
+  AND next_retry_at <= now()
+  AND attempts < max_attempts
+ORDER BY created_at
+LIMIT $1
+FOR UPDATE SKIP LOCKED`, limit)
+	if err != nil {
+		return nil, err
+	}
+	var messages []outboxMessage
+	for rows.Next() {
+		var message outboxMessage
+		if err := rows.Scan(&message.MessageID, &message.EventType, &message.AggregateID, &message.Payload, &message.Attempts, &message.MaxAttempts); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, message := range messages {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE async_messages
+SET status='dispatching', attempts=attempts+1, updated_at=now()
+WHERE message_id=$1`, message.MessageID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func (s *Service) releaseOutboxForRetry(ctx context.Context, message outboxMessage, cause error) {
+	delaySeconds := (message.Attempts + 1) * 5
+	if delaySeconds > 60 {
+		delaySeconds = 60
+	}
+	_, _ = s.db.ExecContext(ctx, `
+UPDATE async_messages
+SET status='pending', next_retry_at=now() + ($2 * interval '1 second'),
+    last_error=$3, updated_at=now()
+WHERE message_id=$1`, message.MessageID, delaySeconds, cause.Error())
+}
+
+func (s *Service) markOutboxFailed(ctx context.Context, message outboxMessage, cause error) {
+	_, _ = s.db.ExecContext(ctx, `
+UPDATE async_messages
+SET status='failed', last_error=$2, updated_at=now()
+WHERE message_id=$1`, message.MessageID, cause.Error())
+}
+
+func (s *Service) reclaimStaleTurnsLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+			s.reclaimStaleTurns(ctx)
+		}
+	}
+}
+
+func (s *Service) reclaimStaleTurns(ctx context.Context) {
+	if err := validateTurnTransition(TurnRunning, TurnQueued); err != nil {
+		return
+	}
+	rows, err := s.db.QueryContext(ctx, `
+UPDATE interview_turns
+SET turn_status=$2, error_text='requeued after stale running state', updated_at=now()
+WHERE turn_status=$1 AND updated_at < now() - interval '2 minutes'
+RETURNING turn_id`, TurnRunning, TurnQueued)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var turnID string
+		if err := rows.Scan(&turnID); err != nil {
+			continue
+		}
+		_, _ = s.db.ExecContext(ctx, `
+UPDATE async_messages
+SET status='pending', next_retry_at=now(), last_error='requeued after stale running turn', updated_at=now()
+WHERE dedup_key=$1`, "interview.answer_submitted:"+turnID)
+	}
 }
 
 type CreateSessionRequest struct {
@@ -180,7 +339,7 @@ INSERT INTO interview_sessions (
 	if err != nil {
 		return Session{}, err
 	}
-	s.queue.Publish(ctx, workqueue.Event{Type: "interview.session_created", SessionID: sessionID, Payload: map[string]any{"skill_id": req.SkillID, "question_id": question.QuestionID}})
+	_ = s.enqueueOutbox(ctx, workqueue.Event{Type: "interview.session_created", SessionID: sessionID, Payload: map[string]any{"skill_id": req.SkillID, "question_id": question.QuestionID}}, "interview.session_created:"+sessionID, "interview_session", sessionID)
 	if err := s.refreshSnapshot(ctx, sessionID, "create_session"); err != nil {
 		return Session{}, err
 	}
@@ -232,8 +391,14 @@ func (s *Service) SubmitAnswer(ctx context.Context, sessionID string, req Submit
 	if session.SessionStatus == SessionFinished || session.FlowStatus == FlowCompleted {
 		return nil, errors.New("interview session is already finished")
 	}
+	if err := validateSessionTransition(session.SessionStatus, SessionInProgress); err != nil {
+		return nil, err
+	}
+	if err := validateFlowTransition(session.FlowStatus, FlowEvaluating); err != nil {
+		return nil, err
+	}
 
-	response, turnID, err := s.enqueueAnswer(ctx, session, req, requestID, answerHash, answer)
+	response, _, err := s.enqueueAnswer(ctx, session, req, requestID, answerHash, answer)
 	if err != nil {
 		if replay, ok, replayErr := s.findReplay(ctx, sessionID, requestID, session.CurrentQuestionNumber, session.AnswerRound, answerHash); replayErr != nil {
 			return nil, replayErr
@@ -242,20 +407,23 @@ func (s *Service) SubmitAnswer(ctx context.Context, sessionID string, req Submit
 		}
 		return nil, err
 	}
-	s.queue.Publish(ctx, workqueue.Event{
-		Type:      "interview.answer_submitted",
-		SessionID: sessionID,
-		Payload: map[string]any{
-			"turn_id":         turnID,
-			"request_id":      requestID,
-			"question_number": session.CurrentQuestionNumber,
-			"answer_round":    session.AnswerRound,
-		},
-	})
 	return response, nil
 }
 
 func (s *Service) Finalize(ctx context.Context, sessionID string) (Session, error) {
+	current, err := s.loadSession(ctx, sessionID, false)
+	if err != nil {
+		return Session{}, err
+	}
+	if current.SessionID == "" {
+		return Session{}, sql.ErrNoRows
+	}
+	if err := validateSessionTransition(current.SessionStatus, SessionFinished); err != nil {
+		return Session{}, err
+	}
+	if err := validateFlowTransition(current.FlowStatus, FlowCompleted); err != nil {
+		return Session{}, err
+	}
 	result, err := s.db.ExecContext(ctx, `
 UPDATE interview_sessions
 SET session_status=$2, flow_status=$3, finished_at=COALESCE(finished_at, now()), updated_at=now()
@@ -267,7 +435,7 @@ WHERE session_id=$1`,
 	if count, _ := result.RowsAffected(); count == 0 {
 		return Session{}, sql.ErrNoRows
 	}
-	s.queue.Publish(ctx, workqueue.Event{Type: "interview.session_finalized", SessionID: sessionID, Payload: map[string]any{"source": "api"}})
+	_ = s.enqueueOutbox(ctx, workqueue.Event{Type: "interview.session_finalized", SessionID: sessionID, Payload: map[string]any{"source": "api"}}, "interview.session_finalized:"+sessionID, "interview_session", sessionID)
 	_ = s.refreshSnapshot(ctx, sessionID, "finalize")
 	return s.GetSession(ctx, sessionID)
 }
@@ -317,11 +485,51 @@ WHERE session_id=$1 AND flow_status <> $4`,
 	if err != nil {
 		return nil, "", err
 	}
+	if err := s.enqueueOutboxTx(ctx, tx, workqueue.Event{
+		Type:      "interview.answer_submitted",
+		SessionID: session.SessionID,
+		Payload: map[string]any{
+			"turn_id":         turnID,
+			"request_id":      requestID,
+			"question_number": session.CurrentQuestionNumber,
+			"answer_round":    session.AnswerRound,
+		},
+	}, "interview.answer_submitted:"+turnID, "interview_turn", turnID); err != nil {
+		return nil, "", err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, "", err
 	}
 	_ = s.refreshSnapshot(ctx, session.SessionID, "answer_queued")
 	return response, turnID, nil
+}
+
+func (s *Service) enqueueOutbox(ctx context.Context, event workqueue.Event, dedupKey string, aggregateType string, aggregateID string) error {
+	payload, err := json.Marshal(event.Payload)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO async_messages (
+  message_id, stream_name, event_type, aggregate_type, aggregate_id, dedup_key, payload, status, next_retry_at, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',now(),now())
+ON CONFLICT (stream_name, dedup_key) DO NOTHING`,
+		store.NewID("msg"), s.queue.Name(), event.Type, aggregateType, aggregateID, dedupKey, payload)
+	return err
+}
+
+func (s *Service) enqueueOutboxTx(ctx context.Context, tx *sql.Tx, event workqueue.Event, dedupKey string, aggregateType string, aggregateID string) error {
+	payload, err := json.Marshal(event.Payload)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO async_messages (
+  message_id, stream_name, event_type, aggregate_type, aggregate_id, dedup_key, payload, status, next_retry_at, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',now(),now())
+ON CONFLICT (stream_name, dedup_key) DO NOTHING`,
+		store.NewID("msg"), s.queue.Name(), event.Type, aggregateType, aggregateID, dedupKey, payload)
+	return err
 }
 
 func (s *Service) handleStreamMessage(ctx context.Context, values map[string]any) bool {
@@ -359,10 +567,17 @@ func (s *Service) ProcessTurn(ctx context.Context, turnID string) error {
 	if session.SessionID == "" {
 		return sql.ErrNoRows
 	}
+	lockKey := "lock:turn:" + turnID
+	lockToken, ok, err := s.queue.TryLock(ctx, lockKey, 2*time.Minute)
+	if err != nil || !ok {
+		return err
+	}
+	defer s.queue.Unlock(context.Background(), lockKey, lockToken)
 	claimed, err := s.claimTurn(ctx, turnID)
 	if err != nil || !claimed {
 		return err
 	}
+	turn.TurnStatus = TurnRunning
 	flightKey := strings.Join([]string{
 		"interview-evaluation",
 		turn.SessionID,
@@ -383,6 +598,9 @@ func (s *Service) ProcessTurn(ctx context.Context, turnID string) error {
 	})
 	if err != nil {
 		if errors.Is(err, singleflight.ErrInFlight) {
+			if transitionErr := validateTurnTransition(TurnRunning, TurnQueued); transitionErr != nil {
+				return transitionErr
+			}
 			_, _ = s.db.ExecContext(ctx, `UPDATE interview_turns SET turn_status=$2, updated_at=now() WHERE turn_id=$1`, turnID, TurnQueued)
 			return err
 		}
@@ -398,9 +616,12 @@ func (s *Service) ProcessTurn(ctx context.Context, turnID string) error {
 }
 
 func (s *Service) claimTurn(ctx context.Context, turnID string) (bool, error) {
+	if err := validateTurnTransition(TurnQueued, TurnRunning); err != nil {
+		return false, err
+	}
 	result, err := s.db.ExecContext(ctx, `
 UPDATE interview_turns
-SET turn_status=$2, updated_at=now()
+SET turn_status=$2, processing_attempts=processing_attempts+1, updated_at=now()
 WHERE turn_id=$1 AND turn_status=$3`,
 		turnID, TurnRunning, TurnQueued)
 	if err != nil {
@@ -411,6 +632,26 @@ WHERE turn_id=$1 AND turn_status=$3`,
 }
 
 func (s *Service) markTurnFailed(ctx context.Context, turnID string, sessionID string, cause error) error {
+	turn, err := s.loadTurn(ctx, turnID)
+	if err != nil {
+		return err
+	}
+	if turn.TurnID == "" {
+		return sql.ErrNoRows
+	}
+	session, err := s.loadSession(ctx, sessionID, false)
+	if err != nil {
+		return err
+	}
+	if session.SessionID == "" {
+		return sql.ErrNoRows
+	}
+	if err := validateTurnTransition(turn.TurnStatus, TurnFailed); err != nil {
+		return err
+	}
+	if err := validateSessionTransition(session.SessionStatus, SessionFailed); err != nil {
+		return err
+	}
 	message := cause.Error()
 	response := map[string]any{
 		"schema_version": "interview.answer.failed.v1",
@@ -420,18 +661,21 @@ func (s *Service) markTurnFailed(ctx context.Context, turnID string, sessionID s
 		"error":          message,
 	}
 	raw, _ := json.Marshal(response)
-	_, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 UPDATE interview_turns
 SET turn_status=$2, error_text=$3, response=$4, updated_at=now()
-WHERE turn_id=$1`, turnID, TurnFailed, message, raw)
+WHERE turn_id=$1 AND turn_status=$5`, turnID, TurnFailed, message, raw, turn.TurnStatus)
 	if err != nil {
 		return err
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return errors.New("turn state changed before failure could be recorded")
 	}
 	_, _ = s.db.ExecContext(ctx, `
 UPDATE interview_sessions
 SET session_status=$2, last_error=$3, updated_at=now()
 WHERE session_id=$1`, sessionID, SessionFailed, message)
-	s.queue.Publish(ctx, workqueue.Event{Type: "interview.answer_failed", SessionID: sessionID, Payload: response})
+	_ = s.enqueueOutbox(ctx, workqueue.Event{Type: "interview.answer_failed", SessionID: sessionID, Payload: response}, "interview.answer_failed:"+turnID, "interview_turn", turnID)
 	_ = s.refreshSnapshot(ctx, sessionID, "answer_failed")
 	return nil
 }
@@ -531,6 +775,15 @@ func (s *Service) persistAnswerResult(ctx context.Context, session Session, turn
 			finished = true
 		}
 	}
+	if err := validateTurnTransition(turn.TurnStatus, TurnCompleted); err != nil {
+		return err
+	}
+	if err := validateSessionTransition(session.SessionStatus, nextStatus); err != nil {
+		return err
+	}
+	if err := validateFlowTransition(session.FlowStatus, nextFlow); err != nil {
+		return err
+	}
 	response := map[string]any{
 		"schema_version":       "interview.answer.v1",
 		"session_id":           session.SessionID,
@@ -581,7 +834,7 @@ WHERE session_id=$1`,
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	s.queue.Publish(ctx, workqueue.Event{Type: "interview.answer_evaluated", SessionID: session.SessionID, Payload: response})
+	_ = s.enqueueOutbox(ctx, workqueue.Event{Type: "interview.answer_evaluated", SessionID: session.SessionID, Payload: response}, "interview.answer_evaluated:"+turn.TurnID, "interview_turn", turn.TurnID)
 	_ = s.refreshSnapshot(ctx, session.SessionID, "answer")
 	return nil
 }

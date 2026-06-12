@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS interview_turns (
     answer_hash TEXT NOT NULL,
     user_answer TEXT NOT NULL,
     turn_status TEXT NOT NULL DEFAULT 'queued' CHECK (turn_status IN ('queued', 'running', 'completed', 'failed')),
+    processing_attempts INTEGER NOT NULL DEFAULT 0,
     evaluation JSONB NOT NULL DEFAULT '{}'::jsonb,
     follow_up_needed BOOLEAN NOT NULL DEFAULT FALSE,
     follow_up_question TEXT NOT NULL DEFAULT '',
@@ -199,6 +200,7 @@ CREATE TABLE IF NOT EXISTS interview_turns (
 ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS turn_status TEXT NOT NULL DEFAULT 'completed';
 ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS error_text TEXT NOT NULL DEFAULT '';
 ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE interview_turns ADD COLUMN IF NOT EXISTS processing_attempts INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_interview_turns_session_created ON interview_turns (session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_interview_turns_status ON interview_turns (turn_status, updated_at);
@@ -210,3 +212,29 @@ CREATE TABLE IF NOT EXISTS interview_runtime_snapshots (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS async_messages (
+    message_id TEXT PRIMARY KEY,
+    stream_name TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    aggregate_type TEXT NOT NULL DEFAULT '',
+    aggregate_id TEXT NOT NULL DEFAULT '',
+    dedup_key TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dispatching', 'dispatched', 'failed')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 20,
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    redis_message_id TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    dispatched_at TIMESTAMPTZ,
+    UNIQUE (stream_name, dedup_key)
+);
+
+ALTER TABLE async_messages DROP COLUMN IF EXISTS locked_by;
+ALTER TABLE async_messages DROP COLUMN IF EXISTS locked_until;
+
+CREATE INDEX IF NOT EXISTS idx_async_messages_dispatch ON async_messages (status, next_retry_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_async_messages_aggregate ON async_messages (aggregate_type, aggregate_id, created_at);

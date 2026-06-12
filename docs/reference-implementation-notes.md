@@ -24,7 +24,7 @@
 当前落地：
 
 - `agent_traces` 已记录 Go 调 Python Runtime 的输入、上下文和输出。
-- single-flight 和完整面试状态机尚未落地，后续放在 Go Core，不放在 Python Runtime。
+- Go Core 已落地 Redis single-flight，并把 session / flow / turn 三层状态机放在 Go 内集中校验。
 
 ### TechSpar
 
@@ -54,8 +54,9 @@
 - CodeTop100 / 后端工程题库基础 schema 和查询 API。
 - Docker Compose 中间件固定版本和初始化脚本。
 - Provider 配置的 CRUD API 和加密存储。
-- Go Interview Runtime 基础状态机。
+- Go Interview Runtime session / flow / turn 状态机。
 - Go 侧 answer idempotency 和 Redis single-flight。
+- PostgreSQL local message outbox, row-level claim, and short TTL Redis coordination without persisted lock fields.
 - Redis Stream interview event queue。
 - Redis Stream consumer group worker for answer evaluation。
 - PostgreSQL runtime snapshot。

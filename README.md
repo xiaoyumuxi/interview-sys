@@ -111,11 +111,15 @@ Python Runtime:
 
 Go 维护面试运行时状态机和幂等边界：
 
-- `interview_sessions` 区分 `session_status` 和 `flow_status`。
+- `interview_sessions` 区分 `session_status` 和 `flow_status`，合法流转集中在 Go 状态机里校验。
+- Session 状态：`READY -> IN_PROGRESS -> FINISHED/FAILED`，也允许未答题时 `READY -> FINISHED/FAILED`。
+- Flow 状态：`INIT -> ASKING -> EVALUATING -> ASKING/FOLLOW_UP/COMPLETED`，追问回合走 `FOLLOW_UP -> EVALUATING`。
 - `POST /api/interview-sessions/{session_id}/answers` 返回 `202 Accepted`，先创建 queued turn，再由 Redis Stream worker 异步评估。
-- `interview_turns` 用 `turn_status` 记录 `queued/running/completed/failed`，并用 `request_id` 与 `session_id + question_number + answer_round + answer_hash` 做重复提交回放。
+- `interview_turns` 用 `turn_status` 记录 `queued/running/completed/failed`，turn 状态机只允许 `queued -> running -> completed/failed`，异常抢占可回到 `queued` 重试。
+- 表里不保存 `locked_by/locked_until` 这类锁字段；并发领取依赖数据库幂等约束、turn 状态更新、PostgreSQL `FOR UPDATE SKIP LOCKED` 和短 TTL Redis 协调。
 - `interview_runtime_snapshots` 保存 PostgreSQL 冷快照，Redis 丢失后仍能恢复业务事实。
 - Redis single-flight 折叠同一答案的重复 AI 评估调用。
+- 本地消息表 `async_messages` 先落库，再由 dispatcher 补投 Redis Stream `INTERVIEW_EVENTS_STREAM`；Redis 掉线时消息会留在数据库里等待重试。
 - Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，API 进程内置 consumer group worker 会消费 answer evaluation；后续 judge、report、memory extraction 可以继续拆成独立 worker。
 - 查询 `GET /api/interview-sessions/{session_id}` 或 `GET /api/interview-sessions/{session_id}/trace` 获取异步结果。
 
