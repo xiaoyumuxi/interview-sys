@@ -73,6 +73,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/coding/question-sets", api.listQuestionSets)
 	group.GET("/coding/questions", api.listQuestions)
 	group.GET("/coding/questions/:question_id", api.getQuestion)
+	group.GET("/ops/dead-letters/summary", api.requireRoot(), api.deadLetterSummary)
+	group.GET("/ops/dead-letters", api.requireRoot(), api.listDeadLetters)
+	group.GET("/ops/dead-letters/:dead_letter_id", api.requireRoot(), api.getDeadLetter)
 
 	return router
 }
@@ -453,6 +456,38 @@ func (h apiHandler) getQuestion(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, item)
+}
+
+func (h apiHandler) deadLetterSummary(c *gin.Context) {
+	item, err := h.deps.Store.DeadLetterSummary(c.Request.Context())
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "dead_letter_summary_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "dead_letter.summary.v1", "item": item})
+}
+
+func (h apiHandler) listDeadLetters(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	items, err := h.deps.Store.ListDeadLetters(c.Request.Context(), c.Query("status"), c.Query("source"), limit)
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "dead_letter_list_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "dead_letter.list.v1", "items": items})
+}
+
+func (h apiHandler) getDeadLetter(c *gin.Context) {
+	item, ok, err := h.deps.Store.GetDeadLetter(c.Request.Context(), c.Param("dead_letter_id"))
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "dead_letter_get_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeGinError(c, http.StatusNotFound, "dead_letter_not_found", "dead_letter_id is not registered")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "dead_letter.item.v1", "item": item})
 }
 
 func writeGinError(c *gin.Context, status int, code string, message string) {

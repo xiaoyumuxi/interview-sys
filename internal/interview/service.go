@@ -37,6 +37,8 @@ const (
 	TurnRunning   = "running"
 	TurnCompleted = "completed"
 	TurnFailed    = "failed"
+
+	DeadLetterRetryThreshold = 3
 )
 
 type Service struct {
@@ -59,6 +61,9 @@ type WorkerOptions struct {
 	Block                time.Duration
 	PendingMinIdle       time.Duration
 	MaxDeliveries        int64
+	DeadLetterGroup      string
+	DeadLetterConsumer   string
+	DeadLetterAfter      int
 	OutboxBatchSize      int
 	OutboxInterval       time.Duration
 	StaleTurnInterval    time.Duration
@@ -75,7 +80,10 @@ func DefaultWorkerOptions(role string) WorkerOptions {
 		BatchSize:            8,
 		Block:                2 * time.Second,
 		PendingMinIdle:       30 * time.Second,
-		MaxDeliveries:        5,
+		MaxDeliveries:        DeadLetterRetryThreshold,
+		DeadLetterGroup:      "dead-letter-analyzers",
+		DeadLetterConsumer:   role + "-dlq-" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		DeadLetterAfter:      DeadLetterRetryThreshold,
 		OutboxBatchSize:      25,
 		OutboxInterval:       300 * time.Millisecond,
 		StaleTurnInterval:    30 * time.Second,
@@ -103,6 +111,15 @@ func (o WorkerOptions) withDefaults() WorkerOptions {
 	if o.MaxDeliveries <= 0 {
 		o.MaxDeliveries = defaults.MaxDeliveries
 	}
+	if o.DeadLetterGroup == "" {
+		o.DeadLetterGroup = defaults.DeadLetterGroup
+	}
+	if o.DeadLetterConsumer == "" {
+		o.DeadLetterConsumer = defaults.DeadLetterConsumer
+	}
+	if o.DeadLetterAfter <= 0 {
+		o.DeadLetterAfter = defaults.DeadLetterAfter
+	}
 	if o.OutboxBatchSize <= 0 {
 		o.OutboxBatchSize = defaults.OutboxBatchSize
 	}
@@ -121,9 +138,11 @@ func (o WorkerOptions) withDefaults() WorkerOptions {
 func (s *Service) StartWorker(ctx context.Context, opts WorkerOptions) {
 	opts = opts.withDefaults()
 	s.queue.EnsureGroup(ctx, opts.Group)
+	s.queue.EnsureDeadLetterGroup(ctx, opts.DeadLetterGroup)
 	go s.dispatchOutboxLoop(ctx, opts.OutboxBatchSize, opts.OutboxInterval)
 	go s.reclaimStaleTurnsLoop(ctx, opts.StaleTurnInterval)
 	go s.reclaimPendingLoop(ctx, opts)
+	go s.deadLetterAnalysisLoop(ctx, opts)
 	go func() {
 		for {
 			select {
@@ -252,6 +271,27 @@ WHERE message_id=$1`, message.MessageID); err != nil {
 }
 
 func (s *Service) releaseOutboxForRetry(ctx context.Context, message outboxMessage, cause error) {
+	if message.Attempts+1 >= DeadLetterRetryThreshold {
+		payload := map[string]any{}
+		_ = json.Unmarshal(message.Payload, &payload)
+		_ = s.store.UpsertDeadLetter(ctx, store.DeadLetterUpsert{
+			Source:          "async_outbox",
+			SourceStream:    s.queue.Name(),
+			SourceMessageID: message.MessageID,
+			EventType:       message.EventType,
+			AggregateType:   "async_message",
+			AggregateID:     message.AggregateID,
+			Payload:         payload,
+			Reason:          "outbox dispatch failed after retry threshold",
+			ErrorText:       cause.Error(),
+			Attempts:        message.Attempts + 1,
+		})
+		_, _ = s.db.ExecContext(ctx, `
+UPDATE async_messages
+SET status='dead_letter', attempts=$2, last_error=$3, updated_at=now()
+WHERE message_id=$1`, message.MessageID, message.Attempts+1, cause.Error())
+		return
+	}
 	delaySeconds := (message.Attempts + 1) * 5
 	if delaySeconds > 60 {
 		delaySeconds = 60
@@ -264,6 +304,25 @@ WHERE message_id=$1`, message.MessageID, delaySeconds, cause.Error())
 }
 
 func (s *Service) markOutboxFailed(ctx context.Context, message outboxMessage, cause error) {
+	if message.Attempts+1 >= DeadLetterRetryThreshold {
+		_ = s.store.UpsertDeadLetter(ctx, store.DeadLetterUpsert{
+			Source:          "async_outbox",
+			SourceStream:    s.queue.Name(),
+			SourceMessageID: message.MessageID,
+			EventType:       message.EventType,
+			AggregateType:   "async_message",
+			AggregateID:     message.AggregateID,
+			Payload:         map[string]any{"raw_payload": string(message.Payload)},
+			Reason:          "outbox payload could not be decoded after retry threshold",
+			ErrorText:       cause.Error(),
+			Attempts:        message.Attempts + 1,
+		})
+		_, _ = s.db.ExecContext(ctx, `
+UPDATE async_messages
+SET status='dead_letter', attempts=$2, last_error=$3, updated_at=now()
+WHERE message_id=$1`, message.MessageID, message.Attempts+1, cause.Error())
+		return
+	}
 	_, _ = s.db.ExecContext(ctx, `
 UPDATE async_messages
 SET status='failed', last_error=$2, updated_at=now()
@@ -305,8 +364,78 @@ func (s *Service) deadLetterPoisonMessages(ctx context.Context, opts WorkerOptio
 		return
 	}
 	for _, item := range items {
-		s.queue.DeadLetterByID(ctx, opts.Group, item.ID, fmt.Sprintf("pending delivery count exceeded max_deliveries=%d", opts.MaxDeliveries))
+		s.queue.DeadLetterByIDWithAttempts(ctx, opts.Group, item.ID, fmt.Sprintf("pending delivery count exceeded max_deliveries=%d", opts.MaxDeliveries), item.RetryCount)
 	}
+}
+
+func (s *Service) deadLetterAnalysisLoop(ctx context.Context, opts WorkerOptions) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		pending, err := s.queue.ClaimDeadLetterPending(ctx, opts.DeadLetterGroup, opts.DeadLetterConsumer, opts.PendingMinIdle, opts.BatchSize)
+		if err == nil {
+			for _, message := range pending {
+				if s.persistDeadLetterMessage(ctx, message) {
+					s.queue.AckDeadLetter(ctx, opts.DeadLetterGroup, message.ID)
+				}
+			}
+		}
+		messages, err := s.queue.ReadDeadLetterGroup(ctx, opts.DeadLetterGroup, opts.DeadLetterConsumer, opts.BatchSize, opts.Block)
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		for _, message := range messages {
+			if s.persistDeadLetterMessage(ctx, message) {
+				s.queue.AckDeadLetter(ctx, opts.DeadLetterGroup, message.ID)
+			}
+		}
+	}
+}
+
+func (s *Service) persistDeadLetterMessage(ctx context.Context, message redis.XMessage) bool {
+	payload := map[string]any{}
+	if raw, ok := message.Values["payload"].(string); ok && raw != "" {
+		_ = json.Unmarshal([]byte(raw), &payload)
+	}
+	attempts := 0
+	switch value := message.Values["attempts"].(type) {
+	case string:
+		attempts, _ = strconv.Atoi(value)
+	case int64:
+		attempts = int(value)
+	case int:
+		attempts = value
+	}
+	eventType, _ := message.Values["event_type"].(string)
+	sessionID, _ := message.Values["session_id"].(string)
+	sourceStream, _ := message.Values["source_stream"].(string)
+	sourceMessageID, _ := message.Values["source_message_id"].(string)
+	reason, _ := message.Values["reason"].(string)
+	if sourceMessageID == "" {
+		sourceMessageID = message.ID
+	}
+	if sourceStream == "" {
+		sourceStream = s.queue.Name()
+	}
+	if attempts == 0 {
+		attempts = int(DefaultWorkerOptions("worker").MaxDeliveries)
+	}
+	return s.store.UpsertDeadLetter(ctx, store.DeadLetterUpsert{
+		Source:          "redis_stream",
+		SourceStream:    sourceStream,
+		SourceMessageID: sourceMessageID,
+		EventType:       eventType,
+		AggregateType:   "interview_session",
+		AggregateID:     sessionID,
+		Payload:         payload,
+		Reason:          reason,
+		ErrorText:       reason,
+		Attempts:        attempts,
+	}) == nil
 }
 
 func (s *Service) reclaimStaleTurns(ctx context.Context) {

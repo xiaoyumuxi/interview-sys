@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS async_messages (
     aggregate_id TEXT NOT NULL DEFAULT '',
     dedup_key TEXT NOT NULL,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dispatching', 'dispatched', 'failed')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dispatching', 'dispatched', 'failed', 'dead_letter')),
     attempts INTEGER NOT NULL DEFAULT 0,
     max_attempts INTEGER NOT NULL DEFAULT 20,
     next_retry_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -263,6 +263,32 @@ CREATE TABLE IF NOT EXISTS async_messages (
 
 ALTER TABLE async_messages DROP COLUMN IF EXISTS locked_by;
 ALTER TABLE async_messages DROP COLUMN IF EXISTS locked_until;
+ALTER TABLE async_messages DROP CONSTRAINT IF EXISTS async_messages_status_check;
+ALTER TABLE async_messages ADD CONSTRAINT async_messages_status_check CHECK (status IN ('pending', 'dispatching', 'dispatched', 'failed', 'dead_letter'));
 
 CREATE INDEX IF NOT EXISTS idx_async_messages_dispatch ON async_messages (status, next_retry_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_async_messages_aggregate ON async_messages (aggregate_type, aggregate_id, created_at);
+
+CREATE TABLE IF NOT EXISTS dead_letter_events (
+    dead_letter_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL CHECK (source IN ('redis_stream', 'async_outbox')),
+    source_stream TEXT NOT NULL DEFAULT '',
+    source_message_id TEXT NOT NULL DEFAULT '',
+    event_type TEXT NOT NULL DEFAULT '',
+    aggregate_type TEXT NOT NULL DEFAULT '',
+    aggregate_id TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    reason TEXT NOT NULL DEFAULT '',
+    error_text TEXT NOT NULL DEFAULT '',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'analyzing', 'resolved', 'ignored')),
+    occurrence_count INTEGER NOT NULL DEFAULT 1,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (source, source_stream, source_message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dead_letter_events_status ON dead_letter_events (status, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dead_letter_events_aggregate ON dead_letter_events (aggregate_type, aggregate_id, last_seen_at DESC);

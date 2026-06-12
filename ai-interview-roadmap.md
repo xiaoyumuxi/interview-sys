@@ -42,6 +42,7 @@
 - [x] PostgreSQL runtime snapshot，用于 Redis 丢失后的业务事实恢复。
 - [x] 独立 `cmd/worker` 进程，API 默认只负责入队和查询。
 - [x] Redis Stream pending message reclaim 和 dead-letter / poison message 兜底。
+- [x] Dead-letter analyzer consumer 和 PostgreSQL `dead_letter_events` 统一分析表。
 
 ### 下一批待做
 

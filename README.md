@@ -21,6 +21,7 @@ P0/P1 基础环境：
 - [ai-interview-backend-plan.md](/Users/yaoyao/Documents/SelfProject/ai-interview-backend-plan.md)
 - [project-reference-map.md](/Users/yaoyao/Documents/SelfProject/project-reference-map.md)
 - [docs/go-python-responsibilities.md](/Users/yaoyao/Documents/SelfProject/docs/go-python-responsibilities.md)
+- [docs/dead-letter-analysis.md](/Users/yaoyao/Documents/SelfProject/docs/dead-letter-analysis.md)
 
 ## 本地启动
 
@@ -114,6 +115,9 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/coding/question-sets`
 - `GET /api/coding/questions`
 - `GET /api/coding/questions/{question_id}`
+- `GET /api/ops/dead-letters/summary`
+- `GET /api/ops/dead-letters`
+- `GET /api/ops/dead-letters/{dead_letter_id}`
 
 Python Runtime:
 
@@ -174,8 +178,23 @@ Go 维护面试运行时状态机和幂等边界：
 - 本地消息表 `async_messages` 先落库，再由 dispatcher 补投 Redis Stream `INTERVIEW_EVENTS_STREAM`；Redis 掉线时消息会留在数据库里等待重试。
 - Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，独立 `cmd/worker` 进程会消费 answer evaluation；API 进程默认只负责入队和查询。
 - Worker 会 reclaim Redis Stream pending message；超过投递上限的 poison message 会进入 `INTERVIEW_DEAD_LETTER_STREAM`。
+- Worker 会消费 `INTERVIEW_DEAD_LETTER_STREAM`，把死信标准化写入 PostgreSQL `dead_letter_events`，供后续分析和外部系统查询。
 - 本地兼容模式可以设置 `ENABLE_EMBEDDED_WORKER=true`，让 API 进程内启动 worker，但常规开发和部署应使用独立 worker。
 - 查询 `GET /api/interview-sessions/{session_id}` 或 `GET /api/interview-sessions/{session_id}/trace` 获取异步结果。
+
+## Dead Letter Analysis
+
+死信采用两层设计：
+
+- Redis Stream dead-letter：短期缓冲和 worker 间交接。
+- PostgreSQL `dead_letter_events`：长期事实表，统一收集 Redis poison message 和 PostgreSQL outbox 派发失败。
+
+当前规则：
+
+- Redis Stream pending message 投递超过 3 次后进入 `INTERVIEW_DEAD_LETTER_STREAM`。
+- PostgreSQL outbox 派发失败累计到第 3 次后标记为 `dead_letter`，并写入 `dead_letter_events`。
+- `cmd/worker` 内置 dead-letter analyzer consumer，会消费 dead-letter stream 并 upsert 到 `dead_letter_events`。
+- 外部系统可用 root token 调用 `/api/ops/dead-letters*` 获取错误数据。
 
 ## 中间件版本
 

@@ -76,6 +76,16 @@ func (s *Stream) EnsureGroup(ctx context.Context, group string) {
 	}
 }
 
+func (s *Stream) EnsureDeadLetterGroup(ctx context.Context, group string) {
+	if s == nil || s.client == nil || group == "" {
+		return
+	}
+	err := s.client.XGroupCreateMkStream(ctx, s.deadLetterName, group, "0").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		s.logger.Warn("ensure dead-letter stream group failed", "stream", s.deadLetterName, "group", group, "error", err)
+	}
+}
+
 func (s *Stream) ReadGroup(ctx context.Context, group string, consumer string, count int, block time.Duration) ([]redis.XMessage, error) {
 	if s == nil || s.client == nil {
 		return nil, errors.New("stream is unavailable")
@@ -84,6 +94,26 @@ func (s *Stream) ReadGroup(ctx context.Context, group string, consumer string, c
 		Group:    group,
 		Consumer: consumer,
 		Streams:  []string{s.name, ">"},
+		Count:    int64(count),
+		Block:    block,
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(streams) == 0 {
+		return nil, nil
+	}
+	return streams[0].Messages, nil
+}
+
+func (s *Stream) ReadDeadLetterGroup(ctx context.Context, group string, consumer string, count int, block time.Duration) ([]redis.XMessage, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("stream is unavailable")
+	}
+	streams, err := s.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    group,
+		Consumer: consumer,
+		Streams:  []string{s.deadLetterName, ">"},
 		Count:    int64(count),
 		Block:    block,
 	}).Result()
@@ -105,12 +135,36 @@ func (s *Stream) Ack(ctx context.Context, group string, ids ...string) {
 	}
 }
 
+func (s *Stream) AckDeadLetter(ctx context.Context, group string, ids ...string) {
+	if s == nil || s.client == nil || len(ids) == 0 {
+		return
+	}
+	if err := s.client.XAck(ctx, s.deadLetterName, group, ids...).Err(); err != nil {
+		s.logger.Warn("ack dead-letter stream messages failed", "stream", s.deadLetterName, "group", group, "error", err)
+	}
+}
+
 func (s *Stream) ClaimPending(ctx context.Context, group string, consumer string, minIdle time.Duration, count int) ([]redis.XMessage, error) {
 	if s == nil || s.client == nil {
 		return nil, errors.New("stream is unavailable")
 	}
 	messages, _, err := s.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 		Stream:   s.name,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  minIdle,
+		Start:    "0-0",
+		Count:    int64(count),
+	}).Result()
+	return messages, err
+}
+
+func (s *Stream) ClaimDeadLetterPending(ctx context.Context, group string, consumer string, minIdle time.Duration, count int) ([]redis.XMessage, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("stream is unavailable")
+	}
+	messages, _, err := s.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   s.deadLetterName,
 		Group:    group,
 		Consumer: consumer,
 		MinIdle:  minIdle,
@@ -144,6 +198,10 @@ func (s *Stream) PendingOverDelivery(ctx context.Context, group string, minIdle 
 }
 
 func (s *Stream) DeadLetter(ctx context.Context, group string, message redis.XMessage, reason string) {
+	s.DeadLetterWithAttempts(ctx, group, message, reason, 0)
+}
+
+func (s *Stream) DeadLetterWithAttempts(ctx context.Context, group string, message redis.XMessage, reason string, attempts int64) {
 	if s == nil || s.client == nil {
 		return
 	}
@@ -151,6 +209,7 @@ func (s *Stream) DeadLetter(ctx context.Context, group string, message redis.XMe
 		"source_stream":     s.name,
 		"source_message_id": message.ID,
 		"reason":            reason,
+		"attempts":          attempts,
 		"created_at":        time.Now().Format(time.RFC3339Nano),
 	}
 	for key, value := range message.Values {
@@ -169,6 +228,10 @@ func (s *Stream) DeadLetter(ctx context.Context, group string, message redis.XMe
 }
 
 func (s *Stream) DeadLetterByID(ctx context.Context, group string, messageID string, reason string) {
+	s.DeadLetterByIDWithAttempts(ctx, group, messageID, reason, 0)
+}
+
+func (s *Stream) DeadLetterByIDWithAttempts(ctx context.Context, group string, messageID string, reason string, attempts int64) {
 	if s == nil || s.client == nil || messageID == "" {
 		return
 	}
@@ -179,7 +242,7 @@ func (s *Stream) DeadLetterByID(ctx context.Context, group string, messageID str
 		}
 		return
 	}
-	s.DeadLetter(ctx, group, streams[0], reason)
+	s.DeadLetterWithAttempts(ctx, group, streams[0], reason, attempts)
 }
 
 func (s *Stream) Name() string {

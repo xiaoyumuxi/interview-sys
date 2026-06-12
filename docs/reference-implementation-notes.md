@@ -61,6 +61,7 @@
 - Redis Stream interview event queue。
 - 独立 `cmd/worker` Redis Stream consumer group worker for answer evaluation。
 - Redis Stream pending reclaim and dead-letter / poison message fallback。
+- Dead-letter analyzer consumer and PostgreSQL `dead_letter_events` for external analysis.
 - PostgreSQL runtime snapshot。
 
 未完成：

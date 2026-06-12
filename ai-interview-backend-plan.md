@@ -90,6 +90,7 @@ Storage
 - [x] PostgreSQL runtime snapshot。
 - [x] 独立 `cmd/worker` 进程，API 默认只负责入队和查询。
 - [x] Redis Stream pending reclaim、dead-letter / poison message 兜底。
+- [x] Dead-letter analyzer consumer 和 PostgreSQL `dead_letter_events` 统一分析表。
 
 ### 2.2 后续任务清单
 

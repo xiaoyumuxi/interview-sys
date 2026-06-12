@@ -18,6 +18,7 @@ Go 当前负责：
 - Answer 提交幂等、turn claim 和状态落库。
 - PostgreSQL local outbox。
 - Redis Stream dispatch、consumer group worker、pending reclaim 和 dead-letter。
+- Dead-letter analyzer consumer、错误数据标准化和对外查询 API。
 - Redis single-flight 和短 TTL 协调锁。
 - PostgreSQL runtime snapshot。
 - Agent trace / audit 落库。
