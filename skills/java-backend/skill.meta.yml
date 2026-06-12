@@ -1,0 +1,24 @@
+schemaVersion: skill.meta.v1
+id: java-backend
+displayName: Java 后端
+description: Java / MySQL / Redis / Spring / 项目实战
+categories:
+  - key: JAVA
+    label: Java
+    priority: CORE
+    ref: java.md
+  - key: MYSQL
+    label: MySQL
+    priority: CORE
+    ref: mysql.md
+  - key: REDIS
+    label: Redis
+    priority: CORE
+    ref: redis.md
+  - key: SPRING
+    label: Spring
+    priority: NORMAL
+    ref: spring.md
+  - key: PROJECT
+    label: 项目经历
+    priority: ALWAYS_ONE

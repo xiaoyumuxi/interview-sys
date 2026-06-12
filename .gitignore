@@ -1,0 +1,9 @@
+.env
+.cache/
+tmp/
+bin/
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
