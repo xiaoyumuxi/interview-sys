@@ -69,15 +69,30 @@ ON CONFLICT (task_type) DO UPDATE SET
     fallback_provider_id = EXCLUDED.fallback_provider_id,
     updated_at = now();
 
-INSERT INTO code_question_sets (set_id, display_name, description)
-VALUES (
-    'backend-coding-basic',
-    '后端编程基础题库',
-    '面向后端面试的算法、数据结构、字符串、并发和工程编码基础题。'
-)
+INSERT INTO code_question_sets (set_id, display_name, description, source, source_url, question_type)
+VALUES
+    (
+        'codetop100-algorithm',
+        'CodeTop100 高频算法题',
+        '按 CodeTop 高频面试题整理的算法与数据结构题库。',
+        'CodeTop100',
+        'https://codetop.cc',
+        'algorithm'
+    ),
+    (
+        'backend-coding-engineering',
+        '后端工程编程题',
+        '面向后端岗位的并发、缓存、限流、LRU、SQL 和 API 设计编程题。',
+        'local',
+        '',
+        'backend_engineering'
+    )
 ON CONFLICT (set_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     description = EXCLUDED.description,
+    source = EXCLUDED.source,
+    source_url = EXCLUDED.source_url,
+    question_type = EXCLUDED.question_type,
     updated_at = now();
 
 INSERT INTO code_questions (
@@ -85,6 +100,11 @@ INSERT INTO code_questions (
     set_id,
     title,
     difficulty,
+    source,
+    source_url,
+    question_type,
+    frequency_rank,
+    company_tags,
     topic_tags,
     prompt,
     input_format,
@@ -96,9 +116,14 @@ INSERT INTO code_questions (
 )
 VALUES (
     'two-sum',
-    'backend-coding-basic',
+    'codetop100-algorithm',
     'Two Sum',
     'easy',
+    'CodeTop100',
+    'https://codetop.cc',
+    'algorithm',
+    1,
+    ARRAY[]::TEXT[],
     ARRAY['array', 'hash-table', 'algorithm-basic'],
     'Given an integer array nums and an integer target, return indices of the two numbers such that they add up to target. Assume exactly one solution and do not use the same element twice.',
     'nums as a JSON array and target as an integer.',
@@ -109,8 +134,14 @@ VALUES (
     'published'
 )
 ON CONFLICT (question_id) DO UPDATE SET
+    set_id = EXCLUDED.set_id,
     title = EXCLUDED.title,
     difficulty = EXCLUDED.difficulty,
+    source = EXCLUDED.source,
+    source_url = EXCLUDED.source_url,
+    question_type = EXCLUDED.question_type,
+    frequency_rank = EXCLUDED.frequency_rank,
+    company_tags = EXCLUDED.company_tags,
     topic_tags = EXCLUDED.topic_tags,
     prompt = EXCLUDED.prompt,
     input_format = EXCLUDED.input_format,

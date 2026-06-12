@@ -22,6 +22,16 @@ Windows PowerShell:
 - 应用 `migrations/*.sql`。
 - 执行 `go test ./...`。
 
+## Skill 热加载
+
+本地修改 `skills/*/SKILL.md`、`skill.meta.yml` 或 references 后，不需要重启服务，调用：
+
+```bash
+curl -s -X POST http://localhost:8080/api/skills/reload
+```
+
+也可以通过 `POST /api/skills` 创建新的 Skill Pack。创建接口会写入本地 `skills/{skill_id}` 目录并重新加载 Registry。
+
 ## SQL 文件
 
 - `migrations/001_init.sql`：建表、索引、pgvector 扩展。

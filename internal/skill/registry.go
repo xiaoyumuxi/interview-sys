@@ -2,10 +2,13 @@ package skill
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,8 +36,18 @@ type Reference struct {
 	Tokens   int    `json:"tokens"`
 }
 
+type CreateRequest struct {
+	ID           string            `json:"id"`
+	DisplayName  string            `json:"display_name"`
+	Description  string            `json:"description"`
+	Instructions string            `json:"instructions"`
+	Categories   []Category        `json:"categories"`
+	References   map[string]string `json:"references"`
+}
+
 type Registry struct {
 	dir    string
+	mu     sync.RWMutex
 	skills map[string]Skill
 }
 
@@ -43,12 +56,69 @@ func NewRegistry(dir string) *Registry {
 }
 
 func (r *Registry) Load() error {
+	loaded, err := r.scan()
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.skills = loaded
+	return nil
+}
+
+func (r *Registry) Reload() error {
+	return r.Load()
+}
+
+func (r *Registry) Create(req CreateRequest) (Skill, error) {
+	if err := validateCreateRequest(req); err != nil {
+		return Skill{}, err
+	}
+
+	skillDir := filepath.Join(r.dir, req.ID)
+	if _, err := os.Stat(skillDir); err == nil {
+		return Skill{}, fmt.Errorf("skill %q already exists", req.ID)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Skill{}, err
+	}
+
+	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0o755); err != nil {
+		return Skill{}, err
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.meta.yml"), []byte(renderMeta(req)), 0o644); err != nil {
+		return Skill{}, err
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(req.Instructions), 0o644); err != nil {
+		return Skill{}, err
+	}
+	for name, content := range req.References {
+		cleanName, err := cleanReferenceName(name)
+		if err != nil {
+			return Skill{}, err
+		}
+		if err := os.WriteFile(filepath.Join(skillDir, "references", cleanName), []byte(content), 0o644); err != nil {
+			return Skill{}, err
+		}
+	}
+
+	if err := r.Reload(); err != nil {
+		return Skill{}, err
+	}
+	item, ok := r.Get(req.ID)
+	if !ok {
+		return Skill{}, errors.New("skill created but not loaded")
+	}
+	return item, nil
+}
+
+func (r *Registry) scan() (map[string]Skill, error) {
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil
+			return map[string]Skill{}, nil
 		}
-		return err
+		return nil, err
 	}
 
 	loaded := map[string]Skill{}
@@ -74,11 +144,13 @@ func (r *Registry) Load() error {
 		item.SchemaVersion = "skill.v1"
 		loaded[item.ID] = item
 	}
-	r.skills = loaded
-	return nil
+	return loaded, nil
 }
 
 func (r *Registry) List() []Skill {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	items := make([]Skill, 0, len(r.skills))
 	for _, item := range r.skills {
 		item.Instructions = ""
@@ -90,8 +162,89 @@ func (r *Registry) List() []Skill {
 }
 
 func (r *Registry) Get(id string) (Skill, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	item, ok := r.skills[id]
 	return item, ok
+}
+
+var skillIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$`)
+
+func validateCreateRequest(req CreateRequest) error {
+	if !skillIDPattern.MatchString(req.ID) {
+		return errors.New("id must be kebab-case, 3-64 chars, using lowercase letters, numbers, and hyphen")
+	}
+	if strings.TrimSpace(req.DisplayName) == "" {
+		return errors.New("display_name is required")
+	}
+	if strings.TrimSpace(req.Description) == "" {
+		return errors.New("description is required")
+	}
+	if strings.TrimSpace(req.Instructions) == "" {
+		return errors.New("instructions is required")
+	}
+	for _, category := range req.Categories {
+		if strings.TrimSpace(category.Key) == "" || strings.TrimSpace(category.Label) == "" {
+			return errors.New("category key and label are required")
+		}
+		if category.Ref != "" {
+			if _, err := cleanReferenceName(category.Ref); err != nil {
+				return err
+			}
+		}
+	}
+	for name := range req.References {
+		if _, err := cleanReferenceName(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cleanReferenceName(name string) (string, error) {
+	raw := strings.TrimSpace(name)
+	if raw == "" || strings.Contains(raw, "/") || strings.Contains(raw, "\\") {
+		return "", fmt.Errorf("invalid reference name %q", name)
+	}
+	clean := filepath.Base(raw)
+	if clean == "." || clean == "" || !strings.HasSuffix(clean, ".md") {
+		return "", fmt.Errorf("invalid reference name %q", name)
+	}
+	return clean, nil
+}
+
+func renderMeta(req CreateRequest) string {
+	var builder strings.Builder
+	builder.WriteString("schemaVersion: skill.meta.v1\n")
+	builder.WriteString("id: ")
+	builder.WriteString(req.ID)
+	builder.WriteString("\n")
+	builder.WriteString("displayName: ")
+	builder.WriteString(req.DisplayName)
+	builder.WriteString("\n")
+	builder.WriteString("description: ")
+	builder.WriteString(req.Description)
+	builder.WriteString("\n")
+	builder.WriteString("categories:\n")
+	for _, category := range req.Categories {
+		builder.WriteString("  - key: ")
+		builder.WriteString(category.Key)
+		builder.WriteString("\n    label: ")
+		builder.WriteString(category.Label)
+		builder.WriteString("\n    priority: ")
+		if strings.TrimSpace(category.Priority) == "" {
+			builder.WriteString("NORMAL")
+		} else {
+			builder.WriteString(category.Priority)
+		}
+		if category.Ref != "" {
+			builder.WriteString("\n    ref: ")
+			builder.WriteString(category.Ref)
+		}
+		builder.WriteString("\n")
+	}
+	return builder.String()
 }
 
 func parseMeta(meta string) Skill {

@@ -199,6 +199,8 @@ judge_worker_contract
 
 - 代码题集合。
 - 题目标签、难度、题面、输入输出格式。
+- 来源标记，第一批算法题以 CodeTop100 高频题为主。
+- 按题型拆分：algorithm、backend_engineering、sql、debugging、system_design_small。
 - 样例测试和隐藏测试。
 - 参考解法和复杂度说明。
 - 提交记录和人工/自动评估结果。

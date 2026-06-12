@@ -7,6 +7,7 @@
 P0/P1 基础环境：
 
 - Go Core API。
+- HTTP framework: Gin。
 - Provider 配置占位和连通性测试。
 - Skill Pack 本地扫描。
 - Context Preview 调试接口。
@@ -55,6 +56,8 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/providers`
 - `POST /api/providers/test`
 - `GET /api/skills`
+- `POST /api/skills`
+- `POST /api/skills/reload`
 - `GET /api/skills/{skill_id}`
 - `POST /api/context/preview`
 

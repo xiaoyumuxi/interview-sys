@@ -59,15 +59,27 @@ CREATE TABLE IF NOT EXISTS code_question_sets (
     set_id TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    source_url TEXT NOT NULL DEFAULT '',
+    question_type TEXT NOT NULL DEFAULT 'algorithm',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE code_question_sets ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
+ALTER TABLE code_question_sets ADD COLUMN IF NOT EXISTS source_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE code_question_sets ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'algorithm';
 
 CREATE TABLE IF NOT EXISTS code_questions (
     question_id TEXT PRIMARY KEY,
     set_id TEXT REFERENCES code_question_sets(set_id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     difficulty TEXT NOT NULL CHECK (difficulty IN ('easy', 'medium', 'hard')),
+    source TEXT NOT NULL DEFAULT '',
+    source_url TEXT NOT NULL DEFAULT '',
+    question_type TEXT NOT NULL DEFAULT 'algorithm',
+    frequency_rank INTEGER,
+    company_tags TEXT[] NOT NULL DEFAULT '{}',
     topic_tags TEXT[] NOT NULL DEFAULT '{}',
     prompt TEXT NOT NULL,
     input_format TEXT NOT NULL DEFAULT '',
@@ -80,8 +92,16 @@ CREATE TABLE IF NOT EXISTS code_questions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE code_questions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
+ALTER TABLE code_questions ADD COLUMN IF NOT EXISTS source_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE code_questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'algorithm';
+ALTER TABLE code_questions ADD COLUMN IF NOT EXISTS frequency_rank INTEGER;
+ALTER TABLE code_questions ADD COLUMN IF NOT EXISTS company_tags TEXT[] NOT NULL DEFAULT '{}';
+
 CREATE INDEX IF NOT EXISTS idx_code_questions_tags ON code_questions USING GIN (topic_tags);
+CREATE INDEX IF NOT EXISTS idx_code_questions_company_tags ON code_questions USING GIN (company_tags);
 CREATE INDEX IF NOT EXISTS idx_code_questions_status ON code_questions (status, difficulty);
+CREATE INDEX IF NOT EXISTS idx_code_questions_source_type_rank ON code_questions (source, question_type, frequency_rank);
 
 CREATE TABLE IF NOT EXISTS code_question_test_cases (
     test_case_id TEXT PRIMARY KEY,
