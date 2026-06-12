@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"ai-interview-platform/internal/provider"
+	airuntime "ai-interview-platform/internal/runtime"
 	"ai-interview-platform/internal/skill"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -148,6 +150,26 @@ VALUES ($1,$2,$3,$4,$5,$6)`,
 		record.TraceID, record.TaskType, nullEmpty(record.SkillID), input, contextItems, output,
 	)
 	return err
+}
+
+func (s *Store) RuntimeProviderForTask(ctx context.Context, taskType string) (*airuntime.ProviderConfig, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT p.provider_type, p.base_url, COALESCE(p.chat_endpoint_path,''), COALESCE(p.chat_model,''),
+       COALESCE(p.api_key_ref,''), p.supports_json
+FROM provider_task_routes r
+JOIN provider_configs p ON p.provider_id = r.provider_id
+WHERE r.task_type=$1`, taskType)
+
+	var cfg airuntime.ProviderConfig
+	var apiKeyRef string
+	if err := row.Scan(&cfg.ProviderType, &cfg.BaseURL, &cfg.ChatEndpointPath, &cfg.Model, &apiKeyRef, &cfg.SupportsJSON); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	cfg.APIKey = os.Getenv(apiKeyRef)
+	return &cfg, nil
 }
 
 func nullEmpty(value string) any {

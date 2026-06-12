@@ -12,7 +12,7 @@ Python Runtime 负责非确定性 AI 推理：
 - Memory Candidate Extraction。
 - 后续 Retrieval Harness / LangGraph Flow。
 
-Go Core API 仍负责状态机、幂等、single-flight、落库、审计和人工审核。Python 不直接推进面试状态，不直接写长期画像。
+Go Core API 仍负责状态机、幂等、single-flight、落库、审计、Provider 路由和人工审核。Python 不直接推进面试状态，不直接写长期画像，不决定 Provider task routing。
 
 ## API
 

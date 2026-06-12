@@ -170,6 +170,7 @@ func (h apiHandler) runAgentTask(c *gin.Context) {
 	}
 	runtimeResp, err := h.deps.RuntimeClient.RunTask(c.Request.Context(), airuntime.TaskRequest{
 		TaskType:     req.TaskType,
+		Provider:     h.runtimeProvider(c, req.TaskType),
 		ContextItems: preview.Items,
 		UserInput:    req.UserInput,
 		DryRun:       req.DryRun,
@@ -195,6 +196,18 @@ func (h apiHandler) runAgentTask(c *gin.Context) {
 		"context_preview":  preview,
 		"runtime_response": runtimeResp,
 	})
+}
+
+func (h apiHandler) runtimeProvider(c *gin.Context, taskType string) *airuntime.ProviderConfig {
+	if h.deps.Store == nil {
+		return nil
+	}
+	provider, err := h.deps.Store.RuntimeProviderForTask(c.Request.Context(), taskType)
+	if err != nil {
+		h.deps.Logger.Warn("resolve runtime provider failed", "task_type", taskType, "error", err)
+		return nil
+	}
+	return provider
 }
 
 func (h apiHandler) listQuestionSets(c *gin.Context) {

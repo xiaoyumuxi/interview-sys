@@ -13,6 +13,7 @@ P0/P1 基础环境：
 - Context Preview 调试接口。
 - Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
 - Python AI Runtime 基础骨架。
+- Go / Python 边界说明：[docs/language-boundaries.md](/Users/yaoyao/Documents/SelfProject/docs/language-boundaries.md)
 
 ## 本地启动
 

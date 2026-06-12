@@ -29,9 +29,19 @@ func NewClient(baseURL string) *Client {
 
 type TaskRequest struct {
 	TaskType     string                      `json:"task_type"`
+	Provider     *ProviderConfig             `json:"provider,omitempty"`
 	ContextItems []contextengine.ContextItem `json:"context_items"`
 	UserInput    string                      `json:"user_input"`
 	DryRun       bool                        `json:"dry_run"`
+}
+
+type ProviderConfig struct {
+	ProviderType     string `json:"provider_type"`
+	BaseURL          string `json:"base_url"`
+	ChatEndpointPath string `json:"chat_endpoint_path"`
+	Model            string `json:"model"`
+	APIKey           string `json:"api_key"`
+	SupportsJSON     bool   `json:"supports_json"`
 }
 
 type TaskResponse struct {
