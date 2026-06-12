@@ -118,6 +118,7 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/ops/dead-letters/summary`
 - `GET /api/ops/dead-letters`
 - `GET /api/ops/dead-letters/{dead_letter_id}`
+- `GET /api/ops/workers/summary`
 
 Python Runtime:
 
@@ -195,6 +196,15 @@ Go 维护面试运行时状态机和幂等边界：
 - PostgreSQL outbox 派发失败累计到第 3 次后标记为 `dead_letter`，并写入 `dead_letter_events`。
 - `cmd/worker` 内置 dead-letter analyzer consumer，会消费 dead-letter stream 并 upsert 到 `dead_letter_events`。
 - 外部系统可用 root token 调用 `/api/ops/dead-letters*` 获取错误数据。
+
+## Worker Metrics
+
+`GET /api/ops/workers/summary` 是 root-only 运维接口，用于快速判断异步系统是否健康：
+
+- Redis 主 stream / dead-letter stream 长度。
+- consumer group 的 pending、lag、consumer 数。
+- PostgreSQL outbox 各状态数量。
+- `dead_letter_events` 汇总。
 
 ## 中间件版本
 

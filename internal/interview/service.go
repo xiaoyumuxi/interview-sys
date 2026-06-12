@@ -54,6 +54,35 @@ func NewService(db *sql.DB, store *store.Store, engine *contextengine.Engine, ru
 	return &Service{db: db, store: store, engine: engine, runtime: runtime, flights: flights, queue: queue}
 }
 
+type WorkerMetrics struct {
+	SchemaVersion string                    `json:"schema_version"`
+	Queue         workqueue.QueueMetrics    `json:"queue"`
+	Outbox        store.AsyncMessageSummary `json:"outbox"`
+	DeadLetters   store.DeadLetterSummary   `json:"dead_letters"`
+}
+
+func (s *Service) WorkerMetrics(ctx context.Context) (WorkerMetrics, error) {
+	opts := DefaultWorkerOptions("metrics")
+	queueMetrics, err := s.queue.Metrics(ctx, opts.Group, opts.DeadLetterGroup)
+	if err != nil {
+		return WorkerMetrics{}, err
+	}
+	outbox, err := s.store.AsyncMessageSummary(ctx)
+	if err != nil {
+		return WorkerMetrics{}, err
+	}
+	deadLetters, err := s.store.DeadLetterSummary(ctx)
+	if err != nil {
+		return WorkerMetrics{}, err
+	}
+	return WorkerMetrics{
+		SchemaVersion: "worker.metrics.v1",
+		Queue:         queueMetrics,
+		Outbox:        outbox,
+		DeadLetters:   deadLetters,
+	}, nil
+}
+
 type WorkerOptions struct {
 	Group                string
 	Consumer             string

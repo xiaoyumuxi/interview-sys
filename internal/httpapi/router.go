@@ -76,6 +76,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/ops/dead-letters/summary", api.requireRoot(), api.deadLetterSummary)
 	group.GET("/ops/dead-letters", api.requireRoot(), api.listDeadLetters)
 	group.GET("/ops/dead-letters/:dead_letter_id", api.requireRoot(), api.getDeadLetter)
+	group.GET("/ops/workers/summary", api.requireRoot(), api.workerSummary)
 
 	return router
 }
@@ -488,6 +489,15 @@ func (h apiHandler) getDeadLetter(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"schema_version": "dead_letter.item.v1", "item": item})
+}
+
+func (h apiHandler) workerSummary(c *gin.Context) {
+	item, err := h.deps.InterviewService.WorkerMetrics(c.Request.Context())
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "worker_metrics_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, item)
 }
 
 func writeGinError(c *gin.Context, status int, code string, message string) {
