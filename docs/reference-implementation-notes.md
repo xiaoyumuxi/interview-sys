@@ -40,6 +40,8 @@
 
 ## 当前 Go 基础后端完成情况
 
+阶段计划和下一批任务以 [roadmap.md](./roadmap.md) 为准。这里仅保留参考项目已经吸收进当前实现的记录。
+
 已完成：
 
 - Gin API 基础。
@@ -63,10 +65,12 @@
 - Redis Stream pending reclaim and dead-letter / poison message fallback。
 - Dead-letter analyzer consumer and PostgreSQL `dead_letter_events` for external analysis.
 - PostgreSQL runtime snapshot。
+- Worker summary 运维接口。
+- Python Runtime memory candidates、review、profile、search 和 due reviews API。
 
 未完成：
 
-- Redis Stream 消费延迟指标和 worker 可观测性。
-- Python Runtime Memory candidate / review / profile projection。
+- Go API 到 Python Runtime memory API 的代理/编排。
 - Retrieval Harness 多索引检索。
 - 代码执行 judge worker。
+- Final report generation。

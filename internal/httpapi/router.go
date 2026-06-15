@@ -73,6 +73,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/coding/question-sets", api.listQuestionSets)
 	group.GET("/coding/questions", api.listQuestions)
 	group.GET("/coding/questions/:question_id", api.getQuestion)
+	group.POST("/coding/submissions", api.createSubmission)
+	group.GET("/coding/submissions", api.listSubmissions)
+	group.GET("/coding/submissions/:submission_id", api.getSubmission)
 	group.GET("/ops/dead-letters/summary", api.requireRoot(), api.deadLetterSummary)
 	group.GET("/ops/dead-letters", api.requireRoot(), api.listDeadLetters)
 	group.GET("/ops/dead-letters/:dead_letter_id", api.requireRoot(), api.getDeadLetter)
@@ -498,6 +501,51 @@ func (h apiHandler) workerSummary(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, item)
+}
+
+func (h apiHandler) createSubmission(c *gin.Context) {
+	var req coding.SubmissionCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	item, err := h.deps.CodingStore.CreateSubmission(c.Request.Context(), currentUserID(c), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "coding_submission_create_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"schema_version": "coding.submission.v1", "item": item})
+}
+
+func (h apiHandler) listSubmissions(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	userID := currentUserID(c)
+	if currentRole(c) == "root" {
+		userID = c.Query("user_id")
+	}
+	items, err := h.deps.CodingStore.ListSubmissions(c.Request.Context(), userID, c.Query("question_id"), limit)
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "coding_submissions_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "coding.submissions.v1", "items": items})
+}
+
+func (h apiHandler) getSubmission(c *gin.Context) {
+	item, ok, err := h.deps.CodingStore.GetSubmission(c.Request.Context(), c.Param("submission_id"))
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "coding_submission_failed", err.Error())
+		return
+	}
+	if !ok {
+		writeGinError(c, http.StatusNotFound, "coding_submission_not_found", "submission_id is not registered")
+		return
+	}
+	if !canAccessUser(c, item.UserID) {
+		writeGinError(c, http.StatusForbidden, "coding_submission_forbidden", "submission does not belong to current user")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "coding.submission.v1", "item": item})
 }
 
 func writeGinError(c *gin.Context, status int, code string, message string) {

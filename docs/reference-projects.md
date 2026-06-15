@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-这份文档记录个人 AI 面试训练平台计划的参考来源。由于参考项目分散在不同工作区，后续阅读 `ai-interview-backend-plan.md` 和 `ai-interview-roadmap.md` 时，可以通过本文快速找到每个设计点对应的本地项目和文件。
+这份文档记录个人 AI 面试训练平台的参考来源。由于参考项目分散在不同工作区，后续阅读 [roadmap.md](./roadmap.md) 或实现具体模块时，可以通过本文快速找到每个设计点对应的本地项目和文件。
 
 本索引只记录参考来源和可借鉴点，不表示直接复制实现。
 
@@ -389,15 +389,14 @@ Complex Query only multi-query
 
 如果后续工程师或 Agent 要继续执行，建议按这个顺序阅读：
 
-1. `/Users/yaoyao/Documents/SelfProject/ai-interview-backend-plan.md`
-2. `/Users/yaoyao/Documents/SelfProject/ai-interview-roadmap.md`
-3. 本文档 `/Users/yaoyao/Documents/SelfProject/project-reference-map.md`
-4. `AI-Meeting` 的 `skills/xunzhi-interview-domain/references/workflow-contracts.md`
-5. `interview-guide` 的 `app/src/main/resources/skills/java-backend/SKILL.md`
-6. `TechSpar` 的 `backend/memory.py`
-7. `TechSpar` 的 `backend/spaced_repetition.py`
-8. `TechSpar` 的 `backend/graphs/resume_interview.py`
-9. `aural-oss` 的 `README.md`
+1. `/Users/yaoyao/Documents/SelfProject/docs/roadmap.md`
+2. 本文档 `/Users/yaoyao/Documents/SelfProject/docs/reference-projects.md`
+3. `AI-Meeting` 的 `skills/xunzhi-interview-domain/references/workflow-contracts.md`
+4. `interview-guide` 的 `app/src/main/resources/skills/java-backend/SKILL.md`
+5. `TechSpar` 的 `backend/memory.py`
+6. `TechSpar` 的 `backend/spaced_repetition.py`
+7. `TechSpar` 的 `backend/graphs/resume_interview.py`
+8. `aural-oss` 的 `README.md`
 
 ---
 

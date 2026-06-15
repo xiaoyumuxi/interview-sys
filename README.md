@@ -4,24 +4,22 @@
 
 ## 当前阶段
 
-P0/P1 基础环境：
+后端已经进入 Go 异步面试运行时 + Python Runtime memory 基础能力阶段：
 
-- Go Core API。
-- HTTP framework: Gin。
-- DB 驱动的 Provider 配置、模型切换和连通性测试。
-- Skill Pack 本地扫描。
-- Context Preview 调试接口。
+- Go Core API、Gin 路由、Auth/User、Provider、Skill、Context Preview 和 Agent Trace。
+- DB 驱动的 Provider 配置、模型切换、任务路由、连通性测试和密钥加密保存。
+- Interview Runtime session / flow / turn 状态机，answer 提交异步化。
+- PostgreSQL local outbox、Redis Stream worker、pending reclaim、dead-letter 和 worker summary。
 - Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
-- Python AI Runtime 基础骨架。
-- Go / Python 边界说明：[docs/language-boundaries.md](/Users/yaoyao/Documents/SelfProject/docs/language-boundaries.md)
+- Python AI Runtime task endpoint、Prompt 安全边界、结构化输出和 memory API。
 
-任务清单与阶段计划：
+核心文档：
 
-- [ai-interview-roadmap.md](/Users/yaoyao/Documents/SelfProject/ai-interview-roadmap.md)
-- [ai-interview-backend-plan.md](/Users/yaoyao/Documents/SelfProject/ai-interview-backend-plan.md)
-- [project-reference-map.md](/Users/yaoyao/Documents/SelfProject/project-reference-map.md)
-- [docs/go-python-responsibilities.md](/Users/yaoyao/Documents/SelfProject/docs/go-python-responsibilities.md)
-- [docs/dead-letter-analysis.md](/Users/yaoyao/Documents/SelfProject/docs/dead-letter-analysis.md)
+- [docs/roadmap.md](/Users/yaoyao/Documents/SelfProject/docs/roadmap.md)：当前阶段计划和下一批任务。
+- [docs/go-python-responsibilities.md](/Users/yaoyao/Documents/SelfProject/docs/go-python-responsibilities.md)：Go / Python 职责分工。
+- [docs/language-boundaries.md](/Users/yaoyao/Documents/SelfProject/docs/language-boundaries.md)：业务边界、Provider 边界和当前状态。
+- [docs/dead-letter-analysis.md](/Users/yaoyao/Documents/SelfProject/docs/dead-letter-analysis.md)：死信链路和分析 API。
+- [docs/reference-projects.md](/Users/yaoyao/Documents/SelfProject/docs/reference-projects.md)：参考项目索引。
 
 ## 本地启动
 
@@ -115,6 +113,9 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 - `GET /api/coding/question-sets`
 - `GET /api/coding/questions`
 - `GET /api/coding/questions/{question_id}`
+- `POST /api/coding/submissions`
+- `GET /api/coding/submissions`
+- `GET /api/coding/submissions/{submission_id}`
 - `GET /api/ops/dead-letters/summary`
 - `GET /api/ops/dead-letters`
 - `GET /api/ops/dead-letters/{dead_letter_id}`
