@@ -187,7 +187,7 @@ Python Runtime:
 | Final report | `interview_reports` 保存报告状态和内容；Go 聚合确定性事实，Python Runtime `summary` task 只负责生成文本结构 |
 | Retrieval harness | `POST /api/retrieval/search` 返回 Skill reference、summary、recent history 和 approved memory 的 evidence、score、reason、source 与 debug trace；vector 暂以 warning 标记未建索引 |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
-| Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 使用禁网 Docker sandbox 执行 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序并按 stdin/stdout 对比 test cases，各语言镜像可通过 `.env` 配置；默认 disabled evaluator 不执行用户代码 |
+| Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 每次创建临时禁网容器；`docker_warm` 复用按语言命名的 stopped container，通过 tmpfs 回到初始状态；镜像可配置且可用 `make pull-judge-images` 预拉取；`native_trusted` 直接调用本机工具链，启动快但不隔离，只适合本地可信代码；默认 disabled evaluator 不执行用户代码 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 | Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
 

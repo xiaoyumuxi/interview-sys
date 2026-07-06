@@ -37,7 +37,7 @@
 - Worker summary 运维接口：`GET /api/ops/workers/summary`。
 - Final report generation：Go 聚合 session/turn 确定性事实并持久化 `interview_reports`，Python Runtime `summary` task 生成结构化报告内容。
 - Retrieval Harness MVP：`POST /api/retrieval/search` 返回 Skill reference、summary、recent history、approved memory 的 evidence、score、reason、source 和 debug trace；vector 索引未建立时显式返回 warning。
-- Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`CODING_JUDGE_MODE=docker` 可用禁网 Docker sandbox 执行 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序并按 stdin/stdout 校验 test cases，各语言镜像可配置，默认 disabled evaluator 不执行用户代码。
+- Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`docker` 每次创建临时禁网容器，`docker_warm` 复用按语言命名的 stopped container 并用 tmpfs 回到初始状态，二者都支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序和可配置镜像；`native_trusted` 可直接调用本机工具链加快本地可信开发，默认 disabled evaluator 不执行用户代码。
 
 ## 下一批任务
 
@@ -45,7 +45,7 @@
 
 1. Coding judge runner 增强。
    - 当前 Docker sandbox MVP 支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序。
-   - 后续扩展统一编译缓存、镜像预拉取检查、更细的资源统计和函数签名式题目适配。
+   - 后续扩展统一编译缓存、镜像预拉取检查、更细的资源统计、长驻 runner 服务和函数签名式题目适配。
 
 2. Evaluation Harness。
    - 建立出题、评分、追问、总结、RAG 命中和 memory 提取的样例集。

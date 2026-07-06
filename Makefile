@@ -1,4 +1,4 @@
-.PHONY: bootstrap init-db check-middleware run run-worker run-runtime test test-python fmt docker-up docker-down
+.PHONY: bootstrap init-db check-middleware pull-judge-images run run-worker run-runtime test test-python fmt docker-up docker-down
 
 bootstrap:
 	./scripts/bootstrap.sh
@@ -8,6 +8,9 @@ init-db:
 
 check-middleware:
 	./scripts/check-middleware.sh
+
+pull-judge-images:
+	./scripts/pull-judge-images.sh
 
 run:
 	go run ./cmd/api

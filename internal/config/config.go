@@ -20,12 +20,20 @@ type Config struct {
 	CodingJudgeBatchSize        int
 	CodingJudgeMode             string
 	CodingJudgeDockerBinary     string
+	CodingJudgeContainerPrefix  string
 	CodingJudgeGoImage          string
 	CodingJudgeJavaImage        string
 	CodingJudgePythonImage      string
 	CodingJudgeJavaScriptImage  string
 	CodingJudgeTypeScriptImage  string
 	CodingJudgeCppImage         string
+	CodingJudgeNativeGo         string
+	CodingJudgeNativeJava       string
+	CodingJudgeNativeJavac      string
+	CodingJudgeNativePython     string
+	CodingJudgeNativeNode       string
+	CodingJudgeNativeDeno       string
+	CodingJudgeNativeGpp        string
 	CodingJudgeTimeoutSeconds   int
 	CodingJudgeMemory           string
 	CodingJudgeCPUs             string
@@ -58,12 +66,20 @@ func Load() Config {
 		CodingJudgeBatchSize:        envInt("CODING_JUDGE_BATCH_SIZE", 4),
 		CodingJudgeMode:             env("CODING_JUDGE_MODE", "disabled"),
 		CodingJudgeDockerBinary:     env("CODING_JUDGE_DOCKER_BINARY", "docker"),
+		CodingJudgeContainerPrefix:  env("CODING_JUDGE_CONTAINER_PREFIX", "ai-interview-judge"),
 		CodingJudgeGoImage:          env("CODING_JUDGE_GO_IMAGE", "golang:1.26-alpine"),
 		CodingJudgeJavaImage:        env("CODING_JUDGE_JAVA_IMAGE", "eclipse-temurin:21-jdk-alpine"),
 		CodingJudgePythonImage:      env("CODING_JUDGE_PYTHON_IMAGE", "python:3.13-alpine"),
 		CodingJudgeJavaScriptImage:  env("CODING_JUDGE_JAVASCRIPT_IMAGE", "node:22-alpine"),
 		CodingJudgeTypeScriptImage:  env("CODING_JUDGE_TYPESCRIPT_IMAGE", "denoland/deno:alpine-2.1.4"),
 		CodingJudgeCppImage:         env("CODING_JUDGE_CPP_IMAGE", "gcc:14-alpine"),
+		CodingJudgeNativeGo:         env("CODING_JUDGE_NATIVE_GO", "go"),
+		CodingJudgeNativeJava:       env("CODING_JUDGE_NATIVE_JAVA", "java"),
+		CodingJudgeNativeJavac:      env("CODING_JUDGE_NATIVE_JAVAC", "javac"),
+		CodingJudgeNativePython:     env("CODING_JUDGE_NATIVE_PYTHON", "python3"),
+		CodingJudgeNativeNode:       env("CODING_JUDGE_NATIVE_NODE", "node"),
+		CodingJudgeNativeDeno:       env("CODING_JUDGE_NATIVE_DENO", "deno"),
+		CodingJudgeNativeGpp:        env("CODING_JUDGE_NATIVE_GPP", "g++"),
 		CodingJudgeTimeoutSeconds:   envInt("CODING_JUDGE_TIMEOUT_SECONDS", 5),
 		CodingJudgeMemory:           env("CODING_JUDGE_MEMORY", "128m"),
 		CodingJudgeCPUs:             env("CODING_JUDGE_CPUS", "0.5"),

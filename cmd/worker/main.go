@@ -124,6 +124,33 @@ func codingEvaluator(cfg config.Config, logger *slog.Logger) coding.Evaluator {
 			Memory:          cfg.CodingJudgeMemory,
 			CPUs:            cfg.CodingJudgeCPUs,
 		})
+	case "docker_warm":
+		return coding.NewDockerWarmEvaluator(coding.DockerEvaluatorConfig{
+			DockerBinary:    cfg.CodingJudgeDockerBinary,
+			GoImage:         cfg.CodingJudgeGoImage,
+			JavaImage:       cfg.CodingJudgeJavaImage,
+			PythonImage:     cfg.CodingJudgePythonImage,
+			JavaScriptImage: cfg.CodingJudgeJavaScriptImage,
+			TypeScriptImage: cfg.CodingJudgeTypeScriptImage,
+			CppImage:        cfg.CodingJudgeCppImage,
+			Timeout:         time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+			Memory:          cfg.CodingJudgeMemory,
+			CPUs:            cfg.CodingJudgeCPUs,
+		}, cfg.CodingJudgeContainerPrefix)
+	case "native_trusted":
+		if logger != nil {
+			logger.Warn("coding judge native_trusted mode is enabled; user code runs on the host without container isolation")
+		}
+		return coding.NewNativeEvaluator(coding.NativeEvaluatorConfig{
+			GoBinary:         cfg.CodingJudgeNativeGo,
+			JavaBinary:       cfg.CodingJudgeNativeJava,
+			JavaCompiler:     cfg.CodingJudgeNativeJavac,
+			PythonBinary:     cfg.CodingJudgeNativePython,
+			JavaScriptBinary: cfg.CodingJudgeNativeNode,
+			TypeScriptBinary: cfg.CodingJudgeNativeDeno,
+			CppCompiler:      cfg.CodingJudgeNativeGpp,
+			Timeout:          time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+		})
 	default:
 		if logger != nil {
 			logger.Warn("coding judge sandbox disabled; submissions will become system_error/sandbox_not_configured", "mode", cfg.CodingJudgeMode)
