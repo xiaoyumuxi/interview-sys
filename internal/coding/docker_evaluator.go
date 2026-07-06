@@ -13,13 +13,18 @@ import (
 )
 
 type DockerEvaluatorConfig struct {
-	DockerBinary   string
-	GoImage        string
-	Timeout        time.Duration
-	Memory         string
-	CPUs           string
-	WorkDir        string
-	MaxOutputBytes int
+	DockerBinary    string
+	GoImage         string
+	JavaImage       string
+	PythonImage     string
+	JavaScriptImage string
+	TypeScriptImage string
+	CppImage        string
+	Timeout         time.Duration
+	Memory          string
+	CPUs            string
+	WorkDir         string
+	MaxOutputBytes  int
 }
 
 type DockerEvaluator struct {
@@ -38,12 +43,35 @@ type commandResult struct {
 	TimedOut bool
 }
 
+type dockerRunnerSpec struct {
+	Language string
+	Image    string
+	FileName string
+	Env      []string
+	Command  string
+}
+
 func NewDockerEvaluator(cfg DockerEvaluatorConfig) *DockerEvaluator {
 	if cfg.DockerBinary == "" {
 		cfg.DockerBinary = "docker"
 	}
 	if cfg.GoImage == "" {
 		cfg.GoImage = "golang:1.26-alpine"
+	}
+	if cfg.JavaImage == "" {
+		cfg.JavaImage = "eclipse-temurin:21-jdk-alpine"
+	}
+	if cfg.PythonImage == "" {
+		cfg.PythonImage = "python:3.13-alpine"
+	}
+	if cfg.JavaScriptImage == "" {
+		cfg.JavaScriptImage = "node:22-alpine"
+	}
+	if cfg.TypeScriptImage == "" {
+		cfg.TypeScriptImage = "denoland/deno:alpine-2.1.4"
+	}
+	if cfg.CppImage == "" {
+		cfg.CppImage = "gcc:14-alpine"
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Second
@@ -62,12 +90,13 @@ func NewDockerEvaluator(cfg DockerEvaluatorConfig) *DockerEvaluator {
 
 func (e *DockerEvaluator) Evaluate(ctx context.Context, submission Submission, question Question, cases []TestCase) (JudgeResult, error) {
 	_ = question
-	if normalizeLanguage(submission.Language) != "go" {
+	spec, ok := e.runnerSpec(submission.Language)
+	if !ok {
 		return JudgeResult{
 			Status: StatusSystemError,
 			Result: map[string]any{
 				"error_code": "unsupported_language_for_docker_judge",
-				"message":    "docker judge currently supports go submissions only",
+				"message":    "docker judge does not support this language",
 				"retryable":  false,
 				"language":   submission.Language,
 			},
@@ -88,7 +117,7 @@ func (e *DockerEvaluator) Evaluate(ctx context.Context, submission Submission, q
 		return JudgeResult{}, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	if err := os.WriteFile(filepath.Join(dir, "Main.go"), []byte(submission.SourceCode), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, spec.FileName), []byte(submission.SourceCode), 0o600); err != nil {
 		return JudgeResult{}, err
 	}
 	fullResults := make([]map[string]any, 0, len(cases))
@@ -103,7 +132,7 @@ func (e *DockerEvaluator) Evaluate(ctx context.Context, submission Submission, q
 		}
 		totalWeight += testCase.Weight
 		runCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
-		result, err := e.runner.Run(runCtx, e.cfg.DockerBinary, e.dockerArgs(dir), testCase.InputText)
+		result, err := e.runner.Run(runCtx, e.cfg.DockerBinary, e.dockerArgs(dir, spec), testCase.InputText)
 		cancel()
 		if err != nil && !result.TimedOut && result.ExitCode == 0 {
 			return JudgeResult{}, err
@@ -125,17 +154,17 @@ func (e *DockerEvaluator) Evaluate(ctx context.Context, submission Submission, q
 			caseResult["passed"] = false
 			fullResults = append(fullResults, caseResult)
 			publicResults = append(publicResults, publicCaseResult(index, caseResult))
-			return e.finalResult(StatusTimeLimitExceeded, passedWeight, totalWeight, fullResults, publicResults, stdoutCombined.String(), stderrCombined.String(), "time limit exceeded")
+			return e.finalResult(StatusTimeLimitExceeded, spec, passedWeight, totalWeight, fullResults, publicResults, stdoutCombined.String(), stderrCombined.String(), "time limit exceeded")
 		}
 		if result.ExitCode != 0 {
 			caseResult["passed"] = false
 			fullResults = append(fullResults, caseResult)
 			publicResults = append(publicResults, publicCaseResult(index, caseResult))
 			status := StatusRuntimeError
-			if looksLikeGoCompileError(result.Stderr) {
+			if looksLikeCompileError(spec.Language, result.Stderr) {
 				status = StatusCompileError
 			}
-			return e.finalResult(status, passedWeight, totalWeight, fullResults, publicResults, stdoutCombined.String(), stderrCombined.String(), "program exited with non-zero status")
+			return e.finalResult(status, spec, passedWeight, totalWeight, fullResults, publicResults, stdoutCombined.String(), stderrCombined.String(), "program exited with non-zero status")
 		}
 		passed := normalizeOutput(result.Stdout) == normalizeOutput(testCase.ExpectedOutput)
 		caseResult["passed"] = passed
@@ -151,11 +180,62 @@ func (e *DockerEvaluator) Evaluate(ctx context.Context, submission Submission, q
 		status = StatusWrongAnswer
 		message = "one or more test cases failed"
 	}
-	return e.finalResult(status, passedWeight, totalWeight, fullResults, publicResults, stdoutCombined.String(), stderrCombined.String(), message)
+	return e.finalResult(status, spec, passedWeight, totalWeight, fullResults, publicResults, stdoutCombined.String(), stderrCombined.String(), message)
 }
 
-func (e *DockerEvaluator) dockerArgs(dir string) []string {
-	return []string{
+func (e *DockerEvaluator) runnerSpec(language string) (dockerRunnerSpec, bool) {
+	switch normalizeLanguage(language) {
+	case "go":
+		return dockerRunnerSpec{
+			Language: "go",
+			Image:    e.cfg.GoImage,
+			FileName: "Main.go",
+			Env:      []string{"GOCACHE=/tmp/gocache"},
+			Command:  "go run /work/Main.go",
+		}, true
+	case "java":
+		return dockerRunnerSpec{
+			Language: "java",
+			Image:    e.cfg.JavaImage,
+			FileName: "Main.java",
+			Command:  "mkdir -p /tmp/classes && javac /work/Main.java -d /tmp/classes && java -cp /tmp/classes Main",
+		}, true
+	case "python", "python3":
+		return dockerRunnerSpec{
+			Language: "python",
+			Image:    e.cfg.PythonImage,
+			FileName: "Main.py",
+			Command:  "python /work/Main.py",
+		}, true
+	case "javascript":
+		return dockerRunnerSpec{
+			Language: "javascript",
+			Image:    e.cfg.JavaScriptImage,
+			FileName: "Main.js",
+			Command:  "node /work/Main.js",
+		}, true
+	case "typescript":
+		return dockerRunnerSpec{
+			Language: "typescript",
+			Image:    e.cfg.TypeScriptImage,
+			FileName: "Main.ts",
+			Env:      []string{"DENO_DIR=/tmp/deno"},
+			Command:  "deno run --no-prompt --no-net /work/Main.ts",
+		}, true
+	case "cpp", "c++":
+		return dockerRunnerSpec{
+			Language: "cpp",
+			Image:    e.cfg.CppImage,
+			FileName: "Main.cpp",
+			Command:  "g++ -std=c++20 -O2 -pipe /work/Main.cpp -o /tmp/main && /tmp/main",
+		}, true
+	default:
+		return dockerRunnerSpec{}, false
+	}
+}
+
+func (e *DockerEvaluator) dockerArgs(dir string, spec dockerRunnerSpec) []string {
+	args := []string{
 		"run",
 		"--rm",
 		"--network", "none",
@@ -164,15 +244,17 @@ func (e *DockerEvaluator) dockerArgs(dir string) []string {
 		"--pids-limit", "128",
 		"--read-only",
 		"--tmpfs", "/tmp:rw,exec,nosuid,size=64m",
-		"-e", "GOCACHE=/tmp/gocache",
 		"-v", dir + ":/work:ro",
 		"-w", "/work",
-		e.cfg.GoImage,
-		"go", "run", "./Main.go",
 	}
+	for _, env := range spec.Env {
+		args = append(args, "-e", env)
+	}
+	args = append(args, spec.Image, "sh", "-c", spec.Command)
+	return args
 }
 
-func (e *DockerEvaluator) finalResult(status string, passedWeight int, totalWeight int, fullResults []map[string]any, publicResults []map[string]any, stdoutText string, stderrText string, message string) (JudgeResult, error) {
+func (e *DockerEvaluator) finalResult(status string, spec dockerRunnerSpec, passedWeight int, totalWeight int, fullResults []map[string]any, publicResults []map[string]any, stdoutText string, stderrText string, message string) (JudgeResult, error) {
 	score := 0.0
 	if totalWeight > 0 {
 		score = float64(passedWeight) / float64(totalWeight) * 100
@@ -190,11 +272,12 @@ func (e *DockerEvaluator) finalResult(status string, passedWeight int, totalWeig
 		StdoutText:  limitText(stdoutText, e.cfg.MaxOutputBytes),
 		StderrText:  limitText(stderrText, e.cfg.MaxOutputBytes),
 		ResourceUsage: map[string]any{
-			"sandbox": "docker",
-			"image":   e.cfg.GoImage,
-			"timeout": e.cfg.Timeout.String(),
-			"memory":  e.cfg.Memory,
-			"cpus":    e.cfg.CPUs,
+			"sandbox":  "docker",
+			"language": spec.Language,
+			"image":    spec.Image,
+			"timeout":  e.cfg.Timeout.String(),
+			"memory":   e.cfg.Memory,
+			"cpus":     e.cfg.CPUs,
 		},
 	}, nil
 }
@@ -254,11 +337,22 @@ func normalizeOutput(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 }
 
-func looksLikeGoCompileError(stderr string) bool {
+func looksLikeCompileError(language string, stderr string) bool {
 	text := strings.ToLower(stderr)
-	return strings.Contains(text, "# command-line-arguments") ||
-		strings.Contains(text, "syntax error") ||
-		strings.Contains(text, "undefined:")
+	switch language {
+	case "go":
+		return strings.Contains(text, "# command-line-arguments") ||
+			strings.Contains(text, "syntax error") ||
+			strings.Contains(text, "undefined:")
+	case "java", "cpp":
+		return strings.Contains(text, "error:")
+	case "python", "javascript":
+		return strings.Contains(text, "syntaxerror")
+	case "typescript":
+		return strings.Contains(text, "syntaxerror") || strings.Contains(text, "ts")
+	default:
+		return false
+	}
 }
 
 func limitText(value string, limit int) string {

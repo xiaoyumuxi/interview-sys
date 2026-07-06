@@ -21,6 +21,11 @@ type Config struct {
 	CodingJudgeMode             string
 	CodingJudgeDockerBinary     string
 	CodingJudgeGoImage          string
+	CodingJudgeJavaImage        string
+	CodingJudgePythonImage      string
+	CodingJudgeJavaScriptImage  string
+	CodingJudgeTypeScriptImage  string
+	CodingJudgeCppImage         string
 	CodingJudgeTimeoutSeconds   int
 	CodingJudgeMemory           string
 	CodingJudgeCPUs             string
@@ -54,6 +59,11 @@ func Load() Config {
 		CodingJudgeMode:             env("CODING_JUDGE_MODE", "disabled"),
 		CodingJudgeDockerBinary:     env("CODING_JUDGE_DOCKER_BINARY", "docker"),
 		CodingJudgeGoImage:          env("CODING_JUDGE_GO_IMAGE", "golang:1.26-alpine"),
+		CodingJudgeJavaImage:        env("CODING_JUDGE_JAVA_IMAGE", "eclipse-temurin:21-jdk-alpine"),
+		CodingJudgePythonImage:      env("CODING_JUDGE_PYTHON_IMAGE", "python:3.13-alpine"),
+		CodingJudgeJavaScriptImage:  env("CODING_JUDGE_JAVASCRIPT_IMAGE", "node:22-alpine"),
+		CodingJudgeTypeScriptImage:  env("CODING_JUDGE_TYPESCRIPT_IMAGE", "denoland/deno:alpine-2.1.4"),
+		CodingJudgeCppImage:         env("CODING_JUDGE_CPP_IMAGE", "gcc:14-alpine"),
 		CodingJudgeTimeoutSeconds:   envInt("CODING_JUDGE_TIMEOUT_SECONDS", 5),
 		CodingJudgeMemory:           env("CODING_JUDGE_MEMORY", "128m"),
 		CodingJudgeCPUs:             env("CODING_JUDGE_CPUS", "0.5"),

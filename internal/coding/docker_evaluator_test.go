@@ -70,6 +70,54 @@ func TestDockerEvaluatorAcceptsGoSubmission(t *testing.T) {
 	}
 }
 
+func TestDockerEvaluatorSupportsCommonLanguageRunners(t *testing.T) {
+	tests := []struct {
+		language string
+		image    string
+		file     string
+		command  string
+	}{
+		{language: "go", image: "golang:1.26-alpine", file: "Main.go", command: "go run /work/Main.go"},
+		{language: "java", image: "eclipse-temurin:21-jdk-alpine", file: "Main.java", command: "javac /work/Main.java"},
+		{language: "python3", image: "python:3.13-alpine", file: "Main.py", command: "python /work/Main.py"},
+		{language: "javascript", image: "node:22-alpine", file: "Main.js", command: "node /work/Main.js"},
+		{language: "typescript", image: "denoland/deno:alpine-2.1.4", file: "Main.ts", command: "deno run"},
+		{language: "cpp", image: "gcc:14-alpine", file: "Main.cpp", command: "g++ -std=c++20"},
+	}
+	for _, test := range tests {
+		t.Run(test.language, func(t *testing.T) {
+			runner := &fakeDockerRunner{results: []commandResult{{Stdout: "ok\n"}}}
+			evaluator := NewDockerEvaluator(DockerEvaluatorConfig{})
+			evaluator.runner = runner
+
+			result, err := evaluator.Evaluate(context.Background(), Submission{
+				SubmissionID: "sub_1",
+				Language:     test.language,
+				SourceCode:   "// source",
+			}, Question{}, []TestCase{{TestCaseID: "sample", CaseType: "sample", InputText: "input", ExpectedOutput: "ok", Weight: 1}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != StatusAccepted {
+				t.Fatalf("status = %q", result.Status)
+			}
+			if len(runner.calls) != 1 {
+				t.Fatalf("calls = %d, want 1", len(runner.calls))
+			}
+			args := strings.Join(runner.calls[0].args, " ")
+			if !strings.Contains(args, test.image) || !strings.Contains(args, test.command) || !strings.Contains(args, test.file) {
+				t.Fatalf("docker args = %#v", runner.calls[0].args)
+			}
+			if !strings.Contains(args, "/work:ro") {
+				t.Fatalf("docker args should mount source read-only: %#v", runner.calls[0].args)
+			}
+			if result.ResourceUsage["image"] != test.image {
+				t.Fatalf("image = %v, want %s", result.ResourceUsage["image"], test.image)
+			}
+		})
+	}
+}
+
 func TestDockerEvaluatorReportsWrongAnswer(t *testing.T) {
 	runner := &fakeDockerRunner{results: []commandResult{{Stdout: "[1,0]\n"}}}
 	evaluator := NewDockerEvaluator(DockerEvaluatorConfig{})
@@ -122,7 +170,7 @@ func TestDockerEvaluatorClassifiesTimeoutAndCompileError(t *testing.T) {
 
 func TestDockerEvaluatorRejectsUnsupportedLanguageAndMissingCases(t *testing.T) {
 	evaluator := NewDockerEvaluator(DockerEvaluatorConfig{})
-	result, err := evaluator.Evaluate(context.Background(), Submission{Language: "python"}, Question{}, nil)
+	result, err := evaluator.Evaluate(context.Background(), Submission{Language: "ruby"}, Question{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

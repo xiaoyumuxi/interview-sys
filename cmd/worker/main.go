@@ -113,11 +113,16 @@ func codingEvaluator(cfg config.Config, logger *slog.Logger) coding.Evaluator {
 	switch strings.ToLower(strings.TrimSpace(cfg.CodingJudgeMode)) {
 	case "docker":
 		return coding.NewDockerEvaluator(coding.DockerEvaluatorConfig{
-			DockerBinary: cfg.CodingJudgeDockerBinary,
-			GoImage:      cfg.CodingJudgeGoImage,
-			Timeout:      time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
-			Memory:       cfg.CodingJudgeMemory,
-			CPUs:         cfg.CodingJudgeCPUs,
+			DockerBinary:    cfg.CodingJudgeDockerBinary,
+			GoImage:         cfg.CodingJudgeGoImage,
+			JavaImage:       cfg.CodingJudgeJavaImage,
+			PythonImage:     cfg.CodingJudgePythonImage,
+			JavaScriptImage: cfg.CodingJudgeJavaScriptImage,
+			TypeScriptImage: cfg.CodingJudgeTypeScriptImage,
+			CppImage:        cfg.CodingJudgeCppImage,
+			Timeout:         time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+			Memory:          cfg.CodingJudgeMemory,
+			CPUs:            cfg.CodingJudgeCPUs,
 		})
 	default:
 		if logger != nil {
