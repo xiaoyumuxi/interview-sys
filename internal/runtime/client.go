@@ -33,6 +33,7 @@ type TaskRequest struct {
 	Provider     *ProviderConfig             `json:"provider,omitempty"`
 	ContextItems []contextengine.ContextItem `json:"context_items"`
 	UserInput    string                      `json:"user_input"`
+	OutputSchema map[string]any              `json:"output_schema,omitempty"`
 	DryRun       bool                        `json:"dry_run"`
 }
 

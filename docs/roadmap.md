@@ -35,6 +35,7 @@
 - Redis Stream pending reclaim、dead-letter / poison message 兜底。
 - Dead-letter analyzer consumer 和 PostgreSQL `dead_letter_events` 统一分析表。
 - Worker summary 运维接口：`GET /api/ops/workers/summary`。
+- Final report generation：Go 聚合 session/turn 确定性事实并持久化 `interview_reports`，Python Runtime `summary` task 生成结构化报告内容。
 
 ## 下一批任务
 
@@ -45,21 +46,16 @@
    - 返回 evidence、score、reason、source 和 token 预算。
    - 保留 debug trace，避免上下文进入 Prompt 后不可解释。
 
-2. Final report generation。
-   - 汇总问答表现、代码题结果、薄弱点、强项和复习建议。
-   - Go 负责报告事实和状态，Python 负责报告内容生成。
-   - 输出带 schema version，便于前端和历史报告兼容。
-
-3. Coding judge worker。
+2. Coding judge worker。
    - 当前 submission 结果仍是 queued placeholder。
    - 后续需要 Docker sandbox、资源限制、无网络执行、测试结果追踪和重试/死信策略。
 
-4. Evaluation Harness。
+3. Evaluation Harness。
    - 建立出题、评分、追问、总结、RAG 命中和 memory 提取的样例集。
    - 记录质量、成本、延迟和回归结果。
    - 先服务后端稳定性，不急于做复杂评测平台。
 
-5. 前端接入准备。
+4. 前端接入准备。
    - 明确异步 trace 轮询、session 状态展示、报告页和 memory review 的接口契约。
    - 复用现有后端 schema version，避免前端直接绑定内部实现。
 

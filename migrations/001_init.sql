@@ -241,6 +241,22 @@ CREATE TABLE IF NOT EXISTS interview_runtime_snapshots (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS interview_reports (
+    report_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL UNIQUE REFERENCES interview_sessions(session_id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES app_users(user_id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed')),
+    content JSONB NOT NULL DEFAULT '{}'::jsonb,
+    runtime_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+    trace_id TEXT REFERENCES agent_traces(trace_id) ON DELETE SET NULL,
+    error_text TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_reports_user_status ON interview_reports (user_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS async_messages (
     message_id TEXT PRIMARY KEY,
     stream_name TEXT NOT NULL,

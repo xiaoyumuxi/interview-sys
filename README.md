@@ -162,7 +162,7 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | Skills | `GET/POST /api/skills`, `POST /api/skills/reload`, `GET /api/skills/{skill_id}` |
 | Context & Agent | `POST /api/context/preview`, `POST /api/agent/tasks` |
 | Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
-| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace` |
+| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
 | Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
 | Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary` |
 
@@ -184,6 +184,7 @@ Python Runtime:
 | Turn state | `interview_turns.turn_status` 使用 `queued -> running -> completed/failed`，stale running turn 可回到 `queued` |
 | Locks | 不新增持久化业务锁字段；并发依赖幂等、`FOR UPDATE SKIP LOCKED`、turn 状态更新和短 TTL Redis 协调 |
 | Recovery | PostgreSQL runtime snapshot 保留 Redis 丢失后的业务事实 |
+| Final report | `interview_reports` 保存报告状态和内容；Go 聚合确定性事实，Python Runtime `summary` task 只负责生成文本结构 |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 | Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
