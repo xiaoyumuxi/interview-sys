@@ -16,6 +16,8 @@ type Config struct {
 	InterviewEventsStream       string
 	InterviewDeadLetterStream   string
 	EnableEmbeddedWorker        bool
+	CodingJudgeEnabled          bool
+	CodingJudgeBatchSize        int
 	MinIOEndpoint               string
 	SkillsDir                   string
 	AIRuntimeURL                string
@@ -41,6 +43,8 @@ func Load() Config {
 		InterviewEventsStream:       env("INTERVIEW_EVENTS_STREAM", "interview:events"),
 		InterviewDeadLetterStream:   env("INTERVIEW_DEAD_LETTER_STREAM", "interview:events:dead"),
 		EnableEmbeddedWorker:        envBool("ENABLE_EMBEDDED_WORKER", false),
+		CodingJudgeEnabled:          envBool("CODING_JUDGE_ENABLED", false),
+		CodingJudgeBatchSize:        envInt("CODING_JUDGE_BATCH_SIZE", 4),
 		MinIOEndpoint:               env("MINIO_ENDPOINT", "localhost:9000"),
 		SkillsDir:                   env("SKILLS_DIR", "skills"),
 		AIRuntimeURL:                env("AI_RUNTIME_URL", "http://localhost:8090"),

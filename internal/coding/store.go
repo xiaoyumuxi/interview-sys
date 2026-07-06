@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,36 @@ type Submission struct {
 	CreatedAt    string         `json:"created_at"`
 	UpdatedAt    string         `json:"updated_at"`
 }
+
+type JudgeResult struct {
+	Status        string           `json:"status"`
+	Score         float64          `json:"score"`
+	Result        map[string]any   `json:"result"`
+	TestResults   []map[string]any `json:"test_results"`
+	StdoutText    string           `json:"stdout_text"`
+	StderrText    string           `json:"stderr_text"`
+	ResourceUsage map[string]any   `json:"resource_usage"`
+}
+
+type JudgeSummary struct {
+	SchemaVersion string         `json:"schema_version"`
+	ByStatus      map[string]int `json:"by_status"`
+	Queued        int            `json:"queued"`
+	Running       int            `json:"running"`
+	Terminal      int            `json:"terminal"`
+	Total         int            `json:"total"`
+}
+
+const (
+	StatusQueued            = "queued"
+	StatusRunning           = "running"
+	StatusAccepted          = "accepted"
+	StatusWrongAnswer       = "wrong_answer"
+	StatusRuntimeError      = "runtime_error"
+	StatusTimeLimitExceeded = "time_limit_exceeded"
+	StatusCompileError      = "compile_error"
+	StatusSystemError       = "system_error"
+)
 
 func (s *Store) ListSets(ctx context.Context) (items []QuestionSet, err error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -274,6 +305,168 @@ WHERE submission_id=$1`, submissionID)
 	return item, true, nil
 }
 
+func (s *Store) ClaimQueuedSubmissions(ctx context.Context, limit int) ([]Submission, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `
+SELECT submission_id
+FROM code_submissions
+WHERE status=$1
+ORDER BY created_at
+LIMIT $2
+FOR UPDATE SKIP LOCKED`, StatusQueued, limit)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		resultJSON, _ := json.Marshal(map[string]any{
+			"schema_version": "coding.submission.result.v1",
+			"message":        "claimed by judge worker",
+		})
+		if _, err := tx.ExecContext(ctx, `
+UPDATE code_submissions
+SET status=$2, result=$3, updated_at=now()
+WHERE submission_id=$1 AND status=$4`, id, StatusRunning, resultJSON, StatusQueued); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	items := make([]Submission, 0, len(ids))
+	for _, id := range ids {
+		item, ok, err := s.GetSubmission(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
+func (s *Store) CompleteSubmission(ctx context.Context, submissionID string, result JudgeResult) (Submission, error) {
+	if strings.TrimSpace(submissionID) == "" {
+		return Submission{}, errors.New("submission_id is required")
+	}
+	if !terminalStatus(result.Status) {
+		return Submission{}, fmt.Errorf("invalid terminal judge status: %s", result.Status)
+	}
+	if result.Result == nil {
+		result.Result = map[string]any{}
+	}
+	result.Result["schema_version"] = "coding.submission.result.v1"
+	result.Result["judge_status"] = result.Status
+	if result.ResourceUsage == nil {
+		result.ResourceUsage = map[string]any{}
+	}
+	resultJSON, err := json.Marshal(result.Result)
+	if err != nil {
+		return Submission{}, err
+	}
+	testResultsJSON, err := json.Marshal(result.TestResults)
+	if err != nil {
+		return Submission{}, err
+	}
+	resourceJSON, err := json.Marshal(result.ResourceUsage)
+	if err != nil {
+		return Submission{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Submission{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	update, err := tx.ExecContext(ctx, `
+UPDATE code_submissions
+SET status=$2, score=$3, result=$4, updated_at=now()
+WHERE submission_id=$1 AND status=$5`,
+		submissionID, result.Status, result.Score, resultJSON, StatusRunning)
+	if err != nil {
+		return Submission{}, err
+	}
+	if rows, _ := update.RowsAffected(); rows == 0 {
+		return Submission{}, errors.New("submission is not running or does not exist")
+	}
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO code_evaluation_traces (
+  trace_id, submission_id, judge_worker_id, test_results, stdout_text, stderr_text, resource_usage
+) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		store.NewID("judge_trace"), submissionID, "go-coding-judge", testResultsJSON,
+		result.StdoutText, result.StderrText, resourceJSON)
+	if err != nil {
+		return Submission{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Submission{}, err
+	}
+	item, ok, err := s.GetSubmission(ctx, submissionID)
+	if err != nil {
+		return Submission{}, err
+	}
+	if !ok {
+		return Submission{}, errors.New("submission was not found after completion")
+	}
+	return item, nil
+}
+
+func (s *Store) JudgeSummary(ctx context.Context) (JudgeSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT status, count(*)
+FROM code_submissions
+GROUP BY status`)
+	if err != nil {
+		return JudgeSummary{}, err
+	}
+	defer rows.Close()
+	byStatus := map[string]int{}
+	total := 0
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return JudgeSummary{}, err
+		}
+		byStatus[status] = count
+		total += count
+	}
+	if err := rows.Err(); err != nil {
+		return JudgeSummary{}, err
+	}
+	queued := byStatus[StatusQueued]
+	running := byStatus[StatusRunning]
+	return JudgeSummary{
+		SchemaVersion: "coding.judge.summary.v1",
+		ByStatus:      byStatus,
+		Queued:        queued,
+		Running:       running,
+		Terminal:      total - queued - running,
+		Total:         total,
+	}, nil
+}
+
 func splitTags(value string) []string {
 	if strings.TrimSpace(value) == "" {
 		return make([]string, 0)
@@ -327,6 +520,15 @@ func normalizeLanguage(value string) string {
 func supportedLanguage(value string) bool {
 	switch normalizeLanguage(value) {
 	case "go", "java", "python", "python3", "javascript", "typescript", "cpp", "c++":
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalStatus(status string) bool {
+	switch status {
+	case StatusAccepted, StatusWrongAnswer, StatusRuntimeError, StatusTimeLimitExceeded, StatusCompileError, StatusSystemError:
 		return true
 	default:
 		return false

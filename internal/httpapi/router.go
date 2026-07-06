@@ -91,6 +91,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/ops/dead-letters", api.requireRoot(), api.listDeadLetters)
 	group.GET("/ops/dead-letters/:dead_letter_id", api.requireRoot(), api.getDeadLetter)
 	group.GET("/ops/workers/summary", api.requireRoot(), api.workerSummary)
+	group.GET("/ops/coding-judge/summary", api.requireRoot(), api.codingJudgeSummary)
 
 	return router
 }
@@ -581,6 +582,15 @@ func (h apiHandler) workerSummary(c *gin.Context) {
 	item, err := h.deps.InterviewService.WorkerMetrics(c.Request.Context())
 	if err != nil {
 		writeGinError(c, http.StatusInternalServerError, "worker_metrics_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+func (h apiHandler) codingJudgeSummary(c *gin.Context) {
+	item, err := h.deps.CodingStore.JudgeSummary(c.Request.Context())
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "coding_judge_summary_failed", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, item)

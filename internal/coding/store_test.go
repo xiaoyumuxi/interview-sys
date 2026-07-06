@@ -87,6 +87,49 @@ func TestCreateSubmissionIntegration(t *testing.T) {
 	if len(items) != 1 || items[0].SubmissionID != item.SubmissionID {
 		t.Fatalf("ListSubmissions() = %+v, want one created submission", items)
 	}
+
+	claimed, err := store.ClaimQueuedSubmissions(ctx, 5)
+	if err != nil {
+		t.Fatalf("ClaimQueuedSubmissions() error = %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].SubmissionID != item.SubmissionID || claimed[0].Status != StatusRunning {
+		t.Fatalf("ClaimQueuedSubmissions() = %+v, want running created submission", claimed)
+	}
+	completed, err := store.CompleteSubmission(ctx, item.SubmissionID, JudgeResult{
+		Status: StatusAccepted,
+		Score:  100,
+		Result: map[string]any{
+			"message": "all tests passed",
+		},
+		TestResults: []map[string]any{
+			{"case": "sample", "passed": true},
+		},
+		StdoutText:    "ok",
+		ResourceUsage: map[string]any{"time_ms": 1},
+	})
+	if err != nil {
+		t.Fatalf("CompleteSubmission() error = %v", err)
+	}
+	if completed.Status != StatusAccepted || completed.Score != 100 {
+		t.Fatalf("completed submission = %+v", completed)
+	}
+	if completed.Result["judge_status"] != StatusAccepted {
+		t.Fatalf("judge_status = %v", completed.Result["judge_status"])
+	}
+	var traceCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM code_evaluation_traces WHERE submission_id=$1`, item.SubmissionID).Scan(&traceCount); err != nil {
+		t.Fatalf("count traces: %v", err)
+	}
+	if traceCount != 1 {
+		t.Fatalf("trace count = %d, want 1", traceCount)
+	}
+	summary, err := store.JudgeSummary(ctx)
+	if err != nil {
+		t.Fatalf("JudgeSummary() error = %v", err)
+	}
+	if summary.ByStatus[StatusAccepted] == 0 || summary.Total == 0 {
+		t.Fatalf("JudgeSummary() = %+v", summary)
+	}
 }
 
 func TestCreateSubmissionRejectsUnpublishedQuestionIntegration(t *testing.T) {
@@ -113,6 +156,26 @@ func TestCreateSubmissionRejectsUnpublishedQuestionIntegration(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "not published") {
 		t.Fatalf("CreateSubmission() error = %v, want unpublished question error", err)
+	}
+}
+
+func TestSandboxUnavailableEvaluatorDoesNotExecuteCode(t *testing.T) {
+	result, err := SandboxUnavailableEvaluator{}.Evaluate(context.Background(), Submission{
+		SubmissionID: "sub_1",
+		Language:     "go",
+		SourceCode:   "panic(\"should not run\")",
+	}, Question{QuestionID: "q_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSystemError {
+		t.Fatalf("status = %q", result.Status)
+	}
+	if result.Result["error_code"] != "sandbox_not_configured" {
+		t.Fatalf("result = %#v", result.Result)
+	}
+	if result.ResourceUsage["sandbox"] != "unavailable" {
+		t.Fatalf("resource usage = %#v", result.ResourceUsage)
 	}
 }
 
