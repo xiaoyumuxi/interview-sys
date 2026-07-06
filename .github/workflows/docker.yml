@@ -1,0 +1,47 @@
+name: Docker
+
+on:
+  pull_request:
+    paths:
+      - docker-compose.yml
+      - python-runtime/Dockerfile
+      - python-runtime/pyproject.toml
+      - python-runtime/uv.lock
+      - python-runtime/app/**
+      - .github/workflows/docker.yml
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - docker-compose.yml
+      - python-runtime/Dockerfile
+      - python-runtime/pyproject.toml
+      - python-runtime/uv.lock
+      - python-runtime/app/**
+      - .github/workflows/docker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-runtime-image:
+    name: Python runtime image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare local env file
+        run: cp .env.example .env
+
+      - name: Validate Compose config
+        run: docker compose --profile runtime config >/dev/null
+
+      - name: Build Python runtime image
+        run: docker compose --profile runtime build python-runtime

@@ -139,6 +139,18 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | `make fmt` | Run `gofmt` for `cmd` and `internal` |
 | `make check-middleware` | Check pinned middleware image compatibility |
 
+## CI Pipelines
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `CI` | PRs, `main/master` pushes and manual dispatch | Run `go test ./...` and Python Runtime unit tests |
+| `Quality` | PRs, `main/master` pushes and manual dispatch | Check `gofmt`, `go mod tidy`, `go vet`, Python compile and Compose config |
+| `Docker` | Runtime / Compose related changes and manual dispatch | Validate the runtime Compose profile and build the Python Runtime image |
+| `Integration Smoke` | Migration / middleware / init script changes and manual dispatch | Start PostgreSQL, Redis and MinIO, then apply migrations/seed and run basic health checks |
+| `Performance` | Service, runtime, migration, load-test script changes and manual dispatch | Run Go benchmarks and use k6 for lightweight `/healthz` load tests against Go API and Python Runtime |
+
+The current performance workflow is CI-level smoke load. It does not call real models or external providers. k6 scripts live in `scripts/k6`; defaults are `10 VUs / 30s` with thresholds of failure rate `< 1%`, P95 `< 200ms` and check pass rate `> 99%`. Results are rendered into GitHub Actions Summary tables with request count, RPS, failure rate, P95, max latency and Go benchmark `ns/op`, `B/op`, `allocs/op`; raw outputs are kept as artifacts.
+
 ## API Surface
 
 | Group | Endpoints |
@@ -216,9 +228,3 @@ If `PROVIDER_KEY_ENCRYPTION_SECRET` is not set, API keys must not be written int
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter pipeline and ops API |
 | [docs/deployment.md](./docs/deployment.md) | Local deployment and initialization |
 | [docs/reference-projects.md](./docs/reference-projects.md) | Reference project index |
-
-## Tracking Policy
-
-Tracked: source code, migrations, seed SQL, docs, scripts, skill packs, `README*.md`, `AGENTS.md` files and `.env.example`.
-
-Ignored: local secrets, local runtime databases, caches, virtual environments, coverage output, logs, temp files, editor settings and build artifacts.

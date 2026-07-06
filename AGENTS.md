@@ -27,6 +27,16 @@
 - `make test-python`：运行 Python runtime 单元测试。
 - `make fmt`：对 `cmd` 和 `internal` 下 Go 代码执行 `gofmt`。
 
+## CI 流水线
+
+仓库使用 GitHub Actions，配置位于 `.github/workflows`。
+
+- `ci.yml`：基础测试流水线，运行 `go test ./...` 和 Python Runtime 单元测试。
+- `quality.yml`：质量检查流水线，检查 `gofmt`、`go mod tidy`、`go vet`、Python compile 和 Docker Compose 配置。
+- `docker.yml`：Docker 构建流水线，在 runtime / Compose 相关文件变化时构建 Python Runtime 镜像。
+- `integration-smoke.yml`：中间件冒烟流水线，拉起 PostgreSQL、Redis、MinIO，执行 migration/seed，并检查基础可用性。
+- `performance.yml`：性能冒烟流水线，运行 `go test -run '^$' -bench=. -benchmem ./...`，并用 `scripts/k6` 下的 k6 脚本对 Go API 和 Python Runtime 的 `/healthz` 做轻量压测；默认不调用真实模型和外部 Provider。结果通过 `scripts/perf/perf_summary.py` 写入 GitHub Actions Summary 表格，并上传原始 benchmark/k6 输出 artifact。
+
 ## Go / Python 职责边界
 
 Go Core API 负责确定性业务事实、状态推进、幂等、审计和对外 API。凡是会改变业务状态、写数据库主事实、影响 worker 消费、影响请求幂等或审计记录的逻辑，默认放在 Go。

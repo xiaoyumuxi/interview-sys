@@ -139,6 +139,18 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | `make fmt` | 对 `cmd` 和 `internal` 执行 `gofmt` |
 | `make check-middleware` | 检查固定中间件镜像的平台兼容性 |
 
+## CI 流水线
+
+| Workflow | 触发 | 目的 |
+|---|---|---|
+| `CI` | PR、`main/master` push、手动触发 | 运行 `go test ./...` 和 Python Runtime 单元测试 |
+| `Quality` | PR、`main/master` push、手动触发 | 检查 `gofmt`、`go mod tidy`、`go vet`、Python compile 和 Compose 配置 |
+| `Docker` | Runtime / Compose 相关文件变化、手动触发 | 校验 Docker Compose runtime profile 并构建 Python Runtime 镜像 |
+| `Integration Smoke` | migration / middleware / init 脚本变化、手动触发 | 拉起 PostgreSQL、Redis、MinIO，执行 migration/seed 和基础健康检查 |
+| `Performance` | 服务、Runtime、migration、压测脚本变化、手动触发 | 运行 Go benchmark，并用 k6 对 Go API 和 Python Runtime 的 `/healthz` 做轻量压测 |
+
+当前性能流水线是 CI 级别的 smoke load，不调用真实模型，也不压外部 Provider。k6 脚本位于 `scripts/k6`，默认 `10 VUs / 30s`，阈值为失败率 `< 1%`、P95 `< 200ms`、检查通过率 `> 99%`。结果会写入 GitHub Actions Summary，以表格展示请求数、RPS、失败率、P95、最大延迟和 Go benchmark 的 `ns/op`、`B/op`、`allocs/op`，原始输出会作为 artifact 保留。
+
 ## API Surface
 
 | 分组 | Endpoints |
@@ -222,20 +234,6 @@ make check-middleware
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter 链路和运维 API |
 | [docs/deployment.md](./docs/deployment.md) | 本地部署和初始化 |
 | [docs/reference-projects.md](./docs/reference-projects.md) | 参考项目索引 |
-
-## 文件追踪策略
-
-应该追踪：
-
-- 源码、SQL migration、seed、脚本、文档、Skill Pack、`README*.md`、`AGENTS.md`、`.env.example`。
-
-不应该追踪：
-
-- 真实密钥和本地环境文件：`.env`、`.env.*`，但 `.env.example` 例外。
-- 本地运行时数据：`python-runtime/data/`，例如 memory SQLite 数据库。
-- 缓存和虚拟环境：`.cache/`、`python-runtime/.venv/`、`python-runtime/.pytest_cache/`、`__pycache__/`、`*.pyc`。
-- 测试和构建产物：`coverage.out`、`.coverage`、`htmlcov/`、`*.test`、`bin/`、`dist/`、`build/`。
-- 临时和噪声文件：`tmp/`、`*.tmp`、`*.log`、`.DS_Store`、`.idea/`、`.vscode/`。
 
 ## 安全说明
 

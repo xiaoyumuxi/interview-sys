@@ -1,0 +1,63 @@
+name: Integration Smoke
+
+on:
+  pull_request:
+    paths:
+      - docker-compose.yml
+      - migrations/**
+      - scripts/init-db.sh
+      - scripts/check-middleware.sh
+      - .env.example
+      - .github/workflows/integration-smoke.yml
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - docker-compose.yml
+      - migrations/**
+      - scripts/init-db.sh
+      - scripts/check-middleware.sh
+      - .env.example
+      - .github/workflows/integration-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  middleware-and-migrations:
+    name: Middleware and migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare local env file
+        run: cp .env.example .env
+
+      - name: Validate pinned middleware images
+        run: ./scripts/check-middleware.sh
+
+      - name: Start middleware
+        run: docker compose up -d --wait postgres redis minio
+
+      - name: Apply migrations and seed
+        run: ./scripts/init-db.sh
+
+      - name: Check Redis
+        run: docker compose exec -T redis redis-cli ping
+
+      - name: Check MinIO
+        run: docker compose exec -T minio mc ready local
+
+      - name: Check seeded database
+        run: docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ai_interview -d ai_interview -c "select count(*) from users;"
+
+      - name: Stop middleware
+        if: always()
+        run: docker compose down -v

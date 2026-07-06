@@ -1,0 +1,220 @@
+name: Performance
+
+on:
+  pull_request:
+    paths:
+      - cmd/**
+      - internal/**
+      - python-runtime/**
+      - migrations/**
+      - skills/**
+      - scripts/k6/**
+      - scripts/perf/**
+      - docker-compose.yml
+      - go.mod
+      - go.sum
+      - .env.example
+      - .github/workflows/performance.yml
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - cmd/**
+      - internal/**
+      - python-runtime/**
+      - migrations/**
+      - skills/**
+      - scripts/k6/**
+      - scripts/perf/**
+      - docker-compose.yml
+      - go.mod
+      - go.sum
+      - .env.example
+      - .github/workflows/performance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-benchmarks:
+    name: Go benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Go benchmarks
+        run: |
+          set -o pipefail
+          go test -run '^$' -bench=. -benchmem ./... | tee /tmp/go-benchmarks.txt
+
+      - name: Summarize Go benchmarks
+        run: python3 scripts/perf/perf_summary.py go-bench --input /tmp/go-benchmarks.txt --title "Go Benchmarks" --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Go benchmark output
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-benchmarks
+          path: /tmp/go-benchmarks.txt
+          if-no-files-found: error
+
+  api-health-load:
+    name: Go API health load
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare local env file
+        run: cp .env.example .env
+
+      - name: Start middleware
+        run: docker compose up -d --wait postgres redis
+
+      - name: Apply migrations and seed
+        run: ./scripts/init-db.sh
+
+      - name: Start Go API
+        run: |
+          go run ./cmd/api > /tmp/ai-interview-api.log 2>&1 &
+          echo $! > /tmp/ai-interview-api.pid
+
+      - name: Wait for Go API
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ai-interview-api.log
+          exit 1
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6 API health load
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          VUS: "10"
+          DURATION: 30s
+        run: k6 run --summary-export /tmp/k6-api-health.json scripts/k6/api-health.js
+
+      - name: Summarize API health load
+        if: always()
+        run: |
+          if [ -f /tmp/k6-api-health.json ]; then
+            python3 scripts/perf/perf_summary.py k6 --input /tmp/k6-api-health.json --title "Go API /healthz Load" --summary-file "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Go API /healthz Load" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No k6 summary file was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload API health load output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-api-health
+          path: /tmp/k6-api-health.json
+          if-no-files-found: ignore
+
+      - name: Print API log on failure
+        if: failure()
+        run: cat /tmp/ai-interview-api.log || true
+
+      - name: Stop middleware
+        if: always()
+        run: docker compose down -v
+
+  runtime-health-load:
+    name: Python runtime health load
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python-runtime
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.3"
+          enable-cache: true
+          cache-dependency-glob: python-runtime/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Start Python Runtime
+        run: |
+          uv run uvicorn app.main:app --host 127.0.0.1 --port 8090 > /tmp/ai-interview-runtime.log 2>&1 &
+          echo $! > /tmp/ai-interview-runtime.pid
+
+      - name: Wait for Python Runtime
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8090/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ai-interview-runtime.log
+          exit 1
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6 runtime health load
+        env:
+          BASE_URL: http://127.0.0.1:8090
+          VUS: "10"
+          DURATION: 30s
+        run: k6 run --summary-export /tmp/k6-runtime-health.json ../scripts/k6/runtime-health.js
+
+      - name: Summarize runtime health load
+        if: always()
+        run: |
+          if [ -f /tmp/k6-runtime-health.json ]; then
+            python3 ../scripts/perf/perf_summary.py k6 --input /tmp/k6-runtime-health.json --title "Python Runtime /healthz Load" --summary-file "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Python Runtime /healthz Load" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No k6 summary file was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload runtime health load output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-runtime-health
+          path: /tmp/k6-runtime-health.json
+          if-no-files-found: ignore
+
+      - name: Print runtime log on failure
+        if: failure()
+        run: cat /tmp/ai-interview-runtime.log || true
