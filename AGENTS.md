@@ -6,7 +6,7 @@
 
 - `cmd/api`：Go HTTP API 入口，负责路由、鉴权、Provider、Skill、面试会话等对外接口。
 - `cmd/worker`：Go 后台 worker，消费 Redis Stream，处理 outbox 派发、重试、pending reclaim 和 dead letter。
-- `internal`：Go 业务包，包含 auth、provider、skill、interview runtime、workqueue、store、HTTP routing 等模块。
+- `internal`：Go 业务包，包含 auth、provider、skill、interview runtime、memory orchestration、workqueue、store、HTTP routing 等模块。
 - `migrations`：PostgreSQL schema 和默认 seed SQL。
 - `python-runtime`：FastAPI AI Runtime，负责 LLM 调用、Prompt 安全、结构化输出和 memory API。
 - `skills`：本地 Skill Pack，目前包含 `java-backend`。
@@ -40,7 +40,10 @@ Python AI Runtime 负责非确定性 AI 推理。模型调用、Prompt 细节、
 - Provider 配置、密钥来源、task routing 和连通性测试由 Go 管理。
 - Python 只使用 Go 请求传入的 Provider 配置执行模型调用，不决定 task routing。
 - Python 不直接写 Go 业务主表，不绕过 Go 推进 interview runtime。
+- Go 对外提供 `/api/memory/*` 作为 Python memory API 的统一入口，负责鉴权、用户隔离、trace/audit 和错误标准化；Python 仍负责 memory candidate/review/profile/search/due review 的主逻辑。
 - Python trace 不记录 API key；Go 负责写 `agent_traces` 等审计事实。
+- Python 仅仅负责有关LLM编排、工具调用、记忆管理、Agent和SubAgent的管理等大模型应用层面的逻辑部分，而可靠性等内容都是由Go这类后端业务类型语言负责进行推进的。
+- 项目是单体项目，但是设计层面上需要考虑是否方便修改为微服务架构的内容，预计以后可能修改成的微服务有三个模块——模拟面试的Go后端业务模块、集成管理的SaaS对接服务模块、Python运行时。
 
 ## 编码风格
 
@@ -52,7 +55,7 @@ Python 代码遵循常规 PEP 8 风格，runtime 逻辑放在 `python-runtime/ap
 
 ## 测试要求
 
-Go 测试使用标准 `testing` 包，文件命名为 `*_test.go`。当前覆盖集中在 auth、provider、skill 和 interview runtime 周边；新增状态机、outbox、worker、API 行为时应补充聚焦测试。
+Go 测试使用标准 `testing` 包，文件命名为 `*_test.go`。当前覆盖集中在 auth、provider、skill、interview runtime 和 memory API 编排周边；新增状态机、outbox、worker、API 行为时应补充聚焦测试。
 
 Python 测试位于 `python-runtime/tests`，命名为 `test_*.py`，通过 `make test-python` 或 `uv run python -m unittest discover -s tests -p 'test_*.py' -v` 运行。
 
@@ -80,6 +83,12 @@ Provider API key 支持两种来源：
 
 本地可用 `AUTH_DISABLED=true` 调试受保护接口，但正常开发、测试和部署不要依赖该配置。Provider 配置和 Skill 写操作需要 `root` 角色。
 
+## 文件追踪与忽略
+
+应追踪源码、SQL migration、seed、脚本、文档、Skill Pack、`README*.md`、各级 `AGENTS.md` 和 `.env.example`。`python-runtime/AGENTS.md` 是子目录协作指南，不应加入忽略规则。
+
+不应追踪真实密钥、本地环境文件、运行时数据、缓存、虚拟环境、覆盖率、日志、临时目录、编辑器配置和构建产物。当前 `.gitignore` 覆盖 `.env`、`.env.*`、`python-runtime/data/`、`.cache/`、`tmp/`、`python-runtime/.venv/`、`python-runtime/.pytest_cache/`、`__pycache__/`、`*.pyc`、`coverage.out`、`.coverage`、`htmlcov/`、`*.test`、`bin/`、`dist/`、`build/`、`*.log`、`.DS_Store`、`.idea/` 和 `.vscode/`，并显式保留 `.env.example`。
+
 ## 数据库与中间件
 
 SQL 初始化文件：
@@ -89,7 +98,7 @@ SQL 初始化文件：
 
 PostgreSQL 官方 entrypoint 只会在数据卷首次创建时执行初始化 SQL。已有数据卷下修改 migration 后，需要手动运行 `make init-db`。
 
-默认中间件镜像不要使用 `latest`，保持与文档一致的固定版本：
+默认中间件镜像不要使用 `latest`，保持与文档一致的固定版本，引入的中间件的版本需要是跨平台可以一键下载的：
 
 - `pgvector/pgvector:pg16`
 - `redis:7-alpine`

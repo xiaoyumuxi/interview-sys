@@ -1,71 +1,110 @@
 # AI Interview Platform
 
-个人 AI 面试训练平台后端重写工程。
+中文 | [English](./README.en.md)
 
-## 当前阶段
+构建一个可回放、可审计、可恢复的 AI 面试训练后端。
 
-后端已经进入 Go 异步面试运行时 + Python Runtime memory 基础能力阶段：
+![阶段](https://img.shields.io/badge/stage-async%20runtime%20%2B%20memory-334155)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![API](https://img.shields.io/badge/API-Gin-008ECF)
+![Runtime](https://img.shields.io/badge/Runtime-FastAPI-009688?logo=fastapi&logoColor=white)
+![Queue](https://img.shields.io/badge/Queue-Redis%20Streams-DC382D?logo=redis&logoColor=white)
+![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
-- Go Core API、Gin 路由、Auth/User、Provider、Skill、Context Preview 和 Agent Trace。
-- DB 驱动的 Provider 配置、模型切换、任务路由、连通性测试和密钥加密保存。
-- Interview Runtime session / flow / turn 状态机，answer 提交异步化。
-- PostgreSQL local outbox、Redis Stream worker、pending reclaim、dead-letter 和 worker summary。
-- Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
-- Python AI Runtime task endpoint、Prompt 安全边界、结构化输出和 memory API。
+本仓库是个人 AI 面试训练平台后端重写工程。Go Core API 负责确定性业务事实、状态机、幂等、审计和对外 API；Python AI Runtime 负责模型调用、Prompt 安全、结构化输出、memory 和后续 Agent/RAG 推理。
 
-核心文档：
+## 为什么做
 
-- [docs/roadmap.md](/Users/yaoyao/Documents/SelfProject/docs/roadmap.md)：当前阶段计划和下一批任务。
-- [docs/go-python-responsibilities.md](/Users/yaoyao/Documents/SelfProject/docs/go-python-responsibilities.md)：Go / Python 职责分工。
-- [docs/language-boundaries.md](/Users/yaoyao/Documents/SelfProject/docs/language-boundaries.md)：业务边界、Provider 边界和当前状态。
-- [docs/dead-letter-analysis.md](/Users/yaoyao/Documents/SelfProject/docs/dead-letter-analysis.md)：死信链路和分析 API。
-- [docs/reference-projects.md](/Users/yaoyao/Documents/SelfProject/docs/reference-projects.md)：参考项目索引。
+- 把模拟面试从同步请求改造成可恢复、可重试的异步运行时。
+- 把 Provider、模型、task route 和密钥来源交给 Go 管理，支持运行时切换。
+- 保持 Go / Python 边界清晰：业务状态在 Go，非确定性 AI 推理在 Python。
+- 用 PostgreSQL 保存业务事实和冷快照，Redis 只做队列、single-flight 和短 TTL 协调。
+- 让 dead-letter、worker summary、agent trace 成为可查询的运维事实。
 
-## 本地启动
+## 系统地图
 
-傻瓜式初始化：
+| 模块 | 路径 | 职责 |
+|---|---|---|
+| Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话和运维 API |
+| Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim 和 dead-letter |
+| Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、workqueue、store、routing |
+| AI Runtime | `python-runtime` | FastAPI task endpoint、Prompt 边界、结构化输出和 memory API |
+| 数据库 | `migrations` | PostgreSQL schema、pgvector 扩展和默认 seed |
+| Skill Pack | `skills` | 本地技能包，目前包含 `java-backend` |
+| 文档 | `docs` | roadmap、职责边界、部署、dead-letter 和参考项目记录 |
+
+## 当前能力
+
+| 能力 | 状态 |
+|---|---|
+| Auth/User | JWT access + refresh token、bcrypt 密码哈希、root-only 管理接口 |
+| Provider | DB 驱动配置、模型切换、任务路由、连通性测试、AES-GCM key 保存 |
+| Skill | 本地 Skill Pack 加载、reload、context preview |
+| Interview Runtime | session / flow / turn 状态机，answer 提交返回 `202 Accepted` |
+| Async pipeline | PostgreSQL local outbox、Redis Stream、独立 worker、pending reclaim |
+| Reliability | answer idempotency、Redis single-flight、runtime snapshot、dead-letter |
+| Observability | agent traces、dead-letter analysis API、worker summary API |
+| Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
+| Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
+| Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
+
+## 环境要求
+
+- Go 1.26 或更高版本
+- Python 3.13 或更高版本
+- Docker Compose v2
+- `uv`，用于本地 Python Runtime 开发
+- 目标 Provider 的 API key，或 OpenAI-compatible endpoint
+
+## 快速启动
+
+一键初始化本地中间件、`.env`、数据库 schema、默认 seed 和基础检查：
 
 ```bash
-./scripts/bootstrap.sh
-```
-
-Windows PowerShell：
-
-```powershell
-./scripts/bootstrap.ps1
+make bootstrap
 ```
 
 手动启动：
 
 ```bash
 cp .env.example .env
-docker compose up -d
-./scripts/init-db.sh
-go run ./cmd/api
-go run ./cmd/worker
+make docker-up
+make init-db
+make run
+make run-worker
 ```
 
-启动 Python Runtime：
+本地启动 Python Runtime：
+
+```bash
+make run-runtime
+```
+
+或通过 Docker Compose 启动 Runtime：
 
 ```bash
 docker compose --profile runtime up -d python-runtime
-```
-
-本地运行 Python Runtime：
-
-```bash
-cd python-runtime
-uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
 
 健康检查：
 
 ```bash
 curl http://localhost:8080/healthz
+curl http://localhost:8090/healthz
 ```
 
-登录默认 root：
+## 默认登录
+
+API 启动时会补齐本地 root 账号：
+
+```text
+ROOT_EMAIL=root@example.local
+ROOT_PASSWORD=RootChangeMe123!
+ROOT_DISPLAY_NAME=Root
+```
+
+获取 access token：
 
 ```bash
 ACCESS_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
@@ -74,7 +113,7 @@ ACCESS_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["tokens"]["access_token"])')
 ```
 
-Context Preview：
+预览上下文装配：
 
 ```bash
 curl -s -X POST http://localhost:8080/api/context/preview \
@@ -83,175 +122,123 @@ curl -s -X POST http://localhost:8080/api/context/preview \
   -d '{"task_type":"question_generation","skill_id":"java-backend"}'
 ```
 
-## API
+## 开发命令
 
-- `GET /healthz`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-- `GET /api/providers`
-- `POST /api/providers`
-- `GET /api/providers/{provider_id}`
-- `PUT /api/providers/{provider_id}`
-- `DELETE /api/providers/{provider_id}`
-- `POST /api/providers/test`
-- `GET /api/provider-routes`
-- `PUT /api/provider-routes/{task_type}`
-- `GET /api/skills`
-- `POST /api/skills`
-- `POST /api/skills/reload`
-- `GET /api/skills/{skill_id}`
-- `POST /api/context/preview`
-- `POST /api/agent/tasks`
-- `POST /api/interview-sessions`
-- `GET /api/interview-sessions/{session_id}`
-- `POST /api/interview-sessions/{session_id}/answers`
-- `POST /api/interview-sessions/{session_id}/finalize`
-- `GET /api/interview-sessions/{session_id}/trace`
-- `GET /api/coding/question-sets`
-- `GET /api/coding/questions`
-- `GET /api/coding/questions/{question_id}`
-- `POST /api/coding/submissions`
-- `GET /api/coding/submissions`
-- `GET /api/coding/submissions/{submission_id}`
-- `GET /api/ops/dead-letters/summary`
-- `GET /api/ops/dead-letters`
-- `GET /api/ops/dead-letters/{dead_letter_id}`
-- `GET /api/ops/workers/summary`
+| 命令 | 说明 |
+|---|---|
+| `make bootstrap` | 执行 `scripts/bootstrap.sh` |
+| `make docker-up` | 启动 PostgreSQL + pgvector、Redis 和 MinIO |
+| `make docker-down` | 停止 Docker Compose 中间件 |
+| `make init-db` | 应用 SQL migrations 和默认 seed |
+| `make run` | 启动 Go Core API，监听 `8080` |
+| `make run-worker` | 启动独立 Redis Stream worker |
+| `make run-runtime` | 启动 FastAPI Runtime，监听 `8090` |
+| `make test` | 运行全部 Go 测试，即 `go test ./...` |
+| `make test-python` | 运行 Python Runtime 单元测试 |
+| `make fmt` | 对 `cmd` 和 `internal` 执行 `gofmt` |
+| `make check-middleware` | 检查固定中间件镜像的平台兼容性 |
+
+## API Surface
+
+| 分组 | Endpoints |
+|---|---|
+| Health | `GET /healthz` |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me` |
+| Providers | `GET/POST /api/providers`, `GET/PUT/DELETE /api/providers/{provider_id}`, `POST /api/providers/test` |
+| Routes | `GET /api/provider-routes`, `PUT /api/provider-routes/{task_type}` |
+| Skills | `GET/POST /api/skills`, `POST /api/skills/reload`, `GET /api/skills/{skill_id}` |
+| Context & Agent | `POST /api/context/preview`, `POST /api/agent/tasks` |
+| Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
+| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace` |
+| Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
+| Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary` |
 
 Python Runtime:
 
-- `GET http://localhost:8090/healthz`
-- `POST http://localhost:8090/api/runtime/tasks`
-- `GET http://localhost:8090/api/runtime/memory/candidates`
-- `POST http://localhost:8090/api/runtime/memory/candidates`
-- `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/approve`
-- `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/reject`
-- `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/edit`
-- `GET http://localhost:8090/api/runtime/memory/profile`
-- `GET http://localhost:8090/api/runtime/memory/search`
-- `GET http://localhost:8090/api/runtime/reviews/due`
+| 分组 | Endpoints |
+|---|---|
+| Health | `GET http://localhost:8090/healthz` |
+| Tasks | `POST http://localhost:8090/api/runtime/tasks` |
+| Memory | `GET/POST http://localhost:8090/api/runtime/memory/candidates`, `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/approve`, `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/reject`, `POST http://localhost:8090/api/runtime/memory/candidates/{candidate_id}/edit` |
+| Profile & Review | `GET http://localhost:8090/api/runtime/memory/profile`, `GET http://localhost:8090/api/runtime/memory/search`, `GET http://localhost:8090/api/runtime/reviews/due` |
 
-## Auth
+## 运行时规则
 
-Go Core API 使用双 Token 鉴权：
+| 主题 | 规则 |
+|---|---|
+| Session state | `interview_sessions` 区分 `session_status` 和 `flow_status`，合法流转由 Go 校验 |
+| Answer submission | `POST /api/interview-sessions/{session_id}/answers` 创建 queued turn 并返回 `202 Accepted` |
+| Turn state | `interview_turns.turn_status` 使用 `queued -> running -> completed/failed`，stale running turn 可回到 `queued` |
+| Locks | 不新增持久化业务锁字段；并发依赖幂等、`FOR UPDATE SKIP LOCKED`、turn 状态更新和短 TTL Redis 协调 |
+| Recovery | PostgreSQL runtime snapshot 保留 Redis 丢失后的业务事实 |
+| Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
+| Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 
-- Access Token：JWT，默认 15 分钟过期，通过 `Authorization: Bearer <token>` 访问受保护 API。
-- Refresh Token：JWT，默认 30 天过期，数据库只保存 SHA-256 哈希；刷新时会轮换并作废旧 refresh token。
-- 用户密码使用 bcrypt 哈希保存，不保存明文密码。
-- `/api/auth/register` 创建普通用户，`/api/auth/login` 返回 access/refresh token pair。
-- 除 `/healthz` 和 `/api/auth/*` 外，`/api/*` 默认需要 access token。
-- Provider 配置和 Skill 写操作需要 `root` 角色。
+## Dead Letter 设计
 
-默认 root 账号由 API 启动时 bootstrap：
+| 层级 | 目的 |
+|---|---|
+| Redis Stream dead-letter | 短期缓冲，把 poison message 从主 consumer group 移出 |
+| PostgreSQL `dead_letter_events` | 长期标准化事实表，统一收集 Redis poison message 和 outbox 派发失败 |
 
-```text
-ROOT_EMAIL=root@example.local
-ROOT_PASSWORD=RootChangeMe123!
-ROOT_DISPLAY_NAME=Root
-```
+当前规则：Redis pending message 和 PostgreSQL outbox 派发失败在第 3 次投递或尝试后进入 dead-letter 处理。外部系统应读取 `/api/ops/dead-letters*`，不要依赖 Redis 内部格式。
 
-本地调试可以设置 `AUTH_DISABLED=true`，此时请求会以 `root` 身份执行；正常开发和部署不要开启。
+## Provider 配置
 
-## SQL 初始化
+`.env` 只作为 bootstrap 和本地 fallback。Go 会把缺失的默认 Provider seed 到 `provider_configs`，不会覆盖数据库中已经通过 API 修改过的运行时配置。
 
-建表 SQL 在 [migrations/001_init.sql](/Users/yaoyao/Documents/SelfProject/migrations/001_init.sql)，默认数据在 [migrations/002_seed_defaults.sql](/Users/yaoyao/Documents/SelfProject/migrations/002_seed_defaults.sql)。
+Provider key 来源：
 
-重新应用初始化脚本：
+| 来源 | 使用场景 |
+|---|---|
+| `env_ref` | 数据库存环境变量名，例如 `DEEPSEEK_API_KEY`；Go 从 `.env` 读取 |
+| `db_encrypted` | 通过 API 提交 `api_key`；Go 使用 `PROVIDER_KEY_ENCRYPTION_SECRET` 加密保存 |
 
-```bash
-./scripts/init-db.sh
-```
+未设置 `PROVIDER_KEY_ENCRYPTION_SECRET` 时，不允许把 API key 写入数据库。响应只返回 `api_key_configured`，不会回显原始 key。
 
-## Interview Runtime
+## 中间件镜像
 
-Go 维护面试运行时状态机和幂等边界：
+| 服务 | 镜像 |
+|---|---|
+| PostgreSQL + pgvector | `pgvector/pgvector:pg16` |
+| Redis | `redis:7-alpine` |
+| MinIO | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 
-- `interview_sessions` 区分 `session_status` 和 `flow_status`，合法流转集中在 Go 状态机里校验。
-- Session 状态：`READY -> IN_PROGRESS -> FINISHED/FAILED`，也允许未答题时 `READY -> FINISHED/FAILED`。
-- Flow 状态：`INIT -> ASKING -> EVALUATING -> ASKING/FOLLOW_UP/COMPLETED`，追问回合走 `FOLLOW_UP -> EVALUATING`。
-- `POST /api/interview-sessions/{session_id}/answers` 返回 `202 Accepted`，先创建 queued turn，再由 Redis Stream worker 异步评估。
-- `interview_turns` 用 `turn_status` 记录 `queued/running/completed/failed`，turn 状态机只允许 `queued -> running -> completed/failed`，异常抢占可回到 `queued` 重试。
-- 表里不保存 `locked_by/locked_until` 这类锁字段；并发领取依赖数据库幂等约束、turn 状态更新、PostgreSQL `FOR UPDATE SKIP LOCKED` 和短 TTL Redis 协调。
-- `interview_runtime_snapshots` 保存 PostgreSQL 冷快照，Redis 丢失后仍能恢复业务事实。
-- Redis single-flight 折叠同一答案的重复 AI 评估调用。
-- 本地消息表 `async_messages` 先落库，再由 dispatcher 补投 Redis Stream `INTERVIEW_EVENTS_STREAM`；Redis 掉线时消息会留在数据库里等待重试。
-- Redis Stream `INTERVIEW_EVENTS_STREAM` 记录 session/answer/finalize 事件，独立 `cmd/worker` 进程会消费 answer evaluation；API 进程默认只负责入队和查询。
-- Worker 会 reclaim Redis Stream pending message；超过投递上限的 poison message 会进入 `INTERVIEW_DEAD_LETTER_STREAM`。
-- Worker 会消费 `INTERVIEW_DEAD_LETTER_STREAM`，把死信标准化写入 PostgreSQL `dead_letter_events`，供后续分析和外部系统查询。
-- 本地兼容模式可以设置 `ENABLE_EMBEDDED_WORKER=true`，让 API 进程内启动 worker，但常规开发和部署应使用独立 worker。
-- 查询 `GET /api/interview-sessions/{session_id}` 或 `GET /api/interview-sessions/{session_id}/trace` 获取异步结果。
-
-## Dead Letter Analysis
-
-死信采用两层设计：
-
-- Redis Stream dead-letter：短期缓冲和 worker 间交接。
-- PostgreSQL `dead_letter_events`：长期事实表，统一收集 Redis poison message 和 PostgreSQL outbox 派发失败。
-
-当前规则：
-
-- Redis Stream pending message 投递超过 3 次后进入 `INTERVIEW_DEAD_LETTER_STREAM`。
-- PostgreSQL outbox 派发失败累计到第 3 次后标记为 `dead_letter`，并写入 `dead_letter_events`。
-- `cmd/worker` 内置 dead-letter analyzer consumer，会消费 dead-letter stream 并 upsert 到 `dead_letter_events`。
-- 外部系统可用 root token 调用 `/api/ops/dead-letters*` 获取错误数据。
-
-## Worker Metrics
-
-`GET /api/ops/workers/summary` 是 root-only 运维接口，用于快速判断异步系统是否健康：
-
-- Redis 主 stream / dead-letter stream 长度。
-- consumer group 的 pending、lag、consumer 数。
-- PostgreSQL outbox 各状态数量。
-- `dead_letter_events` 汇总。
-
-## 中间件版本
-
-默认固定为同时支持 `linux/amd64` 和 `linux/arm64` 的镜像：
-
-```text
-pgvector/pgvector:pg16
-redis:7-alpine
-minio/minio:RELEASE.2025-09-07T16-13-09Z
-```
-
-检查 manifest：
+检查镜像 manifest：
 
 ```bash
-./scripts/check-middleware.sh
+make check-middleware
 ```
 
-## Provider 初始化
+## 文档
 
-`.env` 只作为 bootstrap 和本地 fallback。Go 启动时会把缺失的默认 Provider seed 到 `provider_configs`，不会覆盖数据库里已经通过 API 修改过的模型、base URL、密钥来源或任务路由。
+| 文档 | 说明 |
+|---|---|
+| [docs/roadmap.md](./docs/roadmap.md) | 当前计划和下一批任务 |
+| [docs/go-python-responsibilities.md](./docs/go-python-responsibilities.md) | Go / Python 职责分工 |
+| [docs/language-boundaries.md](./docs/language-boundaries.md) | 业务、Provider 和 runtime 边界 |
+| [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter 链路和运维 API |
+| [docs/deployment.md](./docs/deployment.md) | 本地部署和初始化 |
+| [docs/reference-projects.md](./docs/reference-projects.md) | 参考项目索引 |
 
-运行时切换 Provider/model 走数据库 API：
+## 文件追踪策略
 
-```bash
-curl -s -X PUT http://localhost:8080/api/providers/deepseek-default \
-  -H 'Content-Type: application/json' \
-  -d '{"provider_type":"deepseek","base_url":"https://api.deepseek.com","chat_endpoint_path":"/chat/completions","chat_model":"deepseek-v4-flash","api_key_ref":"DEEPSEEK_API_KEY","supports_streaming":true,"supports_json":true,"enabled":true}'
+应该追踪：
 
-curl -s -X PUT http://localhost:8080/api/provider-routes/question_generation \
-  -H 'Content-Type: application/json' \
-  -d '{"provider_id":"deepseek-default","fallback_provider_id":"openai-compatible-default"}'
-```
+- 源码、SQL migration、seed、脚本、文档、Skill Pack、`README*.md`、`AGENTS.md`、`.env.example`。
 
-如果要把 API key 写入数据库，必须设置 `PROVIDER_KEY_ENCRYPTION_SECRET`，接口会用 AES-GCM 加密后保存；响应只返回 `api_key_configured`，不会回显 key。未设置加密 secret 时，请使用 `api_key_ref` 指向 `.env` 中的 fallback 变量。
+不应该追踪：
 
-DeepSeek 默认使用 OpenAI-compatible 格式：
+- 真实密钥和本地环境文件：`.env`、`.env.*`，但 `.env.example` 例外。
+- 本地运行时数据：`python-runtime/data/`，例如 memory SQLite 数据库。
+- 缓存和虚拟环境：`.cache/`、`python-runtime/.venv/`、`python-runtime/.pytest_cache/`、`__pycache__/`、`*.pyc`。
+- 测试和构建产物：`coverage.out`、`.coverage`、`htmlcov/`、`*.test`、`bin/`、`dist/`、`build/`。
+- 临时和噪声文件：`tmp/`、`*.tmp`、`*.log`、`.DS_Store`、`.idea/`、`.vscode/`。
 
-```text
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_CHAT_ENDPOINT_PATH=/chat/completions
-DEEPSEEK_CHAT_MODEL=deepseek-v4-flash
-```
+## 安全说明
 
-普通 OpenAI-compatible Provider 默认使用：
-
-```text
-OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
-OPENAI_COMPATIBLE_CHAT_ENDPOINT_PATH=/chat/completions
-```
+- 不要提交真实 API key。
+- 本地配置从 `.env.example` 复制到 `.env`。
+- Provider 写操作和 Skill 写操作需要 `root` 角色。
+- `AUTH_DISABLED=true` 仅用于本地调试，不应作为正常开发、测试或部署依赖。
+- Python Runtime 使用 Go 为当前任务传入的 Provider 配置，不持久化 API key，也不绕过 Go 推进业务状态。

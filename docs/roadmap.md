@@ -23,6 +23,7 @@
 - Python AI Runtime 基础服务，使用 `uv` 管理依赖。
 - Python Runtime task endpoint，支持 prompt 安全边界和结构化 JSON 解析。
 - Python Runtime memory candidates、review、edit、approve/reject、profile、search 和 due reviews API。
+- Go API `/api/memory/*` 编排 Python memory API，统一处理鉴权、用户隔离、写操作 trace/audit 和错误标准化。
 - CodeTop100 / 后端工程题库 schema、seed 和查询 API。
 - Interview Runtime session / flow / turn 三层状态机。
 - Answer 提交异步化：API 返回 `202 Accepted`，worker 消费 Redis Stream 后评估。
@@ -38,10 +39,10 @@
 
 优先级按“能形成产品闭环”和“能降低后续返工风险”排序。
 
-1. Go API 编排 Python memory API。
-   - 为前端和业务层提供统一入口。
-   - 保持 Python 承载 memory 主逻辑，Go 只做鉴权、用户隔离、审计和编排。
-   - 明确哪些 memory 数据能进入面试上下文。
+1. Memory context admission rules。
+   - 明确哪些 approved memory 数据能进入面试上下文。
+   - 按 skill、task_type、session 和用户画像过滤。
+   - 返回 evidence、source 和 reason，避免长期记忆进入 Prompt 后不可解释。
 
 2. Retrieval Harness MVP。
    - 支持 full-text、summary、vector、recent history、approved memory 多来源检索。

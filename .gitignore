@@ -1,10 +1,31 @@
+# Local secrets
 .env
+.env.*
+!.env.example
+
+# Local caches and temp files
 .cache/
 tmp/
+*.tmp
+*.log
+
+# Build outputs
 bin/
+dist/
+build/
+coverage.out
+
+# Python
 python-runtime/.venv/
+python-runtime/data/
+python-runtime/.pytest_cache/
 __pycache__/
 *.pyc
+.coverage
+htmlcov/
+
+# Go
+*.test
 
 # OS/editor noise
 .DS_Store
