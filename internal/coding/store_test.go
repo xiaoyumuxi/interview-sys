@@ -164,7 +164,7 @@ func TestSandboxUnavailableEvaluatorDoesNotExecuteCode(t *testing.T) {
 		SubmissionID: "sub_1",
 		Language:     "go",
 		SourceCode:   "panic(\"should not run\")",
-	}, Question{QuestionID: "q_1"})
+	}, Question{QuestionID: "q_1"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -50,6 +50,15 @@ type Question struct {
 	Status            string   `json:"status"`
 }
 
+type TestCase struct {
+	TestCaseID     string `json:"test_case_id"`
+	QuestionID     string `json:"question_id"`
+	CaseType       string `json:"case_type"`
+	InputText      string `json:"input_text"`
+	ExpectedOutput string `json:"expected_output"`
+	Weight         int    `json:"weight"`
+}
+
 type SubmissionCreateRequest struct {
 	QuestionID string `json:"question_id"`
 	Language   string `json:"language"`
@@ -194,6 +203,27 @@ WHERE question_id=$1`, id).Scan(
 	item.CompanyTags = splitTags(companyTags)
 	item.TopicTags = splitTags(topicTags)
 	return item, true, nil
+}
+
+func (s *Store) QuestionTestCases(ctx context.Context, questionID string) ([]TestCase, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT test_case_id, question_id, case_type, input_text, expected_output, weight
+FROM code_question_test_cases
+WHERE question_id=$1
+ORDER BY case_type, test_case_id`, questionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TestCase{}
+	for rows.Next() {
+		var item TestCase
+		if err := rows.Scan(&item.TestCaseID, &item.QuestionID, &item.CaseType, &item.InputText, &item.ExpectedOutput, &item.Weight); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Store) CreateSubmission(ctx context.Context, userID string, req SubmissionCreateRequest) (Submission, error) {

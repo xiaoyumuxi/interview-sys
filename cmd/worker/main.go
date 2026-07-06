@@ -48,11 +48,13 @@ func main() {
 	service.StartWorker(ctx, opts)
 	if cfg.CodingJudgeEnabled {
 		judgeOpts := coding.DefaultWorkerOptions(cfg.CodingJudgeBatchSize)
-		logger.Warn("coding judge worker starting without sandbox evaluator; submissions will become system_error until sandbox is configured",
+		evaluator := codingEvaluator(cfg, logger)
+		logger.Info("coding judge worker starting",
+			"mode", cfg.CodingJudgeMode,
 			"batch_size", judgeOpts.BatchSize,
 			"interval", judgeOpts.Interval,
 		)
-		coding.NewWorker(codingStore, nil, logger).Start(ctx, judgeOpts)
+		coding.NewWorker(codingStore, evaluator, logger).Start(ctx, judgeOpts)
 	}
 
 	<-ctx.Done()
@@ -105,6 +107,24 @@ func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Lo
 	interviewService := interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream)
 	engine.SetRecentHistorySource(interviewService)
 	return interviewService, coding.NewStore(dbStore.DB()), closeFn, nil
+}
+
+func codingEvaluator(cfg config.Config, logger *slog.Logger) coding.Evaluator {
+	switch strings.ToLower(strings.TrimSpace(cfg.CodingJudgeMode)) {
+	case "docker":
+		return coding.NewDockerEvaluator(coding.DockerEvaluatorConfig{
+			DockerBinary: cfg.CodingJudgeDockerBinary,
+			GoImage:      cfg.CodingJudgeGoImage,
+			Timeout:      time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+			Memory:       cfg.CodingJudgeMemory,
+			CPUs:         cfg.CodingJudgeCPUs,
+		})
+	default:
+		if logger != nil {
+			logger.Warn("coding judge sandbox disabled; submissions will become system_error/sandbox_not_configured", "mode", cfg.CodingJudgeMode)
+		}
+		return coding.SandboxUnavailableEvaluator{}
+	}
 }
 
 func loadDotEnv(path string) {

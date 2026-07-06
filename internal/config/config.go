@@ -18,6 +18,12 @@ type Config struct {
 	EnableEmbeddedWorker        bool
 	CodingJudgeEnabled          bool
 	CodingJudgeBatchSize        int
+	CodingJudgeMode             string
+	CodingJudgeDockerBinary     string
+	CodingJudgeGoImage          string
+	CodingJudgeTimeoutSeconds   int
+	CodingJudgeMemory           string
+	CodingJudgeCPUs             string
 	MinIOEndpoint               string
 	SkillsDir                   string
 	AIRuntimeURL                string
@@ -45,6 +51,12 @@ func Load() Config {
 		EnableEmbeddedWorker:        envBool("ENABLE_EMBEDDED_WORKER", false),
 		CodingJudgeEnabled:          envBool("CODING_JUDGE_ENABLED", false),
 		CodingJudgeBatchSize:        envInt("CODING_JUDGE_BATCH_SIZE", 4),
+		CodingJudgeMode:             env("CODING_JUDGE_MODE", "disabled"),
+		CodingJudgeDockerBinary:     env("CODING_JUDGE_DOCKER_BINARY", "docker"),
+		CodingJudgeGoImage:          env("CODING_JUDGE_GO_IMAGE", "golang:1.26-alpine"),
+		CodingJudgeTimeoutSeconds:   envInt("CODING_JUDGE_TIMEOUT_SECONDS", 5),
+		CodingJudgeMemory:           env("CODING_JUDGE_MEMORY", "128m"),
+		CodingJudgeCPUs:             env("CODING_JUDGE_CPUS", "0.5"),
 		MinIOEndpoint:               env("MINIO_ENDPOINT", "localhost:9000"),
 		SkillsDir:                   env("SKILLS_DIR", "skills"),
 		AIRuntimeURL:                env("AI_RUNTIME_URL", "http://localhost:8090"),

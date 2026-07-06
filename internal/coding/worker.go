@@ -7,7 +7,7 @@ import (
 )
 
 type Evaluator interface {
-	Evaluate(ctx context.Context, submission Submission, question Question) (JudgeResult, error)
+	Evaluate(ctx context.Context, submission Submission, question Question, cases []TestCase) (JudgeResult, error)
 }
 
 type Worker struct {
@@ -95,7 +95,11 @@ func (w *Worker) processSubmission(ctx context.Context, submission Submission) e
 		})
 		return err
 	}
-	result, err := w.evaluator.Evaluate(ctx, submission, question)
+	cases, err := w.store.QuestionTestCases(ctx, question.QuestionID)
+	if err != nil {
+		return err
+	}
+	result, err := w.evaluator.Evaluate(ctx, submission, question, cases)
 	if err != nil {
 		result = JudgeResult{
 			Status: StatusSystemError,
@@ -113,9 +117,10 @@ func (w *Worker) processSubmission(ctx context.Context, submission Submission) e
 
 type SandboxUnavailableEvaluator struct{}
 
-func (SandboxUnavailableEvaluator) Evaluate(ctx context.Context, submission Submission, question Question) (JudgeResult, error) {
+func (SandboxUnavailableEvaluator) Evaluate(ctx context.Context, submission Submission, question Question, cases []TestCase) (JudgeResult, error) {
 	_ = ctx
 	_ = question
+	_ = cases
 	return JudgeResult{
 		Status: StatusSystemError,
 		Score:  0,
