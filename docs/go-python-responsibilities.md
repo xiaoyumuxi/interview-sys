@@ -14,6 +14,7 @@ Go 当前负责：
 - Skill Registry、Skill 扫描、热加载和 lint。
 - Context Preview 的基础组装和调试接口。
 - Memory API 对外编排：鉴权、用户隔离、写操作 trace/audit 和错误标准化。
+- Memory context admission：按 user、task_type、skill、query 和 token budget 将 approved memory 转为可解释的 `memory_context`。
 - Code question bank 的 schema、seed 和查询接口。
 - Interview session / flow / turn 状态机。
 - Answer 提交幂等、turn claim 和状态落库。
@@ -52,6 +53,7 @@ Python 当前负责：
 - Profile projection。
 - Review scheduler / due review。
 - Memory search 和 `memory_context_score` 解释。
+  Go 使用该解释作为 memory 准入 trace，不在 Go 中重写 memory 排序算法。
 
 Python 后续负责：
 
@@ -72,5 +74,5 @@ Python 不负责：
 
 - 改变面试状态、请求幂等、worker 消费和审计事实：放 Go。
 - 模型调用、Prompt、结构化输出、memory、RAG 和 Agent 推理：放 Python。
-- Go 通过 `/api/memory/*` 代理或编排 Python Runtime memory API，但 memory 的主逻辑仍留在 Python。
+- Go 通过 `/api/memory/*` 代理或编排 Python Runtime memory API，并在 Context Engine 里决定哪些 approved memory 可进入 Prompt；memory 的主逻辑、搜索和评分仍留在 Python。
 - Python 可以保存 runtime-local memory 数据，但不能直接推进 Go Interview Runtime。

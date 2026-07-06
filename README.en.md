@@ -46,6 +46,7 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Reliability | answer idempotency, Redis single-flight, runtime snapshot and dead-letter handling |
 | Observability | agent traces, dead-letter analysis API and worker summary API |
 | Memory orchestration | Go `/api/memory/*` entrypoint for auth, user isolation and trace/audit; Python owns memory logic |
+| Memory admission | Context Engine admits only approved memory as `memory_context` and returns a `memory_admission` explanation |
 | Python Runtime | task endpoint, prompt safety boundary, structured output and memory APIs |
 | Middleware | PostgreSQL + pgvector, Redis, MinIO and optional Python runtime container |
 
@@ -173,6 +174,7 @@ Python Runtime:
 | Recovery | PostgreSQL runtime snapshots preserve business facts after Redis loss |
 | Worker | The API process enqueues and queries; `cmd/worker` consumes Redis Stream events |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` is only for local compatibility mode |
+| Memory context | Context Preview and answer evaluation admit approved memory by user, task_type, skill, query and token budget; `memory_extraction` does not admit long-term memory |
 
 ## Dead Letter Design
 

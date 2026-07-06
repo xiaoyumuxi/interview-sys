@@ -46,6 +46,7 @@
 | Reliability | answer idempotency、Redis single-flight、runtime snapshot、dead-letter |
 | Observability | agent traces、dead-letter analysis API、worker summary API |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
+| Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
 | Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
 
@@ -173,6 +174,7 @@ Python Runtime:
 | Recovery | PostgreSQL runtime snapshot 保留 Redis 丢失后的业务事实 |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
+| Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
 
 ## Dead Letter 设计
 

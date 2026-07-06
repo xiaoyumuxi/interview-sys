@@ -41,6 +41,7 @@ Python AI Runtime 负责非确定性 AI 推理。模型调用、Prompt 细节、
 - Python 只使用 Go 请求传入的 Provider 配置执行模型调用，不决定 task routing。
 - Python 不直接写 Go 业务主表，不绕过 Go 推进 interview runtime。
 - Go 对外提供 `/api/memory/*` 作为 Python memory API 的统一入口，负责鉴权、用户隔离、trace/audit 和错误标准化；Python 仍负责 memory candidate/review/profile/search/due review 的主逻辑。
+- Go Context Engine 负责 memory context admission：只允许 approved memory 以 `memory_context` 形式进入 Prompt，并在 `memory_admission` 中记录 user、query、candidate_ids、reason 和 warning；`memory_extraction` 不引入长期 memory。
 - Python trace 不记录 API key；Go 负责写 `agent_traces` 等审计事实。
 - Python 仅仅负责有关LLM编排、工具调用、记忆管理、Agent和SubAgent的管理等大模型应用层面的逻辑部分，而可靠性等内容都是由Go这类后端业务类型语言负责进行推进的。
 - 项目是单体项目，但是设计层面上需要考虑是否方便修改为微服务架构的内容，预计以后可能修改成的微服务有三个模块——模拟面试的Go后端业务模块、集成管理的SaaS对接服务模块、Python运行时。

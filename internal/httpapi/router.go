@@ -276,6 +276,7 @@ func (h apiHandler) contextPreview(c *gin.Context) {
 		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
+	req.UserID = memoryTargetUserID(c, req.UserID)
 	resp, err := h.deps.ContextEngine.Preview(c.Request.Context(), req)
 	if err != nil {
 		writeGinError(c, http.StatusBadRequest, "context_preview_failed", err.Error())
@@ -298,8 +299,10 @@ func (h apiHandler) runAgentTask(c *gin.Context) {
 		return
 	}
 	preview, err := h.deps.ContextEngine.Preview(c.Request.Context(), contextengine.PreviewRequest{
-		TaskType: req.TaskType,
-		SkillID:  req.SkillID,
+		TaskType:    req.TaskType,
+		SkillID:     req.SkillID,
+		UserID:      currentUserID(c),
+		MemoryQuery: req.UserInput,
 	})
 	if err != nil {
 		writeGinError(c, http.StatusBadRequest, "context_preview_failed", err.Error())

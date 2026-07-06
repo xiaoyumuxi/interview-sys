@@ -11,20 +11,23 @@ import (
 )
 
 type PreviewRequest struct {
-	TaskType  string `json:"task_type"`
-	SkillID   string `json:"skill_id"`
-	ResumeID  string `json:"resume_id,omitempty"`
-	JDID      string `json:"jd_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
+	TaskType    string `json:"task_type"`
+	SkillID     string `json:"skill_id"`
+	UserID      string `json:"user_id,omitempty"`
+	MemoryQuery string `json:"memory_query,omitempty"`
+	ResumeID    string `json:"resume_id,omitempty"`
+	JDID        string `json:"jd_id,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
 }
 
 type PreviewResponse struct {
-	SchemaVersion      string        `json:"schema_version"`
-	Recipe             string        `json:"recipe"`
-	TokenBudget        int           `json:"token_budget"`
-	Items              []ContextItem `json:"items"`
-	FinalPromptPreview string        `json:"final_prompt_preview"`
-	Warnings           []string      `json:"warnings"`
+	SchemaVersion      string           `json:"schema_version"`
+	Recipe             string           `json:"recipe"`
+	TokenBudget        int              `json:"token_budget"`
+	Items              []ContextItem    `json:"items"`
+	FinalPromptPreview string           `json:"final_prompt_preview"`
+	Warnings           []string         `json:"warnings"`
+	MemoryAdmission    *MemoryAdmission `json:"memory_admission,omitempty"`
 }
 
 type ContextItem struct {
@@ -39,17 +42,37 @@ type ContextItem struct {
 	CreatedAt  string  `json:"created_at"`
 }
 
+type MemoryAdmission struct {
+	SchemaVersion string   `json:"schema_version"`
+	Enabled       bool     `json:"enabled"`
+	UserID        string   `json:"user_id,omitempty"`
+	Query         string   `json:"query,omitempty"`
+	Limit         int      `json:"limit"`
+	Included      int      `json:"included"`
+	CandidateIDs  []string `json:"candidate_ids,omitempty"`
+	Reasons       []string `json:"reasons,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
+}
+
+type MemorySource interface {
+	SearchMemory(ctx context.Context, userID string, query string, limit int) (map[string]any, error)
+}
+
 type Engine struct {
 	tokenBudget int
 	skills      *skill.Registry
+	memory      MemorySource
 }
 
 func New(tokenBudget int, skills *skill.Registry) *Engine {
 	return &Engine{tokenBudget: tokenBudget, skills: skills}
 }
 
+func (e *Engine) SetMemorySource(memory MemorySource) {
+	e.memory = memory
+}
+
 func (e *Engine) Preview(ctx context.Context, req PreviewRequest) (PreviewResponse, error) {
-	_ = ctx
 	if strings.TrimSpace(req.TaskType) == "" {
 		return PreviewResponse{}, errors.New("task_type is required")
 	}
@@ -94,6 +117,10 @@ func (e *Engine) Preview(ctx context.Context, req PreviewRequest) (PreviewRespon
 			CreatedAt:  now,
 		},
 	}
+	warnings := []string{"embedding_unavailable_fallback_to_skill_and_keyword"}
+	memoryItems, admission := e.admitMemory(ctx, req, now)
+	items = append(items, memoryItems...)
+	warnings = append(warnings, admission.Warnings...)
 
 	for index, ref := range skillPack.References {
 		items = append(items, ContextItem{
@@ -115,7 +142,8 @@ func (e *Engine) Preview(ctx context.Context, req PreviewRequest) (PreviewRespon
 		TokenBudget:        e.tokenBudget,
 		Items:              items,
 		FinalPromptPreview: packPrompt(items, e.tokenBudget),
-		Warnings:           []string{"embedding_unavailable_fallback_to_skill_and_keyword"},
+		Warnings:           warnings,
+		MemoryAdmission:    admission,
 	}, nil
 }
 

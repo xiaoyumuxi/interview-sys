@@ -950,9 +950,11 @@ type evaluationPayload struct {
 
 func (s *Service) evaluateAnswer(ctx context.Context, session Session, answer string, dryRun bool) (evaluationPayload, error) {
 	preview, err := s.engine.Preview(ctx, contextengine.PreviewRequest{
-		TaskType:  "answer_evaluation",
-		SkillID:   session.SkillID,
-		SessionID: session.SessionID,
+		TaskType:    "answer_evaluation",
+		SkillID:     session.SkillID,
+		UserID:      session.UserID,
+		MemoryQuery: questionText(session.CurrentQuestion) + "\n" + answer,
+		SessionID:   session.SessionID,
 	})
 	if err != nil {
 		return evaluationPayload{}, err

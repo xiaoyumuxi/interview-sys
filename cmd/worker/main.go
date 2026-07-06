@@ -87,8 +87,9 @@ func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Lo
 		_ = dbStore.Close()
 	}
 
-	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
 	runtimeClient := airuntime.NewClient(cfg.AIRuntimeURL)
+	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
+	engine.SetMemorySource(runtimeClient)
 	stream := workqueue.NewStreamWithDeadLetter(redisClient, logger, cfg.InterviewEventsStream, cfg.InterviewDeadLetterStream)
 	flights := singleflight.NewRedisFlight(redisClient, 65*time.Second, 10*time.Minute)
 	return interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream), closeFn, nil

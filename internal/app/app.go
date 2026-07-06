@@ -53,9 +53,10 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
 	codingStore := coding.NewStore(dbStore.DB())
 	runtimeClient := airuntime.NewClient(cfg.AIRuntimeURL)
+	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
+	engine.SetMemorySource(runtimeClient)
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:         cfg.RedisAddr,
 		DialTimeout:  500 * time.Millisecond,

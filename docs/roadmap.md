@@ -24,6 +24,7 @@
 - Python Runtime task endpoint，支持 prompt 安全边界和结构化 JSON 解析。
 - Python Runtime memory candidates、review、edit、approve/reject、profile、search 和 due reviews API。
 - Go API `/api/memory/*` 编排 Python memory API，统一处理鉴权、用户隔离、写操作 trace/audit 和错误标准化。
+- Memory context admission rules：Go Context Engine 可按 user、task_type、skill、query 和 token budget 引入 approved memory，并返回 evidence/source/reason 级别的 `memory_admission` trace。
 - CodeTop100 / 后端工程题库 schema、seed 和查询 API。
 - Interview Runtime session / flow / turn 三层状态机。
 - Answer 提交异步化：API 返回 `202 Accepted`，worker 消费 Redis Stream 后评估。
@@ -39,31 +40,26 @@
 
 优先级按“能形成产品闭环”和“能降低后续返工风险”排序。
 
-1. Memory context admission rules。
-   - 明确哪些 approved memory 数据能进入面试上下文。
-   - 按 skill、task_type、session 和用户画像过滤。
-   - 返回 evidence、source 和 reason，避免长期记忆进入 Prompt 后不可解释。
-
-2. Retrieval Harness MVP。
+1. Retrieval Harness MVP。
    - 支持 full-text、summary、vector、recent history、approved memory 多来源检索。
    - 返回 evidence、score、reason、source 和 token 预算。
    - 保留 debug trace，避免上下文进入 Prompt 后不可解释。
 
-3. Final report generation。
+2. Final report generation。
    - 汇总问答表现、代码题结果、薄弱点、强项和复习建议。
    - Go 负责报告事实和状态，Python 负责报告内容生成。
    - 输出带 schema version，便于前端和历史报告兼容。
 
-4. Coding judge worker。
+3. Coding judge worker。
    - 当前 submission 结果仍是 queued placeholder。
    - 后续需要 Docker sandbox、资源限制、无网络执行、测试结果追踪和重试/死信策略。
 
-5. Evaluation Harness。
+4. Evaluation Harness。
    - 建立出题、评分、追问、总结、RAG 命中和 memory 提取的样例集。
    - 记录质量、成本、延迟和回归结果。
    - 先服务后端稳定性，不急于做复杂评测平台。
 
-6. 前端接入准备。
+5. 前端接入准备。
    - 明确异步 trace 轮询、session 状态展示、报告页和 memory review 的接口契约。
    - 复用现有后端 schema version，避免前端直接绑定内部实现。
 
