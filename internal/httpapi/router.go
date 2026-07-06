@@ -64,6 +64,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.POST("/skills/reload", api.requireRoot(), api.reloadSkills)
 	group.GET("/skills/:skill_id", api.getSkill)
 	group.POST("/context/preview", api.contextPreview)
+	group.POST("/retrieval/search", api.retrievalSearch)
 	group.POST("/agent/tasks", api.runAgentTask)
 	group.GET("/memory/candidates", api.listMemoryCandidates)
 	group.POST("/memory/candidates", api.createMemoryCandidate)
@@ -282,6 +283,32 @@ func (h apiHandler) contextPreview(c *gin.Context) {
 	resp, err := h.deps.ContextEngine.Preview(c.Request.Context(), req)
 	if err != nil {
 		writeGinError(c, http.StatusBadRequest, "context_preview_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h apiHandler) retrievalSearch(c *gin.Context) {
+	var req contextengine.RetrievalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	req.UserID = memoryTargetUserID(c, req.UserID)
+	if req.SessionID != "" {
+		current, err := h.deps.InterviewService.GetSession(c.Request.Context(), req.SessionID)
+		if err != nil {
+			writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+			return
+		}
+		if !canAccessUser(c, current.UserID) {
+			writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+			return
+		}
+	}
+	resp, err := h.deps.ContextEngine.Retrieve(c.Request.Context(), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "retrieval_search_failed", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, resp)

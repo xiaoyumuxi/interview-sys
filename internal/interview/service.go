@@ -722,6 +722,38 @@ func (s *Service) Trace(ctx context.Context, sessionID string) ([]Turn, error) {
 	return s.loadTurns(ctx, sessionID)
 }
 
+func (s *Service) RecentTurns(ctx context.Context, sessionID string, limit int) ([]contextengine.RecentTurn, error) {
+	turns, err := s.loadTurns(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > len(turns) {
+		limit = len(turns)
+	}
+	start := len(turns) - limit
+	if start < 0 {
+		start = 0
+	}
+	items := make([]contextengine.RecentTurn, 0, limit)
+	for i := len(turns) - 1; i >= start; i-- {
+		turn := turns[i]
+		items = append(items, contextengine.RecentTurn{
+			TurnID:         turn.TurnID,
+			SessionID:      turn.SessionID,
+			QuestionID:     turn.QuestionID,
+			QuestionNumber: turn.QuestionNumber,
+			AnswerRound:    turn.AnswerRound,
+			UserAnswer:     turn.UserAnswer,
+			Evaluation:     turn.Evaluation,
+			Score:          turn.Score,
+			TurnStatus:     turn.TurnStatus,
+			ErrorText:      turn.ErrorText,
+			CreatedAt:      turn.CreatedAt,
+		})
+	}
+	return items, nil
+}
+
 func (s *Service) GetReport(ctx context.Context, sessionID string) (Report, error) {
 	report, err := s.loadReport(ctx, sessionID)
 	if err != nil {

@@ -36,26 +36,22 @@
 - Dead-letter analyzer consumer 和 PostgreSQL `dead_letter_events` 统一分析表。
 - Worker summary 运维接口：`GET /api/ops/workers/summary`。
 - Final report generation：Go 聚合 session/turn 确定性事实并持久化 `interview_reports`，Python Runtime `summary` task 生成结构化报告内容。
+- Retrieval Harness MVP：`POST /api/retrieval/search` 返回 Skill reference、summary、recent history、approved memory 的 evidence、score、reason、source 和 debug trace；vector 索引未建立时显式返回 warning。
 
 ## 下一批任务
 
 优先级按“能形成产品闭环”和“能降低后续返工风险”排序。
 
-1. Retrieval Harness MVP。
-   - 支持 full-text、summary、vector、recent history、approved memory 多来源检索。
-   - 返回 evidence、score、reason、source 和 token 预算。
-   - 保留 debug trace，避免上下文进入 Prompt 后不可解释。
-
-2. Coding judge worker。
+1. Coding judge worker。
    - 当前 submission 结果仍是 queued placeholder。
    - 后续需要 Docker sandbox、资源限制、无网络执行、测试结果追踪和重试/死信策略。
 
-3. Evaluation Harness。
+2. Evaluation Harness。
    - 建立出题、评分、追问、总结、RAG 命中和 memory 提取的样例集。
    - 记录质量、成本、延迟和回归结果。
    - 先服务后端稳定性，不急于做复杂评测平台。
 
-4. 前端接入准备。
+3. 前端接入准备。
    - 明确异步 trace 轮询、session 状态展示、报告页和 memory review 的接口契约。
    - 复用现有后端 schema version，避免前端直接绑定内部实现。
 
