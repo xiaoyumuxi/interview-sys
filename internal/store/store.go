@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -72,7 +73,7 @@ ON CONFLICT (provider_id) DO NOTHING`,
 	return nil
 }
 
-func (s *Store) ListProviders(ctx context.Context) ([]provider.Config, error) {
+func (s *Store) ListProviders(ctx context.Context) (items []provider.Config, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT provider_id, provider_type, base_url, COALESCE(chat_endpoint_path,''), COALESCE(api_key_ref,''),
        COALESCE(api_key_source,'env_ref'), COALESCE(api_key_ciphertext,''),
@@ -82,8 +83,11 @@ ORDER BY provider_id`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var items []provider.Config
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	for rows.Next() {
 		item, err := scanProvider(rows)
 		if err != nil {
@@ -103,7 +107,7 @@ FROM provider_configs
 WHERE provider_id=$1`, providerID)
 	item, err := scanProvider(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return provider.Config{}, false, nil
 		}
 		return provider.Config{}, false, err
@@ -201,7 +205,7 @@ SELECT COALESCE(api_key_source,'env_ref'), COALESCE(api_key_ref,''), COALESCE(ap
 FROM provider_configs
 WHERE provider_id=$1`, providerID).Scan(&source, &ref, &ciphertext)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return provider.KeySourceNone, "", nil, nil
 		}
 		return "", "", nil, err
@@ -225,7 +229,7 @@ func (s *Store) DeleteProvider(ctx context.Context, providerID string) error {
 	return nil
 }
 
-func (s *Store) ListProviderRoutes(ctx context.Context) ([]provider.Route, error) {
+func (s *Store) ListProviderRoutes(ctx context.Context) (routes []provider.Route, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT task_type, provider_id, COALESCE(fallback_provider_id,'')
 FROM provider_task_routes
@@ -233,8 +237,11 @@ ORDER BY task_type`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var routes []provider.Route
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	for rows.Next() {
 		var route provider.Route
 		if err := rows.Scan(&route.TaskType, &route.ProviderID, &route.FallbackProviderID); err != nil {
@@ -278,7 +285,7 @@ FROM provider_configs
 WHERE provider_id=$1`, providerID)
 	item, ciphertext, err := scanProviderWithCiphertext(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return provider.Config{}, "", false, nil
 		}
 		return provider.Config{}, "", false, err
@@ -375,7 +382,7 @@ WHERE r.task_type=$1 AND p.enabled=true`, taskType)
 	var cfg airuntime.ProviderConfig
 	var apiKeyRef, apiKeySource, apiKeyCiphertext string
 	if err := row.Scan(&cfg.ProviderType, &cfg.BaseURL, &cfg.ChatEndpointPath, &cfg.Model, &apiKeyRef, &apiKeySource, &apiKeyCiphertext, &cfg.SupportsJSON); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err

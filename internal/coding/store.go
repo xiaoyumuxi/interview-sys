@@ -68,7 +68,7 @@ type Submission struct {
 	UpdatedAt    string         `json:"updated_at"`
 }
 
-func (s *Store) ListSets(ctx context.Context) ([]QuestionSet, error) {
+func (s *Store) ListSets(ctx context.Context) (items []QuestionSet, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT set_id, display_name, description, source, source_url, question_type
 FROM code_question_sets
@@ -76,9 +76,12 @@ ORDER BY set_id`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
-	var items []QuestionSet
 	for rows.Next() {
 		var item QuestionSet
 		if err := rows.Scan(&item.SetID, &item.DisplayName, &item.Description, &item.Source, &item.SourceURL, &item.QuestionType); err != nil {
@@ -89,7 +92,7 @@ ORDER BY set_id`)
 	return items, rows.Err()
 }
 
-func (s *Store) ListQuestions(ctx context.Context, questionType string, limit int) ([]Question, error) {
+func (s *Store) ListQuestions(ctx context.Context, questionType string, limit int) (items []Question, err error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -98,7 +101,7 @@ SELECT question_id, COALESCE(set_id,''), title, difficulty, source, source_url, 
        frequency_rank, array_to_string(company_tags, ','), array_to_string(topic_tags, ','), status
 FROM code_questions
 WHERE status='published'`
-	args := []any{}
+	var args []any
 	if strings.TrimSpace(questionType) != "" {
 		args = append(args, questionType)
 		query += ` AND question_type=$1`
@@ -110,8 +113,11 @@ WHERE status='published'`
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var items []Question
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	for rows.Next() {
 		var item Question
 		var rank sql.NullInt64
@@ -122,8 +128,8 @@ WHERE status='published'`
 		item.CompanyTags = splitTags(companyTags)
 		item.TopicTags = splitTags(topicTags)
 		if rank.Valid {
-			v := int(rank.Int64)
-			item.FrequencyRank = &v
+			item.FrequencyRank = new(int)
+			*item.FrequencyRank = int(rank.Int64)
 		}
 		items = append(items, item)
 	}
@@ -144,15 +150,15 @@ WHERE question_id=$1`, id).Scan(
 		&rank, &companyTags, &topicTags, &item.Prompt, &item.InputFormat, &item.OutputFormat,
 		&item.ConstraintsText, &item.ReferenceSolution, &item.Explanation, &item.Status,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Question{}, false, nil
 	}
 	if err != nil {
 		return Question{}, false, err
 	}
 	if rank.Valid {
-		v := int(rank.Int64)
-		item.FrequencyRank = &v
+		item.FrequencyRank = new(int)
+		*item.FrequencyRank = int(rank.Int64)
 	}
 	item.CompanyTags = splitTags(companyTags)
 	item.TopicTags = splitTags(topicTags)
@@ -211,15 +217,15 @@ INSERT INTO code_submissions (
 	return item, nil
 }
 
-func (s *Store) ListSubmissions(ctx context.Context, userID string, questionID string, limit int) ([]Submission, error) {
+func (s *Store) ListSubmissions(ctx context.Context, userID string, questionID string, limit int) (items []Submission, err error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
 	query := `
 SELECT submission_id, COALESCE(user_id,''), question_id, language, source_code, status, score, result, created_at, updated_at
 FROM code_submissions`
-	conditions := []string{}
-	args := []any{}
+	var conditions []string
+	var args []any
 	if strings.TrimSpace(userID) != "" {
 		args = append(args, strings.TrimSpace(userID))
 		conditions = append(conditions, "user_id=$"+strconv.Itoa(len(args)))
@@ -238,8 +244,11 @@ FROM code_submissions`
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var items []Submission
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	for rows.Next() {
 		item, err := scanSubmission(rows)
 		if err != nil {
@@ -256,7 +265,7 @@ SELECT submission_id, COALESCE(user_id,''), question_id, language, source_code, 
 FROM code_submissions
 WHERE submission_id=$1`, submissionID)
 	item, err := scanSubmission(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Submission{}, false, nil
 	}
 	if err != nil {
@@ -267,7 +276,7 @@ WHERE submission_id=$1`, submissionID)
 
 func splitTags(value string) []string {
 	if strings.TrimSpace(value) == "" {
-		return []string{}
+		return make([]string, 0)
 	}
 	parts := strings.Split(value, ",")
 	out := make([]string, 0, len(parts))

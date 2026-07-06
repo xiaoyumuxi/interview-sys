@@ -342,12 +342,12 @@ func (h apiHandler) runtimeProvider(c *gin.Context, taskType string) *airuntime.
 	if h.deps.Store == nil {
 		return nil
 	}
-	provider, err := h.deps.Store.RuntimeProviderForTask(c.Request.Context(), taskType)
+	runtimeProvider, err := h.deps.Store.RuntimeProviderForTask(c.Request.Context(), taskType)
 	if err != nil {
 		h.deps.Logger.Warn("resolve runtime provider failed", "task_type", taskType, "error", err)
 		return nil
 	}
-	return provider
+	return runtimeProvider
 }
 
 func (h apiHandler) createInterviewSession(c *gin.Context) {

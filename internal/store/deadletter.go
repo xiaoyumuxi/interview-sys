@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ ON CONFLICT (source, source_stream, source_message_id) DO UPDATE SET
 	return err
 }
 
-func (s *Store) ListDeadLetters(ctx context.Context, status string, source string, limit int) ([]DeadLetterEvent, error) {
+func (s *Store) ListDeadLetters(ctx context.Context, status string, source string, limit int) (items []DeadLetterEvent, err error) {
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
@@ -96,7 +97,7 @@ SELECT dead_letter_id, source, source_stream, source_message_id, event_type, agg
        payload, reason, error_text, attempts, status, occurrence_count, first_seen_at, last_seen_at, created_at, updated_at
 FROM dead_letter_events
 WHERE 1=1`
-	args := []any{}
+	var args []any
 	if strings.TrimSpace(status) != "" {
 		args = append(args, status)
 		query += ` AND status=$` + strconv.Itoa(len(args))
@@ -111,8 +112,11 @@ WHERE 1=1`
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var items []DeadLetterEvent
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	for rows.Next() {
 		item, err := scanDeadLetter(rows)
 		if err != nil {
@@ -131,7 +135,7 @@ FROM dead_letter_events
 WHERE dead_letter_id=$1`, deadLetterID)
 	item, err := scanDeadLetter(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return DeadLetterEvent{}, false, nil
 		}
 		return DeadLetterEvent{}, false, err

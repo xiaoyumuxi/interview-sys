@@ -24,10 +24,6 @@ type Event struct {
 	Payload   any
 }
 
-func NewStream(client *redis.Client, logger *slog.Logger, name string) *Stream {
-	return NewStreamWithDeadLetter(client, logger, name, name+":dead")
-}
-
 func NewStreamWithDeadLetter(client *redis.Client, logger *slog.Logger, name string, deadLetterName string) *Stream {
 	if deadLetterName == "" {
 		deadLetterName = name + ":dead"

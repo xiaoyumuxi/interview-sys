@@ -150,7 +150,7 @@ func (c *Client) doRuntimeMap(ctx context.Context, method string, path string, q
 	return out, nil
 }
 
-func (c *Client) doJSON(ctx context.Context, method string, path string, query url.Values, in any) ([]byte, error) {
+func (c *Client) doJSON(ctx context.Context, method string, path string, query url.Values, in any) (payload []byte, err error) {
 	var body io.Reader
 	if in != nil {
 		payload, err := json.Marshal(in)
@@ -174,8 +174,15 @@ func (c *Client) doJSON(ctx context.Context, method string, path string, query u
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+	payload, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("runtime returned %s: %s", resp.Status, strings.TrimSpace(string(payload)))
 	}

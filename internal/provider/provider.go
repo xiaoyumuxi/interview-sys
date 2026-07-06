@@ -23,7 +23,6 @@ type Type string
 const (
 	TypeDeepSeek         Type = "deepseek"
 	TypeOpenAICompatible Type = "openai_compatible"
-	TypeClaude           Type = "claude"
 	TypeEmbedding        Type = "embedding"
 )
 
@@ -181,7 +180,7 @@ func (r *Registry) find(providerID string) (Config, bool) {
 	return Config{}, false
 }
 
-func TestChat(ctx context.Context, cfg Config, apiKey string, prompt string) error {
+func TestChat(ctx context.Context, cfg Config, apiKey string, prompt string) (err error) {
 	if apiKey == "" {
 		return errors.New("missing api key")
 	}
@@ -217,9 +216,16 @@ func TestChat(ctx context.Context, cfg Config, apiKey string, prompt string) err
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+		if readErr != nil {
+			return readErr
+		}
 		message := strings.TrimSpace(string(body))
 		if message == "" {
 			message = response.Status

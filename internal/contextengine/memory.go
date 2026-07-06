@@ -68,7 +68,7 @@ func memoryQuery(req PreviewRequest) string {
 func memoryContextItems(req PreviewRequest, resp map[string]any, now string, budget int) ([]ContextItem, []string) {
 	rawItems, _ := resp["items"].([]any)
 	items := make([]ContextItem, 0, len(rawItems))
-	reasons := []string{}
+	reasons := make([]string, 0)
 	used := 0
 	for _, raw := range rawItems {
 		result, ok := raw.(map[string]any)

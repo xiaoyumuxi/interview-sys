@@ -287,16 +287,16 @@ func renderMeta(req CreateRequest) string {
 
 func lintSkill(skillDir string, item Skill) LintResult {
 	var warnings []string
-	var errors []string
+	var errorMessages []string
 
 	if !skillIDPattern.MatchString(item.ID) {
-		errors = append(errors, "skill id must be kebab-case")
+		errorMessages = append(errorMessages, "skill id must be kebab-case")
 	}
 	if len(item.Description) > 240 {
 		warnings = append(warnings, "description is long; keep it concise for retrieval")
 	}
 	if strings.TrimSpace(item.Instructions) == "" {
-		errors = append(errors, "SKILL.md instructions are required")
+		errorMessages = append(errorMessages, "SKILL.md instructions are required")
 	}
 	if len(item.Categories) == 0 {
 		warnings = append(warnings, "skill has no categories")
@@ -314,7 +314,7 @@ func lintSkill(skillDir string, item Skill) LintResult {
 			continue
 		}
 		if _, err := cleanReferenceName(category.Ref); err != nil {
-			errors = append(errors, err.Error())
+			errorMessages = append(errorMessages, err.Error())
 			continue
 		}
 		if skillDir != "" {
@@ -332,16 +332,16 @@ func lintSkill(skillDir string, item Skill) LintResult {
 	}
 	for _, finding := range scanPromptInjection(scanText) {
 		if finding.Severity == "error" {
-			errors = append(errors, finding.Message)
+			errorMessages = append(errorMessages, finding.Message)
 		} else {
 			warnings = append(warnings, finding.Message)
 		}
 	}
 
 	return LintResult{
-		OK:       len(errors) == 0,
+		OK:       len(errorMessages) == 0,
 		Warnings: uniqueStrings(warnings),
-		Errors:   uniqueStrings(errors),
+		Errors:   uniqueStrings(errorMessages),
 	}
 }
 

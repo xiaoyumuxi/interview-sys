@@ -79,6 +79,7 @@ func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Lo
 		WriteTimeout: 500 * time.Millisecond,
 	})
 	if err := redisClient.Ping(ctx).Err(); err != nil {
+		_ = redisClient.Close()
 		closeFn()
 		return nil, nil, err
 	}

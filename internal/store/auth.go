@@ -2,9 +2,7 @@ package store
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -108,7 +106,7 @@ FROM app_users
 WHERE user_id=$1`, userID)
 	item, err := scanUser(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, false, nil
 		}
 		return User{}, false, err
@@ -124,7 +122,7 @@ FROM app_users
 WHERE lower(email)=lower($1)`, normalizeEmail(email))
 	item, err := scanUser(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, false, nil
 		}
 		return User{}, false, err
@@ -175,7 +173,7 @@ FROM auth_refresh_tokens
 WHERE token_hash=$1`, tokenHash)
 	var item RefreshTokenRecord
 	if err := row.Scan(&item.SessionID, &item.UserID, &item.TokenHash, &item.UserAgent, &item.IPAddress, &item.Revoked, &item.ExpiresAt, &item.CreatedAt, &item.UpdatedAt, &item.RevokedAt); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return RefreshTokenRecord{}, false, nil
 		}
 		return RefreshTokenRecord{}, false, err
@@ -199,14 +197,6 @@ WHERE session_id=$1`, sessionID)
 	return err
 }
 
-func HashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(hash), nil
-}
-
 func VerifyPassword(hash string, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
@@ -227,16 +217,8 @@ func scanUser(row userScanner) (User, error) {
 	}
 	item.Email = normalizeEmail(item.Email)
 	if lastLogin.Valid {
-		t := lastLogin.Time
-		item.LastLoginAt = &t
+		item.LastLoginAt = new(time.Time)
+		*item.LastLoginAt = lastLogin.Time
 	}
 	return item, nil
-}
-
-func RandomTokenID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }

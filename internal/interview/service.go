@@ -479,7 +479,6 @@ RETURNING turn_id`, TurnRunning, TurnQueued)
 	if err != nil {
 		return
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var turnID string
 		if err := rows.Scan(&turnID); err != nil {
@@ -489,6 +488,9 @@ RETURNING turn_id`, TurnRunning, TurnQueued)
 UPDATE async_messages
 SET status='pending', next_retry_at=now(), last_error='requeued after stale running turn', updated_at=now()
 WHERE dedup_key=$1`, "interview.answer_submitted:"+turnID)
+	}
+	if err := rows.Close(); err != nil {
+		return
 	}
 }
 
@@ -1115,7 +1117,7 @@ WHERE session_id=$1`, sessionID).Scan(
 		&currentQuestionID, &item.CurrentQuestionNumber, &item.AnswerRound, &item.FollowUpCount, &item.MaxFollowUps,
 		&item.TotalScore, &metadataRaw, &item.LastError, &createdAt, &updatedAt, &finishedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, nil
 	}
 	if err != nil {
@@ -1150,7 +1152,7 @@ WHERE session_id=$1`, sessionID).Scan(
 	return item, nil
 }
 
-func (s *Service) loadTurns(ctx context.Context, sessionID string) ([]Turn, error) {
+func (s *Service) loadTurns(ctx context.Context, sessionID string) (turns []Turn, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT turn_id, session_id, COALESCE(question_id,''), question_number, answer_round, request_id, answer_hash,
        user_answer, turn_status, evaluation, follow_up_needed, follow_up_question, score, COALESCE(trace_id,''),
@@ -1161,8 +1163,11 @@ ORDER BY created_at`, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var turns []Turn
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 	for rows.Next() {
 		var turn Turn
 		var evalRaw, responseRaw []byte
@@ -1198,7 +1203,7 @@ WHERE turn_id=$1`, turnID).Scan(
 		&turn.RequestID, &turn.AnswerHash, &turn.UserAnswer, &turn.TurnStatus, &evalRaw, &turn.FollowUpNeeded,
 		&turn.FollowUpQuestion, &turn.Score, &turn.TraceID, &responseRaw, &turn.ErrorText, &createdAt, &updatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Turn{}, nil
 	}
 	if err != nil {
@@ -1219,7 +1224,7 @@ FROM interview_turns
 WHERE session_id=$1 AND (request_id=$2 OR (question_number=$3 AND answer_round=$4 AND answer_hash=$5))
 ORDER BY created_at
 LIMIT 1`, sessionID, requestID, questionNumber, answerRound, answerHash).Scan(&raw)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
 	if err != nil {
@@ -1245,7 +1250,7 @@ FROM code_questions
 WHERE status='published' AND question_type=$1
 ORDER BY frequency_rank NULLS LAST, title
 OFFSET $2 LIMIT 1`, questionType, number-1).Scan(&q.QuestionID, &q.Title, &q.Prompt, &tags)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Question{}, false, nil
 	}
 	if err != nil {
@@ -1263,7 +1268,7 @@ func (s *Service) questionByID(ctx context.Context, questionID string, number in
 SELECT question_id, title, prompt, array_to_string(topic_tags, ',')
 FROM code_questions
 WHERE question_id=$1`, questionID).Scan(&q.QuestionID, &q.Title, &q.Prompt, &tags)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Question{}, false, nil
 	}
 	if err != nil {
@@ -1325,7 +1330,7 @@ func nullEmpty(value string) any {
 
 func splitTags(value string) []string {
 	if strings.TrimSpace(value) == "" {
-		return []string{}
+		return make([]string, 0)
 	}
 	parts := strings.Split(value, ",")
 	out := make([]string, 0, len(parts))
