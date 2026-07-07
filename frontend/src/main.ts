@@ -144,7 +144,7 @@ function renderLogin(): string {
             <p>AI training runtime control surface</p>
           </div>
         </div>
-        ${languageSelect("login-language")}
+        ${languageSwitcher("login-language")}
         <form id="login-form" class="login-form">
           <label>
             Email
@@ -198,7 +198,7 @@ function renderShell(): string {
           </div>
           <div class="topbar-actions">
             <button class="button ghost" data-action="refresh">Refresh</button>
-            ${languageSelect("topbar-language")}
+            ${languageSwitcher("topbar-language")}
             <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
             <button class="icon-button" data-action="logout" aria-label="Sign out">×</button>
           </div>
@@ -542,9 +542,9 @@ function bindEvents(): void {
     const form = new FormData(event.currentTarget as HTMLFormElement);
     void handleLogin(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
   });
-  document.querySelectorAll<HTMLSelectElement>("[data-action='set-locale']").forEach((select) => {
-    select.addEventListener("change", () => {
-      setLocale(normalizeLocale(select.value));
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-locale']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setLocale(normalizeLocale(button.dataset.locale));
     });
   });
 
@@ -908,14 +908,22 @@ function ui(value: string): string {
   return translate(state.locale, value);
 }
 
-function languageSelect(id: string): string {
+function languageSwitcher(id: string): string {
   return `
-    <label class="language-field" for="${id}">
+    <div class="language-field" id="${id}" aria-label="Language preference">
       <span>Language preference</span>
-      <select id="${id}" class="language-select" data-action="set-locale" aria-label="Language preference">
-        ${locales.map((locale) => `<option value="${locale.value}" ${locale.value === state.locale ? "selected" : ""}>${locale.label}</option>`).join("")}
-      </select>
-    </label>
+      <div class="language-buttons" role="group" aria-label="Language preference">
+        ${locales.map((locale) => `
+          <button
+            class="language-button ${locale.value === state.locale ? "active" : ""}"
+            type="button"
+            data-action="set-locale"
+            data-locale="${locale.value}"
+            aria-pressed="${locale.value === state.locale ? "true" : "false"}"
+          >${locale.label}</button>
+        `).join("")}
+      </div>
+    </div>
   `;
 }
 

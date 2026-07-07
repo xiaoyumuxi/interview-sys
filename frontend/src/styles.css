@@ -120,7 +120,6 @@ p {
 .language-field {
   display: inline-grid;
   width: max-content;
-  min-width: 160px;
   gap: 6px;
   margin-top: 20px;
 }
@@ -131,9 +130,31 @@ p {
   font-weight: 800;
 }
 
-.language-select {
-  min-width: 150px;
+.language-buttons {
+  display: inline-flex;
+  overflow: hidden;
+  width: max-content;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
   background: #f8fafc;
+}
+
+.language-button {
+  min-width: 56px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.language-button.active {
+  background: var(--teal);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.18);
 }
 
 label {
