@@ -41,6 +41,13 @@ import {
 type View = "dashboard" | "interview" | "coding" | "memory" | "admin" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
 
+interface EmptyAction {
+  label: string;
+  iconName: string;
+  action?: string;
+  view?: View;
+}
+
 interface AppState {
   view: View;
   locale: Locale;
@@ -211,11 +218,11 @@ function renderLogin(): string {
         <form id="login-form" class="login-form">
           <label>
             Email
-            <input name="email" type="email" autocomplete="email" value="root@example.local" />
+            <input name="email" type="email" autocomplete="email" value="root@example.local" required />
           </label>
           <label>
             Password
-            <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" />
+            <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" required />
           </label>
           <button class="button primary" type="submit">${icon("log-in")}<span>Sign in</span></button>
         </form>
@@ -226,6 +233,7 @@ function renderLogin(): string {
 }
 
 function renderShell(): string {
+  const busy = isCurrentViewLoading();
   return `
     <div class="app-shell">
       <aside class="sidebar">
@@ -260,14 +268,15 @@ function renderShell(): string {
             <p>${pageSubtitle(state.view)}</p>
           </div>
           <div class="topbar-actions">
-            <button class="button ghost" data-action="refresh">${icon("refresh-cw")}<span>Refresh</span></button>
+            <button class="button ghost" data-action="refresh" ${busy ? "disabled" : ""}>${icon("refresh-cw")}<span>${busy ? "Updating" : "Refresh"}</span></button>
             ${languageSwitcher("topbar-language")}
             <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
             <button class="icon-button" data-action="logout" aria-label="Sign out">${icon("log-out")}</button>
           </div>
         </header>
         ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
-        <main class="page-body">${renderPage()}</main>
+        ${renderInteractionStrip()}
+        <main class="page-body" aria-busy="${busy ? "true" : "false"}">${renderPage()}</main>
       </section>
     </div>
   `;
@@ -308,11 +317,28 @@ function renderDashboard(): string {
   const judge = data.judge;
   return `
     ${state.dashboard.error ? banner(state.dashboard.error, "error") : ""}
+    <section class="console-hero">
+      <div class="console-copy">
+        <span class="eyebrow">Control plane</span>
+        <h2>Keep the training loop visible</h2>
+        <p>Start from the work that changes state: create an interview, submit code, review memory, then use evaluation runs to catch regressions before the loop drifts.</p>
+        <div class="hero-actions">
+          <button class="button primary" data-view="interview">${icon("messages-square")}<span>Start interview</span></button>
+          <button class="button secondary" data-view="coding">${icon("code-2")}<span>Practice coding</span></button>
+          <button class="button secondary" data-view="memory">${icon("database")}<span>Review memory</span></button>
+        </div>
+      </div>
+      <div class="console-panel">
+        ${operationRow("API boundary", stringValue(data.health?.status, "unknown"), "healthz")}
+        ${operationRow("Async worker", stringValue(queue.pending, "0"), "pending stream items")}
+        ${operationRow("Judge lane", stringValue(record(judge).queued, "0"), "queued submissions")}
+      </div>
+    </section>
     <section class="metric-grid">
-      ${metricCard("API status", stringValue(data.health?.status, "unknown"), "healthz", "teal")}
-      ${metricCard("Queue pending", stringValue(queue.pending, "0"), "Redis Stream", "blue")}
-      ${metricCard("Outbox pending", stringValue(outbox.pending, "0"), "PostgreSQL outbox", "amber")}
-      ${metricCard("Judge queued", stringValue(record(judge).queued, "0"), "coding submissions", "cyan")}
+      ${metricCard("API status", stringValue(data.health?.status, "unknown"), "healthz", "teal", "terminal")}
+      ${metricCard("Queue pending", stringValue(queue.pending, "0"), "Redis Stream", "blue", "messages-square")}
+      ${metricCard("Outbox pending", stringValue(outbox.pending, "0"), "PostgreSQL outbox", "amber", "database")}
+      ${metricCard("Judge queued", stringValue(record(judge).queued, "0"), "coding submissions", "cyan", "code-2")}
     </section>
     <section class="content-grid two">
       <article class="card">
@@ -349,16 +375,15 @@ function renderDashboard(): string {
 
 function renderInterview(): string {
   const session = state.interview.session;
-  const current = session?.current_question;
   return `
     ${state.interview.error ? banner(state.interview.error, "error") : ""}
-    <section class="content-grid two-wide">
-      <article class="card">
+    <section class="content-grid interview-board">
+      <article class="card session-card">
         <div class="section-head">
           <div><h2>Start or resume session</h2><p>Create an interview session, answer the current question, then poll trace state.</p></div>
-          <button class="button secondary" data-action="poll-session" ${session ? "" : "disabled"}>${icon("rotate-cw")}<span>Poll session</span></button>
+          <button class="button secondary" data-action="poll-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("rotate-cw")}<span>${state.interview.loading ? "Updating" : "Poll session"}</span></button>
         </div>
-        <form id="session-form" class="form-row">
+        <form id="session-form" class="form-row" aria-busy="${state.interview.loading ? "true" : "false"}">
           <label>Skill
             <select name="skill_id">${skillOptions(session?.skill_id)}</select>
           </label>
@@ -372,27 +397,33 @@ function renderInterview(): string {
           <label>Follow-ups
             <input name="max_follow_ups" type="number" min="0" max="5" value="1" />
           </label>
-          <button class="button primary" type="submit">${icon("plus")}<span>Create session</span></button>
+          <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("plus")}<span>${state.interview.loading ? "Creating" : "Create session"}</span></button>
         </form>
         ${session ? renderSessionPanel(session) : emptyState("No active session", "Create a session to load the first backend-generated question.")}
       </article>
-      <aside class="card">
-        <h2>Evaluation state</h2>
+      <aside class="card state-card">
+        <div class="section-head compact">
+          <div><h2>Evaluation state</h2><p>Follow the backend-owned state machine without reading raw payloads first.</p></div>
+        </div>
         ${session ? `
-          <dl class="detail-list">
+          <div class="state-stack">
+            ${statePill("Flow", session.flow_status, "messages-square")}
+            ${statePill("Status", session.session_status, "terminal")}
+            ${statePill("Phase", session.phase, "clipboard-check")}
+            ${statePill("Total score", String(session.total_score), "file-text")}
+          </div>
+          <dl class="detail-list compact">
             <div><dt>Session</dt><dd>${escapeHtml(session.session_id)}</dd></div>
-            <div><dt>Flow</dt><dd>${statusBadge(session.flow_status)}</dd></div>
-            <div><dt>Status</dt><dd>${statusBadge(session.session_status)}</dd></div>
-            <div><dt>Total score</dt><dd>${session.total_score}</dd></div>
+            <div><dt>Updated</dt><dd>${escapeHtml(formatTime(session.updated_at))}</dd></div>
           </dl>
         ` : emptyState("Waiting for session", "Trace and report controls appear after creation.")}
         <div class="button-row">
-          <button class="button secondary" data-action="load-trace" ${session ? "" : "disabled"}>${icon("file-search")}<span>Load trace</span></button>
-          <button class="button secondary" data-action="generate-report" ${session ? "" : "disabled"}>${icon("file-text")}<span>Generate report</span></button>
-          <button class="button danger" data-action="finalize-session" ${session ? "" : "disabled"}>${icon("flag")}<span>Finalize</span></button>
+          <button class="button secondary" data-action="load-trace" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-search")}<span>Load trace</span></button>
+          <button class="button secondary" data-action="generate-report" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-text")}<span>Generate report</span></button>
+          <button class="button danger" data-action="finalize-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("flag")}<span>Finalize</span></button>
         </div>
-        ${state.interview.trace.length ? `<pre class="json-box">${escapeHtml(JSON.stringify(state.interview.trace.slice(0, 3), null, 2))}</pre>` : ""}
-        ${state.interview.report ? `<pre class="json-box">${escapeHtml(JSON.stringify(state.interview.report, null, 2))}</pre>` : ""}
+        ${state.interview.trace.length ? renderTracePreview(state.interview.trace) : ""}
+        ${state.interview.report ? renderReportPreview(state.interview.report) : ""}
       </aside>
     </section>
   `;
@@ -402,17 +433,27 @@ function renderSessionPanel(session: InterviewSession): string {
   const question = session.current_question;
   return `
     <div class="question-card">
-      <span class="eyebrow">Question ${session.current_question_number || question?.number || 1}</span>
+      <div class="question-topline">
+        <span class="eyebrow">Question ${session.current_question_number || question?.number || 1}</span>
+        ${statusBadge(session.flow_status)}
+      </div>
       <h3>${escapeHtml(question?.title ?? "Backend interview question")}</h3>
       <p>${escapeHtml(question?.prompt ?? "The backend has not returned a current question yet. Poll the session after workers run.")}</p>
+      <div class="question-meta">
+        <span>${icon("messages-square")}<strong>${escapeHtml(session.skill_id)}</strong></span>
+        <span>${icon("rotate-cw")}<strong>${session.follow_up_count}/${session.max_follow_ups}</strong></span>
+        <span>${icon("clipboard-check")}<strong>${escapeHtml(session.phase)}</strong></span>
+      </div>
       <div class="chip-row">${(question?.tags ?? ["runtime", "trace"]).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
     </div>
-    <form id="answer-form" class="answer-form">
+    <form id="answer-form" class="answer-form" aria-busy="${state.interview.loading ? "true" : "false"}">
       <label>Your answer
         <textarea name="answer" rows="8">${escapeHtml(state.interview.answer)}</textarea>
       </label>
-      <label class="check-row"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /> Dry run runtime calls</label>
-      <button class="button primary" type="submit">${icon("send")}<span>Submit answer</span></button>
+      <div class="answer-actions">
+        <label class="check-row"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /> Dry run runtime calls</label>
+        <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("send")}<span>${state.interview.loading ? "Sending" : "Submit answer"}</span></button>
+      </div>
     </form>
     ${session.turns?.length ? renderTurns(session.turns) : ""}
   `;
@@ -421,13 +462,19 @@ function renderSessionPanel(session: InterviewSession): string {
 function renderTurns(turns: InterviewSession["turns"]): string {
   if (!turns?.length) return "";
   return `
-    <div class="turn-list">
+    <div class="turn-list rich">
+      <h3>Turn history</h3>
       ${turns.map((turn) => `
         <div class="turn-row">
-          <strong>Turn ${turn.question_number}.${turn.answer_round}</strong>
-          ${statusBadge(turn.turn_status)}
-          <span>score ${turn.score}</span>
-          ${turn.error_text ? `<small>${escapeHtml(turn.error_text)}</small>` : ""}
+          <div>
+            <strong>Turn ${turn.question_number}.${turn.answer_round}</strong>
+            <small>${escapeHtml(formatTime(turn.updated_at))}</small>
+          </div>
+          <div class="turn-meta">
+            ${statusBadge(turn.turn_status)}
+            <span>score ${turn.score}</span>
+          </div>
+          ${turn.error_text ? `<p>${escapeHtml(turn.error_text)}</p>` : ""}
         </div>
       `).join("")}
     </div>
@@ -439,41 +486,47 @@ function renderCoding(): string {
   return `
     ${state.coding.error ? banner(state.coding.error, "error") : ""}
     <section class="content-grid coding-layout">
-      <article class="card">
+      <article class="card question-browser">
         <div class="section-head">
           <div><h2>Question set</h2><p>Published coding questions from PostgreSQL seed data.</p></div>
-          <button class="button secondary" data-action="load-coding">${icon("refresh-cw")}<span>Reload</span></button>
+          <button class="button secondary" data-action="load-coding" ${state.coding.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.coding.loading ? "Updating" : "Reload"}</span></button>
         </div>
         <div class="list-panel">
           ${state.coding.questions.map((question) => `
             <button class="list-item ${selected?.question_id === question.question_id ? "active" : ""}" data-question-id="${escapeAttr(question.question_id)}">
               <strong>${escapeHtml(question.title)}</strong>
               <span>${escapeHtml(question.difficulty)} · ${escapeHtml(question.question_type)}</span>
+              <small>${(question.topic_tags ?? []).slice(0, 3).map(escapeHtml).join(" / ")}</small>
             </button>
-          `).join("") || emptyState("No questions", "Run migrations and seed data before using coding practice.")}
+          `).join("") || emptyState("No questions", "Run migrations and seed data before using coding practice.", { label: "Reload", action: "load-coding", iconName: "refresh-cw" })}
         </div>
       </article>
-      <article class="card editor-card">
+      <article class="card editor-card code-studio">
         <div class="section-head">
           <div><h2>${escapeHtml(selected?.title ?? "Select a question")}</h2><p>${escapeHtml(selected?.constraints_text ?? "Prompt and constraints appear here.")}</p></div>
         </div>
-        <p class="prompt-text">${escapeHtml(selected?.prompt ?? "")}</p>
-        <form id="coding-form" class="coding-form">
+        <div class="prompt-panel">
+          <span class="eyebrow">Problem brief</span>
+          <p class="prompt-text">${escapeHtml(selected?.prompt ?? "")}</p>
+          <div class="chip-row">${(selected?.topic_tags ?? ["backend", "practice"]).slice(0, 5).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
+        </div>
+        <form id="coding-form" class="coding-form" aria-busy="${state.coding.loading ? "true" : "false"}">
           <label>Language
             <select name="language">
               ${["go", "java", "python", "javascript", "typescript", "cpp"].map((lang) => `<option value="${lang}" ${state.coding.language === lang ? "selected" : ""}>${lang}</option>`).join("")}
             </select>
           </label>
           <textarea name="source_code" spellcheck="false">${escapeHtml(state.coding.sourceCode)}</textarea>
-          <button class="button primary" type="submit" ${selected ? "" : "disabled"}>${icon("terminal")}<span>Submit to judge</span></button>
+          <button class="button primary" type="submit" ${selected && !state.coding.loading ? "" : "disabled"}>${icon("terminal")}<span>${state.coding.loading ? "Submitting" : "Submit to judge"}</span></button>
         </form>
       </article>
-      <aside class="card">
-        <h2>Judge results</h2>
-        ${table(
-          ["Status", "Score", "Language"],
-          state.coding.submissions.map((item) => [statusBadge(item.status), String(item.score), item.language])
-        )}
+      <aside class="card results-card">
+        <div class="section-head compact">
+          <div><h2>Judge results</h2><p>Latest asynchronous verdicts for this question.</p></div>
+        </div>
+        <div class="submission-list">
+          ${state.coding.submissions.map(renderSubmissionCard).join("") || emptyState("No records", "Nothing has been returned by the API yet.")}
+        </div>
       </aside>
     </section>
   `;
@@ -488,9 +541,9 @@ function renderMemory(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Pending memory candidates</h2><p>Human review stays between runtime extraction and long-term profile admission.</p></div>
-          <button class="button secondary" data-action="load-memory">${icon("refresh-cw")}<span>Reload</span></button>
+          <button class="button secondary" data-action="load-memory" ${state.memory.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.memory.loading ? "Updating" : "Reload"}</span></button>
         </div>
-        ${candidates.length ? candidates.map(renderMemoryCandidate).join("") : emptyState("No runtime candidates", "Start Python Runtime and load pending candidates to review memory.")}
+        ${candidates.length ? candidates.map(renderMemoryCandidate).join("") : emptyState("No runtime candidates", "Start Python Runtime and load pending candidates to review memory.", { label: "Reload", action: "load-memory", iconName: "refresh-cw" })}
       </article>
       <aside class="card">
         <h2>Review rule</h2>
@@ -511,8 +564,8 @@ function renderMemoryCandidate(item: JsonObject): string {
         <small>confidence ${escapeHtml(stringValue(item.confidence, "n/a"))}</small>
       </div>
       <div class="button-row">
-        <button class="button secondary" data-action="approve-memory" data-candidate-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>${icon("check")}<span>Approve</span></button>
-        <button class="button danger" data-action="reject-memory" data-candidate-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>${icon("x")}<span>Reject</span></button>
+        <button class="button secondary" data-action="approve-memory" data-candidate-id="${escapeAttr(id)}" ${id && !state.memory.loading ? "" : "disabled"}>${icon("check")}<span>Approve</span></button>
+        <button class="button danger" data-action="reject-memory" data-candidate-id="${escapeAttr(id)}" ${id && !state.memory.loading ? "" : "disabled"}>${icon("x")}<span>Reject</span></button>
       </div>
     </div>
   `;
@@ -526,7 +579,7 @@ function renderAdmin(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Provider routes</h2><p>Root-only provider and task routing state.</p></div>
-          <button class="button secondary" data-action="load-admin">${icon("refresh-cw")}<span>Reload</span></button>
+          <button class="button secondary" data-action="load-admin" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Reload"}</span></button>
         </div>
         ${table(
           ["Task", "Provider", "Fallback"],
@@ -555,9 +608,9 @@ function renderEvaluation(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Evaluation cases</h2><p>Store quality samples and run them through the runtime task path.</p></div>
-          <button class="button secondary" data-action="load-evaluation">${icon("refresh-cw")}<span>Reload</span></button>
+          <button class="button secondary" data-action="load-evaluation" ${state.evaluation.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.evaluation.loading ? "Updating" : "Reload"}</span></button>
         </div>
-        <form id="evaluation-form" class="evaluation-form">
+        <form id="evaluation-form" class="evaluation-form" aria-busy="${state.evaluation.loading ? "true" : "false"}">
           <input name="case_id" placeholder="case_id, optional" />
           <input name="suite" placeholder="suite" value="runtime-smoke" />
           <select name="task_type">
@@ -568,7 +621,7 @@ function renderEvaluation(): string {
           </select>
           <select name="skill_id">${skillOptions("java-backend")}</select>
           <textarea name="user_input" rows="3">Generate one Redis recovery interview question.</textarea>
-          <button class="button primary" type="submit">${icon("save")}<span>Save case</span></button>
+          <button class="button primary" type="submit" ${state.evaluation.loading ? "disabled" : ""}>${icon("save")}<span>${state.evaluation.loading ? "Saving" : "Save case"}</span></button>
         </form>
         ${state.evaluation.cases.map((item) => `
           <div class="case-row">
@@ -576,7 +629,7 @@ function renderEvaluation(): string {
               <strong>${escapeHtml(item.case_id)}</strong>
               <span>${escapeHtml(item.suite)} · ${escapeHtml(item.task_type)}</span>
             </button>
-            <button class="button secondary" data-action="run-evaluation" data-case-id="${escapeAttr(item.case_id)}">${icon("play")}<span>Run dry</span></button>
+            <button class="button secondary" data-action="run-evaluation" data-case-id="${escapeAttr(item.case_id)}" ${state.evaluation.loading ? "disabled" : ""}>${icon("play")}<span>Run dry</span></button>
           </div>
         `).join("") || emptyState("No cases", "Create a small smoke case first.")}
       </article>
@@ -615,12 +668,21 @@ function bindEvents(): void {
   document.querySelector<HTMLButtonElement>("[data-action='refresh']")?.addEventListener("click", () => void refreshCurrentView());
   document.querySelector<HTMLFormElement>("#session-form")?.addEventListener("submit", onSessionSubmit);
   document.querySelector<HTMLFormElement>("#answer-form")?.addEventListener("submit", onAnswerSubmit);
+  document.querySelector<HTMLTextAreaElement>("textarea[name='answer']")?.addEventListener("input", (event) => {
+    state.interview.answer = (event.currentTarget as HTMLTextAreaElement).value;
+  });
   document.querySelector<HTMLButtonElement>("[data-action='poll-session']")?.addEventListener("click", () => void pollSession());
   document.querySelector<HTMLButtonElement>("[data-action='load-trace']")?.addEventListener("click", () => void loadTrace());
   document.querySelector<HTMLButtonElement>("[data-action='generate-report']")?.addEventListener("click", () => void generateReport());
   document.querySelector<HTMLButtonElement>("[data-action='finalize-session']")?.addEventListener("click", () => void finalizeSession());
   document.querySelector<HTMLButtonElement>("[data-action='load-coding']")?.addEventListener("click", () => void loadCoding());
   document.querySelector<HTMLFormElement>("#coding-form")?.addEventListener("submit", onCodingSubmit);
+  document.querySelector<HTMLSelectElement>("select[name='language']")?.addEventListener("change", (event) => {
+    state.coding.language = (event.currentTarget as HTMLSelectElement).value;
+  });
+  document.querySelector<HTMLTextAreaElement>("textarea[name='source_code']")?.addEventListener("input", (event) => {
+    state.coding.sourceCode = (event.currentTarget as HTMLTextAreaElement).value;
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-question-id]").forEach((button) => {
     button.addEventListener("click", () => void selectQuestion(button.dataset.questionId ?? ""));
   });
@@ -662,6 +724,10 @@ async function refreshCurrentView(): Promise<void> {
 }
 
 async function handleLogin(email: string, password: string): Promise<void> {
+  if (!email.trim() || !password.trim()) {
+    toast(ui("Enter email and password"));
+    return;
+  }
   try {
     const auth = await api.login(email, password);
     saveAuth(auth);
@@ -792,7 +858,13 @@ async function loadEvaluation(): Promise<void> {
 
 async function onSessionSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
+  if (state.interview.loading) return;
   const form = new FormData(event.currentTarget as HTMLFormElement);
+  const maxFollowUps = Number(form.get("max_follow_ups") ?? 1);
+  if (!Number.isFinite(maxFollowUps) || maxFollowUps < 0 || maxFollowUps > 5) {
+    toast(ui("Follow-ups must be between 0 and 5"));
+    return;
+  }
   state.interview.loading = true;
   state.interview.error = "";
   render();
@@ -800,68 +872,107 @@ async function onSessionSubmit(event: SubmitEvent): Promise<void> {
     state.interview.session = await api.createInterviewSession(
       String(form.get("skill_id") ?? "java-backend"),
       String(form.get("question_type") ?? "backend"),
-      Number(form.get("max_follow_ups") ?? 1)
+      maxFollowUps
     );
     toast(ui("Session created"));
   } catch (error) {
     state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
   }
-  state.interview.loading = false;
   render();
 }
 
 async function onAnswerSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!state.interview.session) return;
+  if (state.interview.loading) return;
   const form = new FormData(event.currentTarget as HTMLFormElement);
   state.interview.answer = String(form.get("answer") ?? "");
   state.interview.dryRun = form.get("dry_run") === "on";
+  if (!state.interview.answer.trim()) {
+    state.interview.error = "Write an answer before sending it.";
+    toast(ui("Write an answer before sending it."));
+    render();
+    return;
+  }
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
   try {
     await api.submitInterviewAnswer(state.interview.session, state.interview.answer, state.interview.dryRun);
     toast(ui("Answer accepted by API"));
-    await pollSession();
+    state.interview.session = await api.getInterviewSession(state.interview.session.session_id);
   } catch (error) {
     state.interview.error = errorMessage(error);
-    render();
+  } finally {
+    state.interview.loading = false;
   }
+  render();
 }
 
 async function pollSession(): Promise<void> {
   if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
   try {
     state.interview.session = await api.getInterviewSession(state.interview.session.session_id);
   } catch (error) {
     state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
   }
   render();
 }
 
 async function loadTrace(): Promise<void> {
   if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
   try {
     state.interview.trace = await api.getInterviewTrace(state.interview.session.session_id);
   } catch (error) {
     state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
   }
   render();
 }
 
 async function generateReport(): Promise<void> {
   if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
   try {
     state.interview.report = await api.generateInterviewReport(state.interview.session.session_id, true);
   } catch (error) {
     state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
   }
   render();
 }
 
 async function finalizeSession(): Promise<void> {
   if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  const confirmed = window.confirm(ui("Finalize this interview session?"));
+  if (!confirmed) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
   try {
     state.interview.session = await api.finalizeInterviewSession(state.interview.session.session_id);
   } catch (error) {
     state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
   }
   render();
 }
@@ -869,21 +980,37 @@ async function finalizeSession(): Promise<void> {
 async function onCodingSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!state.coding.selectedQuestion) return;
+  if (state.coding.loading) return;
   const form = new FormData(event.currentTarget as HTMLFormElement);
   state.coding.language = String(form.get("language") ?? "go");
   state.coding.sourceCode = String(form.get("source_code") ?? "");
+  if (!state.coding.sourceCode.trim()) {
+    state.coding.error = "Write code before sending it to the judge.";
+    toast(ui("Write code before sending it to the judge."));
+    render();
+    return;
+  }
+  state.coding.loading = true;
+  state.coding.error = "";
+  render();
   try {
     await api.createCodingSubmission(state.coding.selectedQuestion.question_id, state.coding.language, state.coding.sourceCode);
     toast(ui("Submission queued"));
     state.coding.submissions = await api.listCodingSubmissions(state.coding.selectedQuestion.question_id);
   } catch (error) {
     state.coding.error = errorMessage(error);
+  } finally {
+    state.coding.loading = false;
   }
   render();
 }
 
 async function reviewMemory(candidateId: string, action: "approve" | "reject"): Promise<void> {
   if (!candidateId) return;
+  if (state.memory.loading) return;
+  state.memory.loading = true;
+  state.memory.error = "";
+  render();
   try {
     if (action === "approve") await api.approveMemoryCandidate(candidateId, "Approved from frontend review");
     else await api.rejectMemoryCandidate(candidateId, "Rejected from frontend review");
@@ -891,20 +1018,33 @@ async function reviewMemory(candidateId: string, action: "approve" | "reject"): 
     await loadMemory();
   } catch (error) {
     state.memory.error = errorMessage(error);
+  } finally {
+    state.memory.loading = false;
     render();
   }
 }
 
 async function onEvaluationSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
+  if (state.evaluation.loading) return;
   const form = new FormData(event.currentTarget as HTMLFormElement);
+  const userInput = String(form.get("user_input") ?? "");
+  if (!userInput.trim()) {
+    state.evaluation.error = "Write an evaluation input before saving the case.";
+    toast(ui("Write an evaluation input before saving the case."));
+    render();
+    return;
+  }
+  state.evaluation.loading = true;
+  state.evaluation.error = "";
+  render();
   try {
     await api.saveEvaluationCase({
       case_id: String(form.get("case_id") ?? ""),
       suite: String(form.get("suite") ?? "runtime-smoke"),
       task_type: String(form.get("task_type") ?? "question_generation"),
       skill_id: String(form.get("skill_id") ?? "java-backend"),
-      input: { user_input: String(form.get("user_input") ?? "") },
+      input: { user_input: userInput },
       expected: {
         required_fields: ["question"],
         contains: { question: "Redis" }
@@ -916,17 +1056,29 @@ async function onEvaluationSubmit(event: SubmitEvent): Promise<void> {
     await loadEvaluation();
   } catch (error) {
     state.evaluation.error = errorMessage(error);
+  } finally {
+    state.evaluation.loading = false;
     render();
   }
 }
 
 async function runEvaluation(caseId: string): Promise<void> {
+  if (!caseId) {
+    toast(ui("Choose a case to run."));
+    return;
+  }
+  if (state.evaluation.loading) return;
+  state.evaluation.loading = true;
+  state.evaluation.error = "";
+  render();
   try {
     state.evaluation.lastRun = await api.runEvaluationCase(caseId, true);
     toast(ui("Evaluation run recorded"));
     await loadEvaluation();
   } catch (error) {
     state.evaluation.error = errorMessage(error);
+  } finally {
+    state.evaluation.loading = false;
     render();
   }
 }
@@ -999,12 +1151,151 @@ function skillOptions(selected = ""): string {
   }).join("");
 }
 
-function metricCard(label: string, value: string, hint: string, tone: string): string {
+function isCurrentViewLoading(): boolean {
+  if (state.view === "dashboard") return state.dashboard.loading;
+  if (state.view === "interview") return state.interview.loading;
+  if (state.view === "coding") return state.coding.loading;
+  if (state.view === "memory") return state.memory.loading;
+  if (state.view === "admin") return state.admin.loading;
+  return state.evaluation.loading;
+}
+
+function currentViewError(): string {
+  if (state.view === "dashboard") return state.dashboard.error;
+  if (state.view === "interview") return state.interview.error;
+  if (state.view === "coding") return state.coding.error;
+  if (state.view === "memory") return state.memory.error;
+  if (state.view === "admin") return state.admin.error;
+  return state.evaluation.error;
+}
+
+function renderInteractionStrip(): string {
+  const busy = isCurrentViewLoading();
+  const error = currentViewError();
+  const tone = error ? "danger" : busy ? "info" : "ok";
+  const title = error ? "Needs attention" : busy ? "Working" : "Ready";
+  return `
+    <section class="interaction-strip ${tone}" aria-live="polite">
+      <div>
+        <span>${icon(error ? "x" : busy ? "refresh-cw" : "check")}</span>
+        <div>
+          <strong>${title}</strong>
+          <p>${escapeHtml(error || interactionHint())}</p>
+        </div>
+      </div>
+      ${renderNextAction()}
+    </section>
+  `;
+}
+
+function interactionHint(): string {
+  if (state.view === "dashboard") return "Choose the next training task or refresh the operational snapshot.";
+  if (state.view === "interview") {
+    if (!state.interview.session) return "Create a session, then answer the active question.";
+    return "Answer, poll the session, then generate the report when the flow is complete.";
+  }
+  if (state.view === "coding") {
+    if (!state.coding.selectedQuestion) return "Choose a question before sending code to the judge.";
+    return "Edit code, submit it, then watch the asynchronous verdict.";
+  }
+  if (state.view === "memory") return "Review candidates one by one so only trusted memory reaches prompts.";
+  if (state.view === "admin") return "Check provider routing and worker state before debugging runtime failures.";
+  return "Save a sample case, run it, then inspect assertions and score changes.";
+}
+
+function renderNextAction(): string {
+  if (isCurrentViewLoading()) return `<span class="mini-status">${icon("refresh-cw")}<b>Syncing</b></span>`;
+  if (state.view === "dashboard") return `<button class="button secondary" data-view="interview">${icon("messages-square")}<span>Start interview</span></button>`;
+  if (state.view === "interview" && state.interview.session) {
+    return `<button class="button secondary" data-action="poll-session">${icon("rotate-cw")}<span>Poll session</span></button>`;
+  }
+  if (state.view === "coding") return `<button class="button secondary" data-action="load-coding">${icon("refresh-cw")}<span>Reload</span></button>`;
+  if (state.view === "memory") return `<button class="button secondary" data-action="load-memory">${icon("refresh-cw")}<span>Reload</span></button>`;
+  if (state.view === "evaluation") return `<button class="button secondary" data-action="load-evaluation">${icon("refresh-cw")}<span>Reload</span></button>`;
+  return `<button class="button secondary" data-action="refresh">${icon("refresh-cw")}<span>Refresh</span></button>`;
+}
+
+function operationRow(label: string, value: string, hint: string): string {
+  return `
+    <div class="operation-row">
+      <span>${icon("check")}</span>
+      <div>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(hint)}</small>
+      </div>
+      <b>${escapeHtml(value)}</b>
+    </div>
+  `;
+}
+
+function statePill(label: string, value: string, iconName: string): string {
+  return `
+    <div class="state-pill">
+      <span>${icon(iconName)}</span>
+      <div>
+        <small>${escapeHtml(label)}</small>
+        <strong>${escapeHtml(value || "unknown")}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderTracePreview(trace: JsonObject[]): string {
+  return `
+    <div class="preview-block">
+      <div class="preview-head"><strong>Trace preview</strong><small>${trace.length} records</small></div>
+      ${trace.slice(0, 4).map((item) => `
+        <div class="preview-row">
+          <span>${icon("file-search")}</span>
+          <div>
+            <strong>${escapeHtml(stringValue(item.event_type ?? item.phase ?? item.trace_type, "runtime trace"))}</strong>
+            <small>${escapeHtml(stringValue(item.created_at ?? item.updated_at ?? item.trace_id, "trace evidence"))}</small>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderReportPreview(report: JsonObject): string {
+  const content = record(report.content ?? report.output ?? report.runtime_response ?? report);
+  const summary = stringValue(content.summary ?? content.overall_summary ?? content.feedback, "Report generated. Open the raw payload below if you need exact fields.");
+  return `
+    <div class="report-preview">
+      <div class="preview-head"><strong>Report preview</strong>${statusBadge(stringValue(report.status, "report"))}</div>
+      <p>${escapeHtml(summary)}</p>
+      <pre class="json-box compact">${escapeHtml(JSON.stringify(report, null, 2))}</pre>
+    </div>
+  `;
+}
+
+function renderSubmissionCard(item: CodingSubmission): string {
+  const result = record(item.result);
+  const message = stringValue(result.message ?? result.error ?? result.verdict, "Awaiting judge details");
+  return `
+    <div class="submission-card">
+      <div>
+        <strong>${escapeHtml(item.language)}</strong>
+        <small>${escapeHtml(formatTime(item.updated_at || item.created_at))}</small>
+      </div>
+      <div class="submission-score">
+        ${statusBadge(item.status)}
+        <b>${item.score}</b>
+      </div>
+      <p>${escapeHtml(message)}</p>
+    </div>
+  `;
+}
+
+function metricCard(label: string, value: string, hint: string, tone: string, iconName: string): string {
   return `
     <article class="metric-card ${tone}">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      <small>${escapeHtml(hint)}</small>
+      <div class="metric-icon">${icon(iconName)}</div>
+      <div>
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+        <small>${escapeHtml(hint)}</small>
+      </div>
     </article>
   `;
 }
@@ -1035,8 +1326,11 @@ function banner(message: string, type: "error" | "info"): string {
   return `<div class="banner ${type}">${escapeHtml(message)}</div>`;
 }
 
-function emptyState(title: string, copy: string): string {
-  return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div>`;
+function emptyState(title: string, copy: string, action?: EmptyAction): string {
+  const button = action
+    ? `<button class="button secondary" ${action.view ? `data-view="${action.view}"` : ""} ${action.action ? `data-action="${escapeAttr(action.action)}"` : ""}>${icon(action.iconName)}<span>${escapeHtml(action.label)}</span></button>`
+    : "";
+  return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p>${button}</div>`;
 }
 
 function extractItems(value: JsonObject): JsonObject[] {
@@ -1051,6 +1345,18 @@ function record(value: unknown): JsonObject {
 function stringValue(value: unknown, fallback = ""): string {
   if (value === null || value === undefined || value === "") return fallback;
   return String(value);
+}
+
+function formatTime(value: string | undefined): string {
+  if (!value) return "not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(state.locale === "zh-CN" ? "zh-CN" : "en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
