@@ -53,6 +53,7 @@ import {
 
 type View = "dashboard" | "interview" | "coding" | "memory" | "admin" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
+type RoomPanel = "briefing" | "participants" | "notes";
 
 interface EmptyAction {
   label: string;
@@ -78,6 +79,14 @@ interface AppState {
     dryRun: boolean;
     error: string;
     loading: boolean;
+  };
+  meeting: {
+    micOn: boolean;
+    cameraOn: boolean;
+    captionsOn: boolean;
+    promptShared: boolean;
+    panel: RoomPanel;
+    notes: string;
   };
   coding: {
     questions: CodingQuestion[];
@@ -169,6 +178,14 @@ const state: AppState = {
   skills: [],
   dashboard: { loading: false, error: "", data: { health: null, worker: null, judge: null, evalRuns: [], submissions: [] } },
   interview: { session: null, trace: [], report: null, answer: "", dryRun: true, error: "", loading: false },
+  meeting: {
+    micOn: localStorage.getItem("frontend:meeting:mic") === "on",
+    cameraOn: localStorage.getItem("frontend:meeting:camera") === "on",
+    captionsOn: localStorage.getItem("frontend:meeting:captions") !== "off",
+    promptShared: localStorage.getItem("frontend:meeting:prompt_shared") === "on",
+    panel: normalizeRoomPanel(localStorage.getItem("frontend:meeting:panel")),
+    notes: localStorage.getItem("frontend:meeting:notes") ?? ""
+  },
   coding: {
     questions: [],
     selectedQuestion: null,
@@ -421,6 +438,7 @@ function renderInterview(): string {
           ${session ? renderSessionPanel(session) : emptyState("No active session", "Create a session to open the live interview room.")}
         </div>
         <aside class="meeting-sidebar">
+          ${renderRoomCompanion(session)}
           ${renderSessionSetup(session)}
           ${renderEvaluationPanel(session)}
         </aside>
@@ -450,17 +468,29 @@ function renderLiveStage(session: InterviewSession | null): string {
         </div>
       </div>
       <div class="participant-grid">
-        ${participantTile("Candidate", state.user?.display_name ?? "You", "user-round", "Camera off", "Self view")}
+        ${participantTile("Candidate", state.user?.display_name ?? "You", "user-round", state.meeting.cameraOn ? "Camera on" : "Camera off", state.meeting.micOn ? "Mic on" : "Muted")}
         ${participantTile("Runtime", session ? session.skill_id : "Waiting", "radio", session ? session.flow_status : "No session", "AI channel")}
       </div>
-      <div class="meeting-control-bar">
-        <span class="call-control muted">${icon("mic-off")}<b>Muted</b></span>
-        <span class="call-control muted">${icon("video-off")}<b>Camera off</b></span>
-        <span class="call-control">${icon("captions")}<b>Notes on</b></span>
-        <span class="call-control">${icon("monitor-up")}<b>Share prompt</b></span>
+      <div class="meeting-control-bar" role="toolbar" aria-label="Meeting controls">
+        ${meetingToggle("mic", state.meeting.micOn, state.meeting.micOn ? "mic" : "mic-off", state.meeting.micOn ? "Mic on" : "Muted")}
+        ${meetingToggle("camera", state.meeting.cameraOn, state.meeting.cameraOn ? "video" : "video-off", state.meeting.cameraOn ? "Camera on" : "Camera off")}
+        ${meetingToggle("captions", state.meeting.captionsOn, "captions", state.meeting.captionsOn ? "Captions on" : "Captions off")}
+        ${meetingToggle("prompt", state.meeting.promptShared, "monitor-up", state.meeting.promptShared ? "Prompt shared" : "Share prompt")}
         <button class="call-end" data-action="finalize-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("phone-off")}<span>End</span></button>
       </div>
     </div>
+  `;
+}
+
+function meetingToggle(control: string, active: boolean, iconName: string, label: string): string {
+  return `
+    <button
+      class="call-control ${active ? "active" : "muted"}"
+      type="button"
+      data-action="toggle-meeting-control"
+      data-control="${control}"
+      aria-pressed="${active ? "true" : "false"}"
+    >${icon(iconName)}<b>${label}</b></button>
   `;
 }
 
@@ -473,6 +503,97 @@ function participantTile(role: string, name: string, iconName: string, stateText
         <strong>${escapeHtml(name)}</strong>
         <span>${escapeHtml(caption)} · ${escapeHtml(stateText)}</span>
       </div>
+    </div>
+  `;
+}
+
+function renderRoomCompanion(session: InterviewSession | null): string {
+  return `
+    <article class="room-card companion-card">
+      <div class="companion-tabs" role="tablist" aria-label="Room companion">
+        ${roomTab("briefing", "Briefing", "panel-right-open")}
+        ${roomTab("participants", "People", "users")}
+        ${roomTab("notes", "Notes", "captions")}
+      </div>
+      ${state.meeting.panel === "briefing" ? renderBriefingPanel(session) : ""}
+      ${state.meeting.panel === "participants" ? renderParticipantsPanel(session) : ""}
+      ${state.meeting.panel === "notes" ? renderNotesPanel(session) : ""}
+    </article>
+  `;
+}
+
+function roomTab(panel: RoomPanel, label: string, iconName: string): string {
+  const active = state.meeting.panel === panel;
+  return `
+    <button
+      class="companion-tab ${active ? "active" : ""}"
+      type="button"
+      data-action="set-room-panel"
+      data-panel="${panel}"
+      aria-selected="${active ? "true" : "false"}"
+    >${icon(iconName)}<span>${label}</span></button>
+  `;
+}
+
+function renderBriefingPanel(session: InterviewSession | null): string {
+  return `
+    <div class="companion-panel">
+      <div class="briefing-card primary">
+        <small>Current focus</small>
+        <strong>${escapeHtml(session?.current_question?.title ?? "Prepare the first question")}</strong>
+        <p>${escapeHtml(session ? "Answer clearly, then poll for the runtime evaluation." : "Create a session to start the live practice room.")}</p>
+      </div>
+      <div class="briefing-grid">
+        ${briefingItem("Mic", state.meeting.micOn ? "On" : "Muted", state.meeting.micOn ? "mic" : "mic-off")}
+        ${briefingItem("Camera", state.meeting.cameraOn ? "On" : "Off", state.meeting.cameraOn ? "video" : "video-off")}
+        ${briefingItem("Captions", state.meeting.captionsOn ? "On" : "Off", "captions")}
+        ${briefingItem("Prompt", state.meeting.promptShared ? "Shared" : "Private", "monitor-up")}
+      </div>
+    </div>
+  `;
+}
+
+function briefingItem(label: string, value: string, iconName: string): string {
+  return `
+    <div class="briefing-item">
+      <span>${icon(iconName)}</span>
+      <small>${escapeHtml(label)}</small>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderParticipantsPanel(session: InterviewSession | null): string {
+  return `
+    <div class="companion-panel participant-list">
+      ${participantLine("AI Interviewer", "Host", "bot", session ? "Ready" : "Waiting")}
+      ${participantLine(state.user?.display_name ?? "Candidate", "You", "user-round", state.meeting.micOn ? "Speaking ready" : "Muted")}
+      ${participantLine(session?.skill_id ?? "Runtime", "Evaluator", "radio", session?.flow_status ?? "No session")}
+    </div>
+  `;
+}
+
+function participantLine(name: string, role: string, iconName: string, status: string): string {
+  return `
+    <div class="participant-line">
+      <span>${icon(iconName)}</span>
+      <div>
+        <strong>${escapeHtml(name)}</strong>
+        <small>${escapeHtml(role)} · ${escapeHtml(status)}</small>
+      </div>
+    </div>
+  `;
+}
+
+function renderNotesPanel(session: InterviewSession | null): string {
+  return `
+    <div class="companion-panel">
+      <div class="caption-line">
+        <span>${icon("captions")}</span>
+        <p>${escapeHtml(state.meeting.captionsOn ? "Captions are ready for ASR/TTS integration." : "Captions are hidden. Turn them on from the control bar.")}</p>
+      </div>
+      <textarea class="room-notes" data-role="meeting-notes" rows="6" placeholder="Write notes for follow-up, evidence, or weak points.">${escapeHtml(state.meeting.notes)}</textarea>
+      <small class="note-hint">${escapeHtml(session ? `Session ${session.session_id}` : "Notes are local until a backend notes API is added.")}</small>
     </div>
   `;
 }
@@ -755,6 +876,20 @@ function bindEvents(): void {
     button.addEventListener("click", () => {
       setLocale(normalizeLocale(button.dataset.locale));
     });
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='toggle-meeting-control']").forEach((button) => {
+    button.addEventListener("click", () => {
+      toggleMeetingControl(button.dataset.control ?? "");
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-room-panel']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setRoomPanel((button.dataset.panel as RoomPanel | undefined) ?? "briefing");
+    });
+  });
+  document.querySelector<HTMLTextAreaElement>("[data-role='meeting-notes']")?.addEventListener("input", (event) => {
+    state.meeting.notes = (event.currentTarget as HTMLTextAreaElement).value;
+    localStorage.setItem("frontend:meeting:notes", state.meeting.notes);
   });
 
   document.querySelector<HTMLButtonElement>("[data-action='logout']")?.addEventListener("click", () => void handleLogout());
@@ -1224,6 +1359,40 @@ function setLocale(locale: Locale): void {
   state.locale = locale;
   localStorage.setItem("frontend:locale", locale);
   render();
+}
+
+function toggleMeetingControl(control: string): void {
+  if (control === "mic") {
+    state.meeting.micOn = !state.meeting.micOn;
+    localStorage.setItem("frontend:meeting:mic", state.meeting.micOn ? "on" : "off");
+    toast(ui(state.meeting.micOn ? "Microphone enabled" : "Microphone muted"));
+  } else if (control === "camera") {
+    state.meeting.cameraOn = !state.meeting.cameraOn;
+    localStorage.setItem("frontend:meeting:camera", state.meeting.cameraOn ? "on" : "off");
+    toast(ui(state.meeting.cameraOn ? "Camera enabled" : "Camera disabled"));
+  } else if (control === "captions") {
+    state.meeting.captionsOn = !state.meeting.captionsOn;
+    localStorage.setItem("frontend:meeting:captions", state.meeting.captionsOn ? "on" : "off");
+    toast(ui(state.meeting.captionsOn ? "Captions enabled" : "Captions hidden"));
+  } else if (control === "prompt") {
+    state.meeting.promptShared = !state.meeting.promptShared;
+    localStorage.setItem("frontend:meeting:prompt_shared", state.meeting.promptShared ? "on" : "off");
+    toast(ui(state.meeting.promptShared ? "Prompt shared" : "Prompt private"));
+  }
+  render();
+}
+
+function setRoomPanel(panel: RoomPanel): void {
+  state.meeting.panel = normalizeRoomPanel(panel);
+  localStorage.setItem("frontend:meeting:panel", state.meeting.panel);
+  render();
+}
+
+function normalizeRoomPanel(panel: string | null | undefined): RoomPanel {
+  if (panel === "briefing" || panel === "participants" || panel === "notes") {
+    return panel;
+  }
+  return "briefing";
 }
 
 function localize(html: string): string {

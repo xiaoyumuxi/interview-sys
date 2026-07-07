@@ -29,7 +29,7 @@ This repository is a rewrite of a personal AI interview training platform. Go Co
 | Go API | `cmd/api` | HTTP entrypoint, auth, providers, skills, interview sessions and ops APIs |
 | Worker | `cmd/worker` | Redis Stream consumption, outbox dispatch, pending reclaim and dead-letter handling |
 | Go internals | `internal` | auth, provider, skill, interview runtime, memory orchestration, workqueue, store and routing |
-| Web Frontend | `frontend` | Vanilla TypeScript workbench UI with Chinese/English switching for training, coding, memory review, admin and evaluation harness flows |
+| Web Frontend | `frontend` | Vanilla TypeScript workbench UI with Chinese/English switching for training, meeting-style interview rooms, coding, memory review, admin and evaluation harness flows |
 | AI Runtime | `python-runtime` | FastAPI task endpoint, prompt boundaries, structured output and memory APIs |
 | Database | `migrations` | PostgreSQL schema, pgvector extension and default seed data |
 | Skill packs | `skills` | Local skill packs, currently `java-backend` |
@@ -49,7 +49,7 @@ This repository is a rewrite of a personal AI interview training platform. Go Co
 | Evaluation Harness | root-only case and run APIs with dry-run, assertion scoring and agent trace linkage |
 | Memory orchestration | Go `/api/memory/*` entrypoint for auth, user isolation and trace/audit; Python owns memory logic |
 | Memory admission | Context Engine admits only approved memory as `memory_context` and returns a `memory_admission` explanation |
-| Web Frontend | Vanilla TypeScript + CSS workbench with Vite `/api` proxy, Chinese/English switching, lucide icons, interaction status strip, loading/disabled states, form validation, empty-state actions and task-oriented next steps |
+| Web Frontend | Vanilla TypeScript + CSS workbench with Vite `/api` proxy, Chinese/English switching, lucide icons, meeting-style interview room, local configurable controls, companion panel, interaction status strip, loading/disabled states, form validation, empty-state actions and task-oriented next steps |
 | Python Runtime | task endpoint, prompt safety boundary, structured output and memory APIs |
 | Middleware | PostgreSQL + pgvector, Redis, MinIO and optional Python runtime container |
 
@@ -105,6 +105,21 @@ make run-frontend
 ```
 
 The default URL is `http://localhost:5173`. If the port is already in use, Vite will try the next available port. The dev server proxies `/api` to the Go API, so `make run` should usually be running as well. Async interview evaluation, coding judge, memory review and evaluation runs also depend on the corresponding worker / runtime services.
+
+## Frontend Workbench
+
+`frontend` is the user-facing training surface, not a collection of API debug buttons. It avoids a heavy framework stack and mainly uses Vanilla TypeScript, CSS, Vite and `lucide` icons to turn backend capabilities into stable training flows.
+
+Current interactions:
+
+- Dashboard overview: shows API, worker, outbox, judge and evaluation run status with next-step entry points.
+- Interview room: uses a meeting-style layout with a main stage, candidate/runtime tiles, bottom control bar and right-side companion panel.
+- Local configurable controls: microphone, camera, captions, prompt sharing, room tab and notes are stored in `localStorage` so the frontend session can start and stop quickly.
+- Coding practice: question selection, code editing, async submission and verdict display.
+- Memory review: loads pending candidates and supports approve/reject so only approved memory reaches prompts.
+- Admin and evaluation: provider/worker/judge summaries, evaluation case saving, dry-run execution and run history.
+
+The interview room control bar is currently an interaction state layer. It does not capture devices or bypass Go; session creation, answer submission, trace polling, report generation and session finalization still go through the Go API.
 
 ## Default Login
 
@@ -203,7 +218,7 @@ Python Runtime:
 | Evaluation harness | root-only `/api/evaluation/*` manages cases and run records; `expected.required_fields`, `expected.contains` and `expected.equals` define configurable assertions, and `POST /run` supports `dry_run` |
 | Worker | The API process enqueues and queries; `cmd/worker` consumes Redis Stream events |
 | Coding judge | `CODING_JUDGE_ENABLED=true` starts the coding judge loop in `cmd/worker`; `docker`, `docker_warm`, and `native_trusted` modes are configurable |
-| Frontend workbench | `frontend` is the user-facing operating surface and does not mutate internal state directly; after login it uses Go API flows for training dashboard, interview sessions, coding practice, memory review, admin and evaluation harness. The interaction layer owns visible system status, next actions, validation and empty-state guidance |
+| Frontend workbench | `frontend` is the user-facing operating surface and does not mutate internal state directly; after login it uses Go API flows for the training dashboard, meeting-style interview room, coding practice, memory review, admin and evaluation harness. The interaction layer owns visible system status, next actions, validation, empty-state guidance and local configurable meeting controls |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` is only for local compatibility mode |
 | Memory context | Context Preview and answer evaluation admit approved memory by user, task_type, skill, query and token budget; `memory_extraction` does not admit long-term memory |
 

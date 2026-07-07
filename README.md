@@ -29,7 +29,7 @@
 | Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话和运维 API |
 | Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim 和 dead-letter |
 | Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、workqueue、store、routing |
-| Web Frontend | `frontend` | Vanilla TypeScript 工作台 UI，内置中英文切换，负责训练、代码题、memory review、admin 和 evaluation harness 接入 |
+| Web Frontend | `frontend` | Vanilla TypeScript 工作台 UI，内置中英文切换，负责训练、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入 |
 | AI Runtime | `python-runtime` | FastAPI task endpoint、Prompt 边界、结构化输出和 memory API |
 | 数据库 | `migrations` | PostgreSQL schema、pgvector 扩展和默认 seed |
 | Skill Pack | `skills` | 本地技能包，目前包含 `java-backend` |
@@ -49,7 +49,7 @@
 | Evaluation Harness | root-only 样例集和 run 记录 API，支持 dry-run、断言评分和 agent trace 关联 |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
 | Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
-| Web Frontend | Vanilla TypeScript + CSS 工作台，Vite 代理 `/api`，支持中英文切换、lucide 图标、状态条、loading/disabled、表单校验、空状态动作和任务导向下一步 |
+| Web Frontend | Vanilla TypeScript + CSS 工作台，Vite 代理 `/api`，支持中英文切换、lucide 图标、会议式面试房间、本地可配置控制条、Companion 面板、状态条、loading/disabled、表单校验、空状态动作和任务导向下一步 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
 | Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
 
@@ -105,6 +105,21 @@ make run-frontend
 ```
 
 默认访问 `http://localhost:5173`。如果端口被占用，Vite 会自动尝试下一个可用端口。前端开发服务会把 `/api` 代理到 Go API，因此通常需要同时运行 `make run`；面试异步评估、代码判题、memory review 和 evaluation run 还需要对应的 worker / runtime 服务。
+
+## 前端工作台
+
+`frontend` 是给用户使用的训练操作台，不是 API 调试集合。它不引入重型框架，主要依赖 Vanilla TypeScript、CSS、Vite 和 `lucide` 图标，把后端能力整理成稳定的训练流程。
+
+当前主要交互：
+
+- 工作台概览：展示 API、worker、outbox、judge 和 evaluation run 状态，并给出下一步入口。
+- 面试房间：采用会议式布局，包含主舞台、候选人/Runtime 小窗、底部控制条和右侧 Companion 面板。
+- 本地可配置控制：麦克风、摄像头、字幕、共享题面、房间 tab 和笔记会保存到 `localStorage`，方便快速启动和关闭前端会话。
+- 代码题：题库选择、代码编辑、异步提交和 verdict 展示。
+- 记忆审核：pending candidate 加载、approve/reject，保证只有 approved memory 进入 Prompt。
+- 管理与评测：Provider/worker/judge 概览、evaluation case 保存、dry-run 和 run 记录查看。
+
+面试房间里的控制条当前是用户交互状态层，不会直接采集设备或绕过 Go；创建 session、提交答案、轮询 trace、生成 report 和结束会话仍全部通过 Go API 推进。
 
 ## 默认登录
 
@@ -203,7 +218,7 @@ Python Runtime:
 | Evaluation harness | root-only `/api/evaluation/*` 管理样例和运行记录；`expected.required_fields`、`expected.contains`、`expected.equals` 用于可配置断言，`POST /run` 支持 `dry_run` |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 每次创建临时禁网容器；`docker_warm` 复用按语言命名的 stopped container，通过 tmpfs 回到初始状态；镜像可配置且可用 `make pull-judge-images` 预拉取；`native_trusted` 直接调用本机工具链，启动快但不隔离，只适合本地可信代码；默认 disabled evaluator 不执行用户代码 |
-| Frontend workbench | `frontend` 是面向用户的操作台，不直接写内部状态；登录后通过 Go API 使用训练工作台、面试会话、代码题、memory review、admin 和 evaluation harness。交互层负责展示系统状态、下一步动作、表单校验和空状态引导 |
+| Frontend workbench | `frontend` 是面向用户的操作台，不直接写内部状态；登录后通过 Go API 使用训练工作台、会议式面试房间、代码题、memory review、admin 和 evaluation harness。交互层负责展示系统状态、下一步动作、表单校验、空状态引导和本地可配置会议控件 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 | Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
 
