@@ -13,6 +13,30 @@ import {
   type User
 } from "./api";
 import { locales, normalizeLocale, translate, translateHtml, type Locale } from "./i18n";
+import {
+  BrainCircuit,
+  Check,
+  ClipboardCheck,
+  Code2,
+  Database,
+  FileSearch,
+  FileText,
+  Flag,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  MessagesSquare,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Send,
+  Settings2,
+  Terminal,
+  X,
+  createIcons
+} from "lucide";
 
 type View = "dashboard" | "interview" | "coding" | "memory" | "admin" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
@@ -72,6 +96,29 @@ interface AdminData {
 }
 
 const api = new ApiClient();
+const iconSet = {
+  BrainCircuit,
+  Check,
+  ClipboardCheck,
+  Code2,
+  Database,
+  FileSearch,
+  FileText,
+  Flag,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  MessagesSquare,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Send,
+  Settings2,
+  Terminal,
+  X
+};
 const root = document.querySelector<HTMLDivElement>("#app");
 
 if (!root) {
@@ -130,7 +177,23 @@ async function loadInitialData(): Promise<void> {
 
 function render(): void {
   appRoot.innerHTML = localize(state.user ? renderShell() : renderLogin());
+  mountIcons();
   bindEvents();
+}
+
+function mountIcons(): void {
+  createIcons({
+    icons: iconSet,
+    attrs: {
+      width: "18",
+      height: "18",
+      "stroke-width": "2.2"
+    } as Record<string, string>
+  });
+}
+
+function icon(name: string, className = "ui-icon"): string {
+  return `<i class="${className}" data-lucide="${name}" aria-hidden="true"></i>`;
 }
 
 function renderLogin(): string {
@@ -138,7 +201,7 @@ function renderLogin(): string {
     <main class="login-screen">
       <section class="login-panel">
         <div class="brand-row">
-          <span class="brand-mark"></span>
+          <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
           <div>
             <h1>InterviewOS</h1>
             <p>AI training runtime control surface</p>
@@ -154,7 +217,7 @@ function renderLogin(): string {
             Password
             <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" />
           </label>
-          <button class="button primary" type="submit">Sign in</button>
+          <button class="button primary" type="submit">${icon("log-in")}<span>Sign in</span></button>
         </form>
         <p class="muted">Use the local root account from the backend bootstrap, or any user created through the API.</p>
       </section>
@@ -167,19 +230,19 @@ function renderShell(): string {
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-row sidebar-brand">
-          <span class="brand-mark"></span>
+          <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
           <div>
             <strong>InterviewOS</strong>
             <span>AI training runtime</span>
           </div>
         </div>
         <nav class="nav-list">
-          ${navItem("dashboard", "Dashboard", "Overview", "D")}
-          ${navItem("interview", "Interview", "Session", "I")}
-          ${navItem("coding", "Coding", "Practice", "C")}
-          ${navItem("memory", "Memory", "Review", "M")}
-          ${navItem("admin", "Admin", "Console", "A")}
-          ${navItem("evaluation", "Evaluation", "Quality", "E")}
+          ${navItem("dashboard", "Dashboard", "Overview", "layout-dashboard")}
+          ${navItem("interview", "Interview", "Session", "messages-square")}
+          ${navItem("coding", "Coding", "Practice", "code-2")}
+          ${navItem("memory", "Memory", "Review", "database")}
+          ${navItem("admin", "Admin", "Console", "settings-2")}
+          ${navItem("evaluation", "Evaluation", "Quality", "clipboard-check")}
         </nav>
         <div class="sidebar-health">
           <strong>Runtime health</strong>
@@ -197,10 +260,10 @@ function renderShell(): string {
             <p>${pageSubtitle(state.view)}</p>
           </div>
           <div class="topbar-actions">
-            <button class="button ghost" data-action="refresh">Refresh</button>
+            <button class="button ghost" data-action="refresh">${icon("refresh-cw")}<span>Refresh</span></button>
             ${languageSwitcher("topbar-language")}
             <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
-            <button class="icon-button" data-action="logout" aria-label="Sign out">×</button>
+            <button class="icon-button" data-action="logout" aria-label="Sign out">${icon("log-out")}</button>
           </div>
         </header>
         ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
@@ -210,11 +273,11 @@ function renderShell(): string {
   `;
 }
 
-function navItem(view: View, label: string, sub: string, mark: string): string {
+function navItem(view: View, label: string, sub: string, iconName: string): string {
   const active = state.view === view ? " active" : "";
   return `
     <button class="nav-item${active}" data-view="${view}">
-      <span class="nav-mark">${mark}</span>
+      <span class="nav-mark">${icon(iconName)}</span>
       <span><strong>${label}</strong><small>${sub}</small></span>
     </button>
   `;
@@ -293,7 +356,7 @@ function renderInterview(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Start or resume session</h2><p>Create an interview session, answer the current question, then poll trace state.</p></div>
-          <button class="button secondary" data-action="poll-session" ${session ? "" : "disabled"}>Poll session</button>
+          <button class="button secondary" data-action="poll-session" ${session ? "" : "disabled"}>${icon("rotate-cw")}<span>Poll session</span></button>
         </div>
         <form id="session-form" class="form-row">
           <label>Skill
@@ -309,7 +372,7 @@ function renderInterview(): string {
           <label>Follow-ups
             <input name="max_follow_ups" type="number" min="0" max="5" value="1" />
           </label>
-          <button class="button primary" type="submit">Create session</button>
+          <button class="button primary" type="submit">${icon("plus")}<span>Create session</span></button>
         </form>
         ${session ? renderSessionPanel(session) : emptyState("No active session", "Create a session to load the first backend-generated question.")}
       </article>
@@ -324,9 +387,9 @@ function renderInterview(): string {
           </dl>
         ` : emptyState("Waiting for session", "Trace and report controls appear after creation.")}
         <div class="button-row">
-          <button class="button secondary" data-action="load-trace" ${session ? "" : "disabled"}>Load trace</button>
-          <button class="button secondary" data-action="generate-report" ${session ? "" : "disabled"}>Generate report</button>
-          <button class="button danger" data-action="finalize-session" ${session ? "" : "disabled"}>Finalize</button>
+          <button class="button secondary" data-action="load-trace" ${session ? "" : "disabled"}>${icon("file-search")}<span>Load trace</span></button>
+          <button class="button secondary" data-action="generate-report" ${session ? "" : "disabled"}>${icon("file-text")}<span>Generate report</span></button>
+          <button class="button danger" data-action="finalize-session" ${session ? "" : "disabled"}>${icon("flag")}<span>Finalize</span></button>
         </div>
         ${state.interview.trace.length ? `<pre class="json-box">${escapeHtml(JSON.stringify(state.interview.trace.slice(0, 3), null, 2))}</pre>` : ""}
         ${state.interview.report ? `<pre class="json-box">${escapeHtml(JSON.stringify(state.interview.report, null, 2))}</pre>` : ""}
@@ -349,7 +412,7 @@ function renderSessionPanel(session: InterviewSession): string {
         <textarea name="answer" rows="8">${escapeHtml(state.interview.answer)}</textarea>
       </label>
       <label class="check-row"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /> Dry run runtime calls</label>
-      <button class="button primary" type="submit">Submit answer</button>
+      <button class="button primary" type="submit">${icon("send")}<span>Submit answer</span></button>
     </form>
     ${session.turns?.length ? renderTurns(session.turns) : ""}
   `;
@@ -379,7 +442,7 @@ function renderCoding(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Question set</h2><p>Published coding questions from PostgreSQL seed data.</p></div>
-          <button class="button secondary" data-action="load-coding">Reload</button>
+          <button class="button secondary" data-action="load-coding">${icon("refresh-cw")}<span>Reload</span></button>
         </div>
         <div class="list-panel">
           ${state.coding.questions.map((question) => `
@@ -402,7 +465,7 @@ function renderCoding(): string {
             </select>
           </label>
           <textarea name="source_code" spellcheck="false">${escapeHtml(state.coding.sourceCode)}</textarea>
-          <button class="button primary" type="submit" ${selected ? "" : "disabled"}>Submit to judge</button>
+          <button class="button primary" type="submit" ${selected ? "" : "disabled"}>${icon("terminal")}<span>Submit to judge</span></button>
         </form>
       </article>
       <aside class="card">
@@ -425,7 +488,7 @@ function renderMemory(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Pending memory candidates</h2><p>Human review stays between runtime extraction and long-term profile admission.</p></div>
-          <button class="button secondary" data-action="load-memory">Reload</button>
+          <button class="button secondary" data-action="load-memory">${icon("refresh-cw")}<span>Reload</span></button>
         </div>
         ${candidates.length ? candidates.map(renderMemoryCandidate).join("") : emptyState("No runtime candidates", "Start Python Runtime and load pending candidates to review memory.")}
       </article>
@@ -448,8 +511,8 @@ function renderMemoryCandidate(item: JsonObject): string {
         <small>confidence ${escapeHtml(stringValue(item.confidence, "n/a"))}</small>
       </div>
       <div class="button-row">
-        <button class="button secondary" data-action="approve-memory" data-candidate-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Approve</button>
-        <button class="button danger" data-action="reject-memory" data-candidate-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>Reject</button>
+        <button class="button secondary" data-action="approve-memory" data-candidate-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>${icon("check")}<span>Approve</span></button>
+        <button class="button danger" data-action="reject-memory" data-candidate-id="${escapeAttr(id)}" ${id ? "" : "disabled"}>${icon("x")}<span>Reject</span></button>
       </div>
     </div>
   `;
@@ -463,7 +526,7 @@ function renderAdmin(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Provider routes</h2><p>Root-only provider and task routing state.</p></div>
-          <button class="button secondary" data-action="load-admin">Reload</button>
+          <button class="button secondary" data-action="load-admin">${icon("refresh-cw")}<span>Reload</span></button>
         </div>
         ${table(
           ["Task", "Provider", "Fallback"],
@@ -492,7 +555,7 @@ function renderEvaluation(): string {
       <article class="card">
         <div class="section-head">
           <div><h2>Evaluation cases</h2><p>Store quality samples and run them through the runtime task path.</p></div>
-          <button class="button secondary" data-action="load-evaluation">Reload</button>
+          <button class="button secondary" data-action="load-evaluation">${icon("refresh-cw")}<span>Reload</span></button>
         </div>
         <form id="evaluation-form" class="evaluation-form">
           <input name="case_id" placeholder="case_id, optional" />
@@ -505,7 +568,7 @@ function renderEvaluation(): string {
           </select>
           <select name="skill_id">${skillOptions("java-backend")}</select>
           <textarea name="user_input" rows="3">Generate one Redis recovery interview question.</textarea>
-          <button class="button primary" type="submit">Save case</button>
+          <button class="button primary" type="submit">${icon("save")}<span>Save case</span></button>
         </form>
         ${state.evaluation.cases.map((item) => `
           <div class="case-row">
@@ -513,7 +576,7 @@ function renderEvaluation(): string {
               <strong>${escapeHtml(item.case_id)}</strong>
               <span>${escapeHtml(item.suite)} · ${escapeHtml(item.task_type)}</span>
             </button>
-            <button class="button secondary" data-action="run-evaluation" data-case-id="${escapeAttr(item.case_id)}">Run dry</button>
+            <button class="button secondary" data-action="run-evaluation" data-case-id="${escapeAttr(item.case_id)}">${icon("play")}<span>Run dry</span></button>
           </div>
         `).join("") || emptyState("No cases", "Create a small smoke case first.")}
       </article>
