@@ -58,7 +58,7 @@
 系统配置从训练页面中移出，顶部设置按钮会打开类似桌面应用的居中弹窗：
 
 - 左侧分类：General、Providers、Workers、Coding judge、Quality gates。
-- 右侧内容：读取 Go API 返回的 provider route、provider registry、worker summary、judge summary 和质量信号。
+- 右侧内容：读取 Go API 返回的 provider route、provider registry、worker summary、judge summary 和质量信号，但默认展示用户可读摘要，不直接暴露 JSON payload。
 - 关闭方式：点击弹窗外部不会自动关闭，只能通过关闭按钮或键盘 `Esc` 手动关闭，避免配置时误触丢失上下文。
 - 交互边界：设置中心负责查看和后续配置入口，不改变面试、代码题、memory review 或 evaluation 的用户训练流程。
 

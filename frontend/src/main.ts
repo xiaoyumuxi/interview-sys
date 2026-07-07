@@ -1069,7 +1069,7 @@ function renderSettingsPanel(): string {
       "Workers",
       "Redis stream, outbox and dead-letter state for the backend runtime.",
       "load-admin",
-      settingsObjectPreview(data.worker, "Worker summary")
+      settingsWorkerSummary(data.worker)
     );
   }
   if (state.settings.panel === "judge") {
@@ -1077,7 +1077,7 @@ function renderSettingsPanel(): string {
       "Coding judge",
       "Judge queue, runner mode and sandbox status for coding practice.",
       "load-admin",
-      settingsObjectPreview(data.judge, "Coding judge")
+      settingsJudgeSummary(data.judge)
     );
   }
   if (state.settings.panel === "quality") {
@@ -1089,7 +1089,7 @@ function renderSettingsPanel(): string {
         <div class="settings-row"><span>Evaluation harness</span><strong>Active page</strong></div>
         <div class="settings-row"><span>Runtime traces</span><strong>${state.interview.trace.length} records</strong></div>
         <div class="settings-row"><span>Recent runs</span><strong>${state.dashboard.data.evalRuns.length} records</strong></div>
-        ${settingsObjectPreview(state.dashboard.data.health, "Runtime health")}
+        ${settingsHealthSummary(state.dashboard.data.health)}
       `
     );
   }
@@ -1125,33 +1125,134 @@ function settingsSection(title: string, copy: string, refreshAction: string, con
   `;
 }
 
-function settingsObjectPreview(value: JsonObject | null, label: string): string {
+function settingsWorkerSummary(value: JsonObject | null): string {
   if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
-  const entries = Object.entries(value).slice(0, 10);
-  if (!entries.length) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const queue = record(value.queue);
+  const outbox = record(value.outbox);
+  const deadLetters = record(value.dead_letters);
+  const queuePending = sumMetric(arrayRecords(queue.groups), "pending");
+  const deadLetterPending = sumMetric(arrayRecords(queue.dead_letter_groups), "pending");
+  const outboxBlocked = sumStatuses(record(outbox.by_status), ["pending", "failed", "dispatching"]);
+  const deadLetterTotal = numericValue(deadLetters.total);
   return `
-    <div class="settings-data-list" aria-label="${escapeAttr(label)}">
-      ${entries.map(([key, item]) => `
-        <div class="settings-data-row">
-          <span>${escapeHtml(key)}</span>
-          <strong>${formatSettingValue(item)}</strong>
-        </div>
-      `).join("")}
+    <div class="settings-summary-grid">
+      ${settingsSummaryCard("Stream backlog", numberLabel(queue.stream_length), "Redis stream items waiting in the interview lane.", queuePending > 0 ? "warn" : "ok", "radio")}
+      ${settingsSummaryCard("Pending claims", numberLabel(queuePending), "Messages claimed by workers but not completed yet.", queuePending > 0 ? "warn" : "ok", "clock-3")}
+      ${settingsSummaryCard("Outbox waiting", numberLabel(outboxBlocked), "Database messages still waiting for dispatch or retry.", outboxBlocked > 0 ? "warn" : "ok", "send")}
+      ${settingsSummaryCard("Dead letters", numberLabel(deadLetterTotal + deadLetterPending), "Items that exceeded retry limits and need operator review.", deadLetterTotal + deadLetterPending > 0 ? "danger" : "ok", "flag")}
     </div>
-    <details class="settings-raw">
-      <summary>Raw payload</summary>
-      <pre class="json-box settings-json">${escapeHtml(JSON.stringify(value, null, 2))}</pre>
+    ${settingsDeveloperDetails("Developer details", value, ["schema_version", "queue.stream_name", "queue.dead_letter_name", "outbox.newest_at", "dead_letters.newest_at"])}
+  `;
+}
+
+function settingsJudgeSummary(value: JsonObject | null): string {
+  if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const queued = numericValue(value.queued);
+  const running = numericValue(value.running);
+  const terminal = numericValue(value.terminal);
+  const total = numericValue(value.total);
+  return `
+    <div class="settings-summary-grid">
+      ${settingsSummaryCard("Queued", numberLabel(queued), "Submissions waiting for a judge worker.", queued > 0 ? "warn" : "ok", "clock-3")}
+      ${settingsSummaryCard("Running", numberLabel(running), "Submissions currently being evaluated.", running > 0 ? "info" : "ok", "play")}
+      ${settingsSummaryCard("Finished", numberLabel(terminal), "Submissions with a final verdict.", "ok", "check")}
+      ${settingsSummaryCard("Total submissions", numberLabel(total), "All submissions visible to the judge summary.", "info", "code-2")}
+    </div>
+    ${settingsStatusDistribution(record(value.by_status))}
+    ${settingsDeveloperDetails("Developer details", value, ["schema_version"])}
+  `;
+}
+
+function settingsHealthSummary(value: JsonObject | null): string {
+  if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const status = stringValue(value.status, "unknown");
+  const tone = status.toLowerCase() === "ok" ? "ok" : "warn";
+  return `
+    <div class="settings-summary-grid compact">
+      ${settingsSummaryCard("Go API", statusBadge(status), "Current health endpoint status.", tone, "monitor-up")}
+      ${settingsSummaryCard("Configuration source", "Go Core API", "Settings stay behind the backend authorization boundary.", "info", "settings-2")}
+    </div>
+    ${settingsDeveloperDetails("Developer details", value, ["status", "schema_version", "version"])}
+  `;
+}
+
+function settingsSummaryCard(label: string, value: string, hint: string, tone: "ok" | "warn" | "danger" | "info", iconName: string): string {
+  return `
+    <article class="settings-summary-card ${tone}">
+      <span>${icon(iconName)}</span>
+      <div>
+        <small>${escapeHtml(label)}</small>
+        <strong>${value}</strong>
+        <p>${escapeHtml(hint)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function settingsStatusDistribution(byStatus: JsonObject): string {
+  const entries = Object.entries(byStatus);
+  if (!entries.length) return "";
+  return `
+    <div class="settings-block">
+      <div class="settings-block-head"><h3>Status distribution</h3><span>${entries.length} states</span></div>
+      <div class="settings-chip-list">
+        ${entries.map(([status, count]) => `<span>${statusBadge(status)} <strong>${numberLabel(count)}</strong></span>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function settingsDeveloperDetails(title: string, value: JsonObject, paths: string[]): string {
+  const rows = paths
+    .map((path) => ({ path, value: valueAtPath(value, path) }))
+    .filter((row) => row.value !== undefined && row.value !== null && row.value !== "");
+  if (!rows.length) return "";
+  return `
+    <details class="settings-details">
+      <summary>${escapeHtml(title)}</summary>
+      <div class="settings-detail-list">
+        ${rows.map((row) => `
+          <div class="settings-detail-row">
+            <span>${escapeHtml(row.path)}</span>
+            <strong>${formatSettingValue(row.value)}</strong>
+          </div>
+        `).join("")}
+      </div>
     </details>
   `;
 }
 
+function valueAtPath(value: JsonObject, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
+}
+
+function arrayRecords(value: unknown): JsonObject[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function sumMetric(items: JsonObject[], key: string): number {
+  return items.reduce((total, item) => total + numericValue(item[key]), 0);
+}
+
+function sumStatuses(byStatus: JsonObject, statuses: string[]): number {
+  return statuses.reduce((total, status) => total + numericValue(byStatus[status]), 0);
+}
+
+function numericValue(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function numberLabel(value: unknown): string {
+  return numericValue(value).toLocaleString(state.locale === "zh-CN" ? "zh-CN" : "en-US");
+}
+
 function formatSettingValue(value: unknown): string {
   if (typeof value === "boolean") return statusBadge(String(value));
-  if (typeof value === "number") return escapeHtml(String(value));
+  if (typeof value === "number") return escapeHtml(numberLabel(value));
   if (typeof value === "string") return escapeHtml(value);
-  if (value === null || value === undefined) return escapeHtml("unknown");
   if (Array.isArray(value)) return escapeHtml(`${value.length} records`);
-  if (isRecord(value)) return escapeHtml(compactText(JSON.stringify(value), "object", 90));
+  if (isRecord(value)) return escapeHtml("available");
   return escapeHtml(String(value));
 }
 
