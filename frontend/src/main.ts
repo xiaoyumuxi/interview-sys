@@ -54,6 +54,7 @@ import {
 type View = "dashboard" | "interview" | "coding" | "memory" | "admin" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
 type RoomPanel = "briefing" | "participants" | "notes";
+type RunbookState = "done" | "active" | "pending";
 
 interface EmptyAction {
   label: string;
@@ -439,6 +440,7 @@ function renderInterview(): string {
         </div>
         <aside class="meeting-sidebar">
           ${renderRoomCompanion(session)}
+          ${renderRoomRunbook(session)}
           ${renderSessionSetup(session)}
           ${renderEvaluationPanel(session)}
         </aside>
@@ -643,11 +645,54 @@ function renderNotesPanel(session: InterviewSession | null): string {
   `;
 }
 
+function renderRoomRunbook(session: InterviewSession | null): string {
+  const hasSession = Boolean(session);
+  const hasQuestion = Boolean(session?.current_question || session?.current_question_id);
+  const hasTurns = (session?.turns?.length ?? 0) > 0;
+  const hasReport = Boolean(state.interview.report);
+  const terminal = isTerminalSession(session);
+  return `
+    <article class="room-card runbook-card">
+      <div class="runbook-head">
+        <span>${icon("clipboard-check")}</span>
+        <div>
+          <h2>Room runbook</h2>
+          <p>Keep the live practice loop visible while the backend works asynchronously.</p>
+        </div>
+      </div>
+      <div class="runbook-list">
+        ${runbookStep("Configure room", "Skill, question type and follow-up depth.", "settings-2", hasSession ? "done" : "active")}
+        ${runbookStep("Open question", "Generate the first interviewer prompt.", "bot", hasQuestion ? "done" : hasSession ? "active" : "pending")}
+        ${runbookStep("Send answer", "Submit the candidate response into the async lane.", "send", hasTurns ? "done" : hasQuestion ? "active" : "pending")}
+        ${runbookStep("Runtime review", "Poll until scoring and trace evidence appear.", "radio", hasTurns ? (hasReport ? "done" : "active") : "pending")}
+        ${runbookStep("Report", "Generate the final replayable summary.", "file-text", hasReport ? "done" : terminal ? "active" : "pending")}
+      </div>
+    </article>
+  `;
+}
+
+function runbookStep(label: string, copy: string, iconName: string, stateValue: RunbookState): string {
+  return `
+    <div class="runbook-step ${stateValue}">
+      <span>${icon(iconName)}</span>
+      <div>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(copy)}</small>
+      </div>
+      <b>${escapeHtml(stateValue === "done" ? "Done" : stateValue === "active" ? "Now" : "Next")}</b>
+    </div>
+  `;
+}
+
 function renderSessionSetup(session: InterviewSession | null): string {
   return `
     <article class="room-card setup-card">
-      <div class="section-head compact">
-        <div><h2>Session setup</h2><p>Choose the room context before the first question is generated.</p></div>
+      <div class="setup-head">
+        <span>${icon(session ? "radio" : "settings-2")}</span>
+        <div>
+          <h2>${session ? "Live room controls" : "Pre-call setup"}</h2>
+          <p>${session ? "Refresh room state or start a new practice context when needed." : "Choose the room context before the first question is generated."}</p>
+        </div>
         <button class="button secondary" data-action="poll-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("rotate-cw")}<span>${state.interview.loading ? "Updating" : "Poll"}</span></button>
       </div>
       <form id="session-form" class="setup-form" aria-busy="${state.interview.loading ? "true" : "false"}">
@@ -664,7 +709,7 @@ function renderSessionSetup(session: InterviewSession | null): string {
         <label>Follow-ups
           <input name="max_follow_ups" type="number" min="0" max="5" value="${session?.max_follow_ups ?? 1}" />
         </label>
-        <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("plus")}<span>${state.interview.loading ? "Creating" : "Create session"}</span></button>
+        <button class="button primary join-room-button" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("plus")}<span>${state.interview.loading ? "Creating" : session ? "Start new room" : "Create session"}</span></button>
       </form>
     </article>
   `;
@@ -1707,6 +1752,13 @@ function statusBadge(status: string): string {
       ? "danger"
       : "info";
   return `<span class="status ${tone}">${escapeHtml(status)}</span>`;
+}
+
+function isTerminalSession(session: InterviewSession | null): boolean {
+  const values = [session?.session_status, session?.flow_status, session?.phase]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  return values.some((value) => ["completed", "finished", "finalized", "failed", "cancelled", "report_ready"].includes(value));
 }
 
 function banner(message: string, type: "error" | "info"): string {
