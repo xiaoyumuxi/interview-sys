@@ -701,7 +701,74 @@ textarea {
   padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 10px;
-  background: rgba(2, 6, 23, 0.76);
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.12), transparent 32%),
+    linear-gradient(225deg, rgba(245, 158, 11, 0.1), transparent 36%),
+    rgba(2, 6, 23, 0.82);
+}
+
+.stage-status-bar {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stage-signal {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.stage-signal > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.13);
+  color: #cbd5e1;
+}
+
+.stage-signal small,
+.live-caption small {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.stage-signal strong {
+  display: block;
+  min-width: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-signal.ok > span {
+  background: rgba(20, 184, 166, 0.14);
+  color: #5eead4;
+}
+
+.stage-signal.info > span {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+}
+
+.stage-signal.warn > span {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
 }
 
 .speaker-tile,
@@ -769,6 +836,14 @@ textarea {
   background: rgba(248, 250, 252, 0.96);
 }
 
+.live-stage .question-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.live-stage .question-meta span {
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .participant-grid {
   display: grid;
   gap: 12px;
@@ -807,6 +882,48 @@ textarea {
   color: #fff;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.live-caption {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 47, 73, 0.68);
+  color: #cffafe;
+}
+
+.live-caption > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(34, 211, 238, 0.13);
+  color: #67e8f9;
+}
+
+.live-caption p {
+  overflow: hidden;
+  color: #e0f2fe;
+  font-size: 14px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-caption.is-muted {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.68);
+}
+
+.live-caption.is-muted > span {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
 }
 
 .meeting-control-bar {
@@ -1552,6 +1669,7 @@ th {
   }
 
   .metric-grid,
+  .stage-status-bar,
   .content-grid.two,
   .content-grid.two-wide,
   .content-grid.interview-board,
@@ -1609,9 +1727,15 @@ th {
 
   .nav-list,
   .metric-grid,
+  .stage-status-bar,
+  .live-stage .question-meta,
   .question-meta,
   .evaluation-form {
     grid-template-columns: 1fr;
+  }
+
+  .live-caption p {
+    white-space: normal;
   }
 
   .interaction-strip {

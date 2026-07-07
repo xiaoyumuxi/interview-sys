@@ -451,6 +451,7 @@ function renderLiveStage(session: InterviewSession | null): string {
   const question = session?.current_question;
   return `
     <div class="live-stage">
+      ${renderStageStatusBar(session)}
       <div class="speaker-tile interviewer-tile">
         <div class="tile-bar">
           <span>${icon("bot")}<strong>AI Interviewer</strong></span>
@@ -464,6 +465,11 @@ function renderLiveStage(session: InterviewSession | null): string {
           </div>
           <h3>${escapeHtml(question?.title ?? "Backend interview question")}</h3>
           <p>${escapeHtml(question?.prompt ?? "Create a session to receive the first backend-generated question.")}</p>
+          <div class="question-meta">
+            <span>${icon("flag")}<strong>${escapeHtml(session?.phase ?? "Waiting")}</strong></span>
+            <span>${icon("messages-square")}<strong>${escapeHtml(`${session?.turns?.length ?? 0} turns`)}</strong></span>
+            <span>${icon("refresh-cw")}<strong>${escapeHtml(`${session?.follow_up_count ?? 0}/${session?.max_follow_ups ?? 0} follow-ups`)}</strong></span>
+          </div>
           <div class="chip-row">${(question?.tags ?? ["runtime", "trace", "mock"]).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
         </div>
       </div>
@@ -471,12 +477,51 @@ function renderLiveStage(session: InterviewSession | null): string {
         ${participantTile("Candidate", state.user?.display_name ?? "You", "user-round", state.meeting.cameraOn ? "Camera on" : "Camera off", state.meeting.micOn ? "Mic on" : "Muted")}
         ${participantTile("Runtime", session ? session.skill_id : "Waiting", "radio", session ? session.flow_status : "No session", "AI channel")}
       </div>
+      ${renderLiveCaption(session)}
       <div class="meeting-control-bar" role="toolbar" aria-label="Meeting controls">
         ${meetingToggle("mic", state.meeting.micOn, state.meeting.micOn ? "mic" : "mic-off", state.meeting.micOn ? "Mic on" : "Muted")}
         ${meetingToggle("camera", state.meeting.cameraOn, state.meeting.cameraOn ? "video" : "video-off", state.meeting.cameraOn ? "Camera on" : "Camera off")}
         ${meetingToggle("captions", state.meeting.captionsOn, "captions", state.meeting.captionsOn ? "Captions on" : "Captions off")}
         ${meetingToggle("prompt", state.meeting.promptShared, "monitor-up", state.meeting.promptShared ? "Prompt shared" : "Share prompt")}
         <button class="call-end" data-action="finalize-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("phone-off")}<span>End</span></button>
+      </div>
+    </div>
+  `;
+}
+
+function renderStageStatusBar(session: InterviewSession | null): string {
+  return `
+    <div class="stage-status-bar">
+      ${stageSignal("Room", session ? "Connected" : "Standby", "radio", session ? "ok" : "idle")}
+      ${stageSignal("Flow", session?.flow_status ?? "Waiting", "flag", session ? "info" : "idle")}
+      ${stageSignal("Mode", state.interview.dryRun ? "Dry run" : "Real runtime", "settings-2", state.interview.dryRun ? "warn" : "ok")}
+      ${stageSignal("Trace", `${state.interview.trace.length} records`, "file-search", state.interview.trace.length ? "info" : "idle")}
+    </div>
+  `;
+}
+
+function stageSignal(label: string, value: string, iconName: string, tone: "ok" | "info" | "warn" | "idle"): string {
+  return `
+    <div class="stage-signal ${tone}">
+      <span>${icon(iconName)}</span>
+      <div>
+        <small>${escapeHtml(label)}</small>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderLiveCaption(session: InterviewSession | null): string {
+  const caption = state.meeting.captionsOn
+    ? session?.current_question?.prompt ?? "Create a session to start the interviewer channel."
+    : "Captions are hidden. Turn them on from the control bar.";
+  return `
+    <div class="live-caption ${state.meeting.captionsOn ? "" : "is-muted"}">
+      <span>${icon("captions")}</span>
+      <div>
+        <small>${state.meeting.captionsOn ? "Live captions" : "Captions hidden"}</small>
+        <p>${escapeHtml(caption)}</p>
       </div>
     </div>
   `;

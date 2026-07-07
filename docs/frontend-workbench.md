@@ -32,7 +32,8 @@
 
 面试页按“会议房间 + 后端状态机”的方式组织，而不是简单表单：
 
-- 主舞台：展示 AI 面试官、当前题目、session/flow/turn 状态和候选人视图。
+- 主舞台：展示 AI 面试官、当前题目、session/flow/turn 状态和候选人视图；顶部房间仪表条集中展示 room、flow、dry-run/real runtime 和 trace 数量。
+- 字幕层：在舞台下方保留直播字幕胶囊，当前复用题面或空状态文案，后续可接 ASR/TTS 实时转写。
 - 控制条：麦克风、摄像头、字幕和共享题面都是可点击的本地状态控件，状态保存到 `localStorage`，用于后续接入真实音视频、ASR/TTS 或题面共享 API。
 - 右侧 Companion 面板：提供简报、成员和笔记三个 tab。简报汇总当前题目和本地控制状态；成员展示 AI 面试官、候选人和 Runtime；笔记区域先本地保存，后续可接后端 notes API。
 - 后端事实：创建 session、提交答案、轮询 trace、生成 report 和结束会话仍全部走 Go API，前端不会自行推进业务状态。
