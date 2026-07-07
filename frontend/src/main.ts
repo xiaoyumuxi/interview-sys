@@ -51,10 +51,11 @@ import {
   createIcons
 } from "lucide";
 
-type View = "dashboard" | "interview" | "coding" | "memory" | "admin" | "evaluation";
+type View = "dashboard" | "interview" | "coding" | "memory" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
 type RoomPanel = "briefing" | "participants" | "notes";
 type RunbookState = "done" | "active" | "pending";
+type SettingsPanel = "general" | "providers" | "workers" | "judge" | "quality";
 
 interface EmptyAction {
   label: string;
@@ -71,6 +72,10 @@ interface AppState {
   refreshToken: string;
   toast: string;
   skills: Skill[];
+  settings: {
+    open: boolean;
+    panel: SettingsPanel;
+  };
   dashboard: LoadState<DashboardData>;
   interview: {
     session: InterviewSession | null;
@@ -95,6 +100,7 @@ interface AppState {
     submissions: CodingSubmission[];
     language: string;
     sourceCode: string;
+    completionPrefix: string;
     loading: boolean;
     error: string;
   };
@@ -123,6 +129,14 @@ interface AdminData {
   routes: JsonObject[];
   worker: JsonObject | null;
   judge: JsonObject | null;
+}
+
+interface CodeCompletion {
+  id: string;
+  label: string;
+  detail: string;
+  insertText: string;
+  keywords: string[];
 }
 
 const api = new ApiClient();
@@ -170,13 +184,17 @@ if (!root) {
 const appRoot = root;
 
 const state: AppState = {
-  view: (localStorage.getItem("frontend:view") as View | null) ?? "dashboard",
+  view: normalizeView(localStorage.getItem("frontend:view")),
   locale: normalizeLocale(localStorage.getItem("frontend:locale") ?? navigator.language),
   user: null,
   accessToken: localStorage.getItem("frontend:access_token") ?? "",
   refreshToken: localStorage.getItem("frontend:refresh_token") ?? "",
   toast: "",
   skills: [],
+  settings: {
+    open: false,
+    panel: "general"
+  },
   dashboard: { loading: false, error: "", data: { health: null, worker: null, judge: null, evalRuns: [], submissions: [] } },
   interview: { session: null, trace: [], report: null, answer: "", dryRun: true, error: "", loading: false },
   meeting: {
@@ -193,6 +211,7 @@ const state: AppState = {
     submissions: [],
     language: "go",
     sourceCode: defaultGoSolution(),
+    completionPrefix: "",
     loading: false,
     error: ""
   },
@@ -222,7 +241,6 @@ async function loadInitialData(): Promise<void> {
   if (state.view === "dashboard") await loadDashboard();
   if (state.view === "coding") await loadCoding();
   if (state.view === "memory") await loadMemory();
-  if (state.view === "admin") await loadAdmin();
   if (state.view === "evaluation") await loadEvaluation();
 }
 
@@ -293,7 +311,6 @@ function renderShell(): string {
           ${navItem("interview", "Interview", "Session", "messages-square")}
           ${navItem("coding", "Coding", "Practice", "code-2")}
           ${navItem("memory", "Memory", "Review", "database")}
-          ${navItem("admin", "Admin", "Console", "settings-2")}
           ${navItem("evaluation", "Evaluation", "Quality", "clipboard-check")}
         </nav>
         <div class="sidebar-health">
@@ -315,6 +332,7 @@ function renderShell(): string {
             <button class="button ghost" data-action="refresh" ${busy ? "disabled" : ""}>${icon("refresh-cw")}<span>${busy ? "Updating" : "Refresh"}</span></button>
             ${languageSwitcher("topbar-language")}
             <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
+            <button class="icon-button" data-action="open-settings" aria-label="Settings">${icon("settings-2")}</button>
             <button class="icon-button" data-action="logout" aria-label="Sign out">${icon("log-out")}</button>
           </div>
         </header>
@@ -322,6 +340,7 @@ function renderShell(): string {
         ${renderInteractionStrip()}
         <main class="page-body" aria-busy="${busy ? "true" : "false"}">${renderPage()}</main>
       </section>
+      ${state.settings.open ? renderSettingsModal() : ""}
     </div>
   `;
 }
@@ -346,8 +365,6 @@ function renderPage(): string {
       return renderCoding();
     case "memory":
       return renderMemory();
-    case "admin":
-      return renderAdmin();
     case "evaluation":
       return renderEvaluation();
   }
@@ -878,7 +895,26 @@ function renderCoding(): string {
               ${["go", "java", "python", "javascript", "typescript", "cpp"].map((lang) => `<option value="${lang}" ${state.coding.language === lang ? "selected" : ""}>${lang}</option>`).join("")}
             </select>
           </label>
-          <textarea name="source_code" spellcheck="false">${escapeHtml(state.coding.sourceCode)}</textarea>
+          <div class="ide-toolbar">
+            <div>
+              <strong>Practice IDE</strong>
+              <small>Lightweight autocomplete, syntax color and formatter.</small>
+            </div>
+            <div class="ide-actions">
+              <button class="button secondary" type="button" data-action="format-code">${icon("clipboard-check")}<span>Format</span></button>
+              <button class="button secondary" type="button" data-action="insert-starter">${icon("file-text")}<span>Starter</span></button>
+            </div>
+          </div>
+          <div class="code-editor-shell" data-role="code-editor-shell">
+            <pre class="code-syntax-layer" aria-hidden="true" data-role="syntax-layer">${highlightCode(state.coding.sourceCode, state.coding.language)}</pre>
+            <textarea class="code-input" name="source_code" spellcheck="false" autocomplete="off" autocapitalize="off" data-role="code-editor">${escapeHtml(state.coding.sourceCode)}</textarea>
+          </div>
+          <div class="editor-statusbar">
+            <span>${icon("code-2")}<strong data-role="editor-lines">${lineCount(state.coding.sourceCode)} lines</strong></span>
+            <span>${icon("file-text")}<strong data-role="editor-chars">${state.coding.sourceCode.length} chars</strong></span>
+            <span>${icon("settings-2")}<strong>${escapeHtml(state.coding.language)}</strong></span>
+          </div>
+          ${renderCodeAssistPanel(state.coding.language, state.coding.sourceCode)}
           <button class="button primary" type="submit" ${selected && !state.coding.loading ? "" : "disabled"}>${icon("terminal")}<span>${state.coding.loading ? "Submitting" : "Submit to judge"}</span></button>
         </form>
       </article>
@@ -891,6 +927,34 @@ function renderCoding(): string {
         </div>
       </aside>
     </section>
+  `;
+}
+
+function renderCodeAssistPanel(language: string, source: string): string {
+  const prefix = currentCodePrefix(source);
+  const completions = codeCompletions(language, prefix).slice(0, 6);
+  return `
+    <div class="code-assist-panel" data-role="code-assist-panel">
+      <div class="assist-head">
+        <span>${icon("brain-circuit")}</span>
+        <div>
+          <strong>Smart completions</strong>
+          <small>${prefix ? `Matching "${prefix}"` : "Common patterns for the selected language."}</small>
+        </div>
+      </div>
+      <div class="completion-list" data-role="completion-list">
+        ${completions.map(renderCompletionButton).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderCompletionButton(item: CodeCompletion): string {
+  return `
+    <button class="completion-item" type="button" data-action="insert-completion" data-completion-id="${escapeAttr(item.id)}">
+      <strong>${escapeHtml(item.label)}</strong>
+      <small>${escapeHtml(item.detail)}</small>
+    </button>
   `;
 }
 
@@ -928,6 +992,118 @@ function renderMemoryCandidate(item: JsonObject): string {
       <div class="button-row">
         <button class="button secondary" data-action="approve-memory" data-candidate-id="${escapeAttr(id)}" ${id && !state.memory.loading ? "" : "disabled"}>${icon("check")}<span>Approve</span></button>
         <button class="button danger" data-action="reject-memory" data-candidate-id="${escapeAttr(id)}" ${id && !state.memory.loading ? "" : "disabled"}>${icon("x")}<span>Reject</span></button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettingsModal(): string {
+  return `
+    <div class="settings-backdrop" role="presentation" data-action="close-settings">
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings" data-role="settings-modal">
+        <aside class="settings-nav">
+          <button class="settings-close" data-action="close-settings" aria-label="Close settings">${icon("x")}</button>
+          <div class="settings-title">
+            <strong>Settings</strong>
+            <small>Runtime, judge and provider configuration.</small>
+          </div>
+          ${settingsNavItem("general", "General", "settings-2")}
+          ${settingsNavItem("providers", "Providers", "radio")}
+          ${settingsNavItem("workers", "Workers", "terminal")}
+          ${settingsNavItem("judge", "Coding judge", "code-2")}
+          ${settingsNavItem("quality", "Quality gates", "clipboard-check")}
+        </aside>
+        <div class="settings-content">
+          ${renderSettingsPanel()}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function settingsNavItem(panel: SettingsPanel, label: string, iconName: string): string {
+  const active = state.settings.panel === panel ? " active" : "";
+  return `
+    <button class="settings-nav-item${active}" data-action="set-settings-panel" data-panel="${panel}">
+      ${icon(iconName)}
+      <span>${label}</span>
+    </button>
+  `;
+}
+
+function renderSettingsPanel(): string {
+  const data = state.admin.data;
+  if (state.settings.panel === "providers") {
+    return settingsSection(
+      "Providers",
+      "Provider registry and task routes stay in the configuration center, away from training flow.",
+      "load-admin",
+      `
+        ${data.routes.length ? table(
+          ["Task", "Provider", "Fallback"],
+          data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
+        ) : emptyState("No records", "Nothing has been returned by the API yet.")}
+        ${data.providers.length ? table(
+          ["Provider", "Type", "Enabled"],
+          data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
+        ) : ""}
+      `
+    );
+  }
+  if (state.settings.panel === "workers") {
+    return settingsSection(
+      "Workers",
+      "Redis stream, outbox and dead-letter state for the backend runtime.",
+      "load-admin",
+      `<pre class="json-box settings-json">${escapeHtml(JSON.stringify(data.worker, null, 2))}</pre>`
+    );
+  }
+  if (state.settings.panel === "judge") {
+    return settingsSection(
+      "Coding judge",
+      "Judge queue, runner mode and sandbox status for coding practice.",
+      "load-admin",
+      `<pre class="json-box settings-json">${escapeHtml(JSON.stringify(data.judge, null, 2))}</pre>`
+    );
+  }
+  if (state.settings.panel === "quality") {
+    return settingsSection(
+      "Quality gates",
+      "Evaluation remains a user-facing quality workflow; configure backend signals here.",
+      "load-admin",
+      `
+        <div class="settings-row"><span>Evaluation harness</span><strong>Active page</strong></div>
+        <div class="settings-row"><span>Runtime traces</span><strong>${state.interview.trace.length} records</strong></div>
+        <div class="settings-row"><span>Recent runs</span><strong>${state.dashboard.data.evalRuns.length} records</strong></div>
+      `
+    );
+  }
+  return settingsSection(
+    "General",
+    "Keep product preferences separate from training tasks.",
+    "load-admin",
+    `
+      <div class="settings-row"><span>Language</span><strong>${state.locale === "zh-CN" ? "中文" : "English"}</strong></div>
+      <div class="settings-row"><span>Signed in</span><strong>${escapeHtml(state.user?.display_name ?? "User")}</strong></div>
+      <div class="settings-row"><span>API status</span><strong>${escapeHtml(stringValue(state.dashboard.data.health?.status, "unknown"))}</strong></div>
+      <div class="settings-row"><span>Configuration source</span><strong>Go Core API</strong></div>
+    `
+  );
+}
+
+function settingsSection(title: string, copy: string, refreshAction: string, content: string): string {
+  return `
+    <div class="settings-section">
+      ${state.admin.error ? banner(state.admin.error, "error") : ""}
+      <div class="settings-section-head">
+        <div>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(copy)}</p>
+        </div>
+        <button class="button secondary" data-action="${refreshAction}" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Refresh"}</span></button>
+      </div>
+      <div class="settings-section-body">
+        ${content}
       </div>
     </div>
   `;
@@ -1025,6 +1201,22 @@ function bindEvents(): void {
       setLocale(normalizeLocale(button.dataset.locale));
     });
   });
+  document.querySelector<HTMLButtonElement>("[data-action='open-settings']")?.addEventListener("click", () => void openSettings());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='close-settings']").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeSettings();
+    });
+  });
+  document.querySelector<HTMLDivElement>(".settings-backdrop")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      closeSettings();
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-settings-panel']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setSettingsPanel((button.dataset.panel as SettingsPanel | undefined) ?? "general");
+    });
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-action='toggle-meeting-control']").forEach((button) => {
     button.addEventListener("click", () => {
       toggleMeetingControl(button.dataset.control ?? "");
@@ -1071,9 +1263,28 @@ function bindEvents(): void {
   document.querySelector<HTMLFormElement>("#coding-form")?.addEventListener("submit", onCodingSubmit);
   document.querySelector<HTMLSelectElement>("select[name='language']")?.addEventListener("change", (event) => {
     state.coding.language = (event.currentTarget as HTMLSelectElement).value;
+    render();
   });
   document.querySelector<HTMLTextAreaElement>("textarea[name='source_code']")?.addEventListener("input", (event) => {
-    state.coding.sourceCode = (event.currentTarget as HTMLTextAreaElement).value;
+    const editor = event.currentTarget as HTMLTextAreaElement;
+    state.coding.sourceCode = editor.value;
+    state.coding.completionPrefix = currentCodePrefix(editor.value, editor.selectionStart);
+    updateCodeEditorChrome(editor);
+  });
+  document.querySelector<HTMLTextAreaElement>("textarea[name='source_code']")?.addEventListener("scroll", (event) => {
+    syncSyntaxScroll(event.currentTarget as HTMLTextAreaElement);
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='format-code']")?.addEventListener("click", () => {
+    formatCurrentCode();
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='insert-starter']")?.addEventListener("click", () => {
+    insertStarterCode();
+  });
+  document.querySelector<HTMLDivElement>("[data-role='code-assist-panel']")?.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-action='insert-completion']");
+    if (button) {
+      insertCompletion(button.dataset.completionId ?? "");
+    }
   });
   document.querySelectorAll<HTMLButtonElement>("[data-question-id]").forEach((button) => {
     button.addEventListener("click", () => void selectQuestion(button.dataset.questionId ?? ""));
@@ -1112,11 +1323,26 @@ async function navigate(view: View): Promise<void> {
   await refreshCurrentView();
 }
 
+async function openSettings(): Promise<void> {
+  state.settings.open = true;
+  render();
+  await loadAdmin();
+}
+
+function closeSettings(): void {
+  state.settings.open = false;
+  render();
+}
+
+function setSettingsPanel(panel: SettingsPanel): void {
+  state.settings.panel = normalizeSettingsPanel(panel);
+  render();
+}
+
 async function refreshCurrentView(): Promise<void> {
   if (state.view === "dashboard") await loadDashboard();
   if (state.view === "coding") await loadCoding();
   if (state.view === "memory") await loadMemory();
-  if (state.view === "admin") await loadAdmin();
   if (state.view === "evaluation") await loadEvaluation();
   if (state.view === "interview" && state.interview.session) await pollSession();
 }
@@ -1403,6 +1629,67 @@ async function onCodingSubmit(event: SubmitEvent): Promise<void> {
   render();
 }
 
+function formatCurrentCode(): void {
+  const editor = document.querySelector<HTMLTextAreaElement>("[data-role='code-editor']");
+  if (!editor) return;
+  state.coding.sourceCode = formatSource(state.coding.language, editor.value);
+  editor.value = state.coding.sourceCode;
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+  updateCodeEditorChrome(editor);
+  toast(ui("Code formatted"));
+}
+
+function insertStarterCode(): void {
+  const editor = document.querySelector<HTMLTextAreaElement>("[data-role='code-editor']");
+  if (!editor) return;
+  insertIntoEditor(editor, defaultSourceForLanguage(state.coding.language), false);
+  toast(ui("Starter inserted"));
+}
+
+function insertCompletion(completionId: string): void {
+  const editor = document.querySelector<HTMLTextAreaElement>("[data-role='code-editor']");
+  const completion = completionById(state.coding.language, completionId);
+  if (!editor || !completion) return;
+  const cursor = editor.selectionStart;
+  const prefix = currentCodePrefix(editor.value, cursor);
+  const start = Math.max(0, cursor - prefix.length);
+  insertIntoEditor(editor, completion.insertText, true, start, editor.selectionEnd);
+  toast(ui("Completion inserted"));
+}
+
+function insertIntoEditor(editor: HTMLTextAreaElement, text: string, replaceSelection = true, start = editor.selectionStart, end = editor.selectionEnd): void {
+  const before = editor.value.slice(0, replaceSelection ? start : editor.selectionStart);
+  const after = editor.value.slice(replaceSelection ? end : editor.selectionStart);
+  const spacer = before && !before.endsWith("\n") ? "\n" : "";
+  const suffix = after && !text.endsWith("\n") ? "\n" : "";
+  const insert = `${spacer}${text}${suffix}`;
+  editor.value = `${before}${insert}${after}`;
+  const cursor = before.length + insert.length;
+  editor.setSelectionRange(cursor, cursor);
+  editor.focus();
+  state.coding.sourceCode = editor.value;
+  state.coding.completionPrefix = currentCodePrefix(editor.value, cursor);
+  updateCodeEditorChrome(editor);
+}
+
+function updateCodeEditorChrome(editor: HTMLTextAreaElement): void {
+  const syntaxLayer = document.querySelector<HTMLElement>("[data-role='syntax-layer']");
+  const lineMetric = document.querySelector<HTMLElement>("[data-role='editor-lines']");
+  const charMetric = document.querySelector<HTMLElement>("[data-role='editor-chars']");
+  const list = document.querySelector<HTMLElement>("[data-role='completion-list']");
+  if (syntaxLayer) syntaxLayer.innerHTML = highlightCode(editor.value, state.coding.language);
+  if (lineMetric) lineMetric.textContent = `${lineCount(editor.value)} ${ui("lines")}`;
+  if (charMetric) charMetric.textContent = `${editor.value.length} ${ui("chars")}`;
+  if (list) list.innerHTML = codeCompletions(state.coding.language, state.coding.completionPrefix).slice(0, 6).map(renderCompletionButton).join("");
+  syncSyntaxScroll(editor);
+}
+
+function syncSyntaxScroll(editor: HTMLTextAreaElement): void {
+  const layer = document.querySelector<HTMLElement>("[data-role='syntax-layer']");
+  if (!layer) return;
+  layer.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`;
+}
+
 async function reviewMemory(candidateId: string, action: "approve" | "reject"): Promise<void> {
   if (!candidateId) return;
   if (state.memory.loading) return;
@@ -1588,7 +1875,6 @@ function isCurrentViewLoading(): boolean {
   if (state.view === "interview") return state.interview.loading;
   if (state.view === "coding") return state.coding.loading;
   if (state.view === "memory") return state.memory.loading;
-  if (state.view === "admin") return state.admin.loading;
   return state.evaluation.loading;
 }
 
@@ -1597,7 +1883,6 @@ function currentViewError(): string {
   if (state.view === "interview") return state.interview.error;
   if (state.view === "coding") return state.coding.error;
   if (state.view === "memory") return state.memory.error;
-  if (state.view === "admin") return state.admin.error;
   return state.evaluation.error;
 }
 
@@ -1631,7 +1916,6 @@ function interactionHint(): string {
     return "Edit code, submit it, then watch the asynchronous verdict.";
   }
   if (state.view === "memory") return "Review candidates one by one so only trusted memory reaches prompts.";
-  if (state.view === "admin") return "Check provider routing and worker state before debugging runtime failures.";
   return "Save a sample case, run it, then inspect assertions and score changes.";
 }
 
@@ -1825,7 +2109,6 @@ function pageTitle(view: View): string {
     interview: "Interview session",
     coding: "Coding practice",
     memory: "Memory review",
-    admin: "Admin console",
     evaluation: "Evaluation harness"
   }[view];
 }
@@ -1836,9 +2119,22 @@ function pageSubtitle(view: View): string {
     interview: "Focused answer workflow with async evaluation, follow-up and trace evidence.",
     coding: "Question list, editor, sample tests and asynchronous judge results.",
     memory: "Human-in-the-loop approval for durable candidate memory.",
-    admin: "Provider routing, workers and system operations.",
     evaluation: "Quality samples, dry-run checks and regression records."
   }[view];
+}
+
+function normalizeView(value: string | null | undefined): View {
+  if (value === "interview" || value === "coding" || value === "memory" || value === "evaluation") {
+    return value;
+  }
+  return "dashboard";
+}
+
+function normalizeSettingsPanel(value: string | null | undefined): SettingsPanel {
+  if (value === "providers" || value === "workers" || value === "judge" || value === "quality") {
+    return value;
+  }
+  return "general";
 }
 
 function escapeHtml(value: string): string {
@@ -1852,6 +2148,124 @@ function escapeHtml(value: string): string {
 
 function escapeAttr(value: string): string {
   return escapeHtml(value).replaceAll("`", "&#096;");
+}
+
+function codeCompletions(language: string, prefix = ""): CodeCompletion[] {
+  const normalized = language.toLowerCase();
+  const common: CodeCompletion[] = [
+    { id: "for-loop", label: "for loop", detail: "Index-based loop", insertText: "for (let i = 0; i < n; i++) {\n  \n}", keywords: ["for", "loop", "iteration"] },
+    { id: "if-guard", label: "guard clause", detail: "Early return check", insertText: "if (!condition) {\n  return;\n}", keywords: ["if", "guard", "return"] },
+    { id: "two-pointers", label: "two pointers", detail: "left/right scan", insertText: "let left = 0;\nlet right = nums.length - 1;\nwhile (left < right) {\n  \n}", keywords: ["two", "pointer", "left", "right"] }
+  ];
+  const byLanguage: Record<string, CodeCompletion[]> = {
+    go: [
+      { id: "go-main", label: "main package", detail: "Go executable starter", insertText: defaultGoSolution(), keywords: ["main", "package", "go"] },
+      { id: "go-map", label: "map counter", detail: "map[int]int frequency table", insertText: "count := map[int]int{}\nfor _, value := range nums {\n\tcount[value]++\n}", keywords: ["map", "counter", "hash"] },
+      { id: "go-sort", label: "sort ints", detail: "sort.Ints(nums)", insertText: "sort.Ints(nums)", keywords: ["sort", "ints"] }
+    ],
+    java: [
+      { id: "java-class", label: "Solution class", detail: "LeetCode-style class", insertText: "class Solution {\n    public int solve(int[] nums) {\n        return 0;\n    }\n}", keywords: ["class", "solution", "java"] },
+      { id: "java-map", label: "HashMap", detail: "frequency map", insertText: "Map<Integer, Integer> count = new HashMap<>();\nfor (int value : nums) {\n    count.put(value, count.getOrDefault(value, 0) + 1);\n}", keywords: ["hashmap", "map", "count"] }
+    ],
+    python: [
+      { id: "py-solution", label: "Solution class", detail: "Python class starter", insertText: "class Solution:\n    def solve(self, nums):\n        return 0", keywords: ["class", "solution", "python"] },
+      { id: "py-counter", label: "Counter", detail: "collections.Counter", insertText: "from collections import Counter\ncount = Counter(nums)", keywords: ["counter", "dict", "map"] }
+    ],
+    javascript: [
+      { id: "js-function", label: "function solve", detail: "JavaScript function starter", insertText: "function solve(nums) {\n  return 0;\n}", keywords: ["function", "solve", "javascript"] },
+      { id: "js-map", label: "Map counter", detail: "ES Map frequency table", insertText: "const count = new Map();\nfor (const value of nums) {\n  count.set(value, (count.get(value) ?? 0) + 1);\n}", keywords: ["map", "counter", "hash"] }
+    ],
+    typescript: [
+      { id: "ts-function", label: "typed solve", detail: "TypeScript function starter", insertText: "function solve(nums: number[]): number {\n  return 0;\n}", keywords: ["function", "typed", "typescript"] },
+      { id: "ts-map", label: "Map<number, number>", detail: "typed frequency table", insertText: "const count = new Map<number, number>();\nfor (const value of nums) {\n  count.set(value, (count.get(value) ?? 0) + 1);\n}", keywords: ["map", "counter", "hash"] }
+    ],
+    cpp: [
+      { id: "cpp-main", label: "C++ main", detail: "Standalone runner", insertText: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}", keywords: ["main", "cpp", "include"] },
+      { id: "cpp-map", label: "unordered_map", detail: "frequency table", insertText: "unordered_map<int, int> count;\nfor (int value : nums) {\n    count[value]++;\n}", keywords: ["map", "hash", "counter"] }
+    ]
+  };
+  const items = [...(byLanguage[normalized] ?? []), ...common];
+  const query = prefix.toLowerCase();
+  if (!query) return items;
+  return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query)));
+}
+
+function completionById(language: string, id: string): CodeCompletion | undefined {
+  return codeCompletions(language, "").find((item) => item.id === id);
+}
+
+function currentCodePrefix(source: string, cursor = source.length): string {
+  const before = source.slice(0, cursor);
+  return before.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? "";
+}
+
+function lineCount(source: string): number {
+  return source ? source.split("\n").length : 1;
+}
+
+function defaultSourceForLanguage(language: string): string {
+  const starterIds: Record<string, string> = {
+    go: "go-main",
+    java: "java-class",
+    python: "py-solution",
+    javascript: "js-function",
+    typescript: "ts-function",
+    cpp: "cpp-main"
+  };
+  return completionById(language, starterIds[language.toLowerCase()] ?? "go-main")?.insertText ?? defaultGoSolution();
+}
+
+function formatSource(language: string, source: string): string {
+  const trimmed = source.replace(/\s+$/gm, "").trim();
+  if (!trimmed) return "";
+  if (language === "python") {
+    return trimmed.split("\n").map((line) => line.replace(/\t/g, "    ")).join("\n") + "\n";
+  }
+  const prepared = trimmed
+    .replace(/\{\s*/g, "{\n")
+    .replace(/\s*\}/g, "\n}")
+    .replace(/;\s*/g, ";\n")
+    .replace(/\n{2,}/g, "\n");
+  let depth = 0;
+  const lines = prepared.split("\n").map((line) => line.trim()).filter(Boolean);
+  return lines.map((line) => {
+    if (line.startsWith("}")) depth = Math.max(0, depth - 1);
+    const output = `${"  ".repeat(depth)}${line}`;
+    if (line.endsWith("{")) depth += 1;
+    return output;
+  }).join("\n") + "\n";
+}
+
+function highlightCode(source: string, language: string): string {
+  const keywords = keywordSet(language);
+  return escapeHtml(source || " ").split("\n").map((line) => highlightCodeLine(line, keywords, language)).join("\n");
+}
+
+function highlightCodeLine(escapedLine: string, keywords: Set<string>, language: string): string {
+  const commentMarker = language === "python" ? "#" : "//";
+  const commentIndex = escapedLine.indexOf(commentMarker);
+  const code = commentIndex >= 0 ? escapedLine.slice(0, commentIndex) : escapedLine;
+  const comment = commentIndex >= 0 ? escapedLine.slice(commentIndex) : "";
+  const highlighted = code.replace(/(&quot;.*?&quot;|&#039;.*?&#039;|`.*?`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g, (token) => {
+    const plain = token.replaceAll("&quot;", "\"").replaceAll("&#039;", "'");
+    if (token.startsWith("&quot;") || token.startsWith("&#039;") || token.startsWith("`")) return `<span class="tok-string">${token}</span>`;
+    if (/^\d/.test(token)) return `<span class="tok-number">${token}</span>`;
+    if (keywords.has(plain)) return `<span class="tok-keyword">${token}</span>`;
+    return token;
+  });
+  return comment ? `${highlighted}<span class="tok-comment">${comment}</span>` : highlighted;
+}
+
+function keywordSet(language: string): Set<string> {
+  const shared = ["return", "if", "else", "for", "while", "break", "continue", "class", "function", "const", "let", "var", "new"];
+  const extra: Record<string, string[]> = {
+    go: ["package", "import", "func", "range", "map", "struct", "defer", "go", "nil"],
+    java: ["public", "private", "static", "void", "int", "boolean", "String", "Map", "HashMap"],
+    python: ["def", "from", "import", "in", "not", "and", "or", "None", "True", "False", "self"],
+    typescript: ["type", "interface", "number", "string", "boolean"],
+    cpp: ["include", "using", "namespace", "int", "long", "vector", "unordered_map", "auto"]
+  };
+  return new Set([...shared, ...(extra[language] ?? [])]);
 }
 
 function isRecord(value: unknown): value is JsonObject {

@@ -8,10 +8,10 @@
 |---|---|---|
 | 工作台 | 给用户一个全局入口和运行概览 | 查看 API、队列、outbox、judge 状态；跳转到面试、代码题和 memory review |
 | 面试 | 以直播会议房间的方式完成一次异步面试训练 | 主舞台展示 AI 面试官和题目，参会者小窗展示候选人/Runtime，底部控制条提供静音、摄像头、笔记、共享题面和结束入口；右侧面板管理 session、trace 和 report |
-| 代码题 | 练习并提交完整程序到 judge | 浏览题库、选择题目、编辑代码、提交判题、查看异步 verdict |
+| 代码题 | 练习并提交完整程序到 judge | 浏览题库、使用轻量 IDE 编辑代码、格式化/插入模板/补全片段、提交判题、查看异步 verdict |
 | 记忆 | 审核 Runtime 产出的候选记忆 | 加载 pending candidates、approve/reject，避免未审核 memory 进入 Prompt |
-| 管理 | 查看系统运维和配置状态 | 查看 Provider route、Provider 列表、worker summary、coding judge summary |
 | 评测 | 维护轻量质量样例 | 保存 evaluation case、dry-run 执行、查看 run 记录和最近结果 |
+| 设置中心 | 管理系统配置和运维信号 | 通过顶部设置按钮打开弹窗，查看 Provider route、Provider 列表、worker summary、coding judge summary 和质量门禁信号 |
 
 ## 交互原则
 
@@ -24,6 +24,7 @@
 - 空状态可行动：无题目、无候选记忆等状态会给出明确说明和可点击动作。
 - 危险动作确认：结束面试会话前使用确认对话，避免误触。
 - 双语可切换：语言按钮直接切换中文 / 英文，并保存到 `localStorage`。
+- 配置解耦：Provider、Worker、Judge 等运维配置放到设置弹窗，不混入普通训练导航。
 - 不绕过 Go：前端只通过 Go API 读写业务事实，不直接推进 Python Runtime 或数据库状态。
 
 这些原则对应 Nielsen Norman Group 的可用性启发式中“系统状态可见、错误预防、识别而非记忆、帮助用户恢复错误”等基础要求。
@@ -42,6 +43,23 @@
 - 后端事实：创建 session、提交答案、轮询 trace、生成 report 和结束会话仍全部走 Go API，前端不会自行推进业务状态。
 
 当前会议控件是轻量状态层，目的是先把用户操作路径、状态反馈和布局稳定性做出来；真正的音视频采集、字幕转写和共享题面同步会作为独立接口继续接入。
+
+## 代码题 IDE
+
+代码题页使用自研轻量编辑器层，不引入 Monaco 或大型组件库：
+
+- 语法配色：textarea 上叠加只读高亮层，提供接近 VS Code 的关键字、字符串、数字和注释配色。
+- 自动补全：根据当前语言和光标前缀展示常用模板，例如 main/solution、Map/Counter、two pointers、guard clause 等。
+- 快捷工具：提供 `Format` 和 `Starter` 按钮，分别执行本地缩进整理和插入当前语言 starter。
+- 判题边界：编辑器只处理本地文本体验，不执行代码；真正提交仍走 Go API 和 coding judge worker。
+
+## 设置中心
+
+系统配置从训练页面中移出，顶部设置按钮会打开类似桌面应用的居中弹窗：
+
+- 左侧分类：General、Providers、Workers、Coding judge、Quality gates。
+- 右侧内容：读取 Go API 返回的 provider route、provider registry、worker summary、judge summary 和质量信号。
+- 交互边界：设置中心负责查看和后续配置入口，不改变面试、代码题、memory review 或 evaluation 的用户训练流程。
 
 ## 本地启动
 
@@ -85,7 +103,7 @@ make build-frontend
 
 ## 当前限制
 
-- 还不是完整产品级前端：memory、admin 和 evaluation 的细节视图仍需要继续产品化。
+- 还不是完整产品级前端：memory、settings 和 evaluation 的细节视图仍需要继续产品化。
 - 目前没有路由库，页面切换由本地 state 和 `localStorage` 管理。
 - 没有引入复杂组件库，样式集中在 `frontend/src/styles.css`。
 - report、trace、worker summary 等仍保留部分 JSON 预览，后续应继续转成更适合用户阅读的结构化视图。
@@ -98,5 +116,5 @@ make build-frontend
 2. 把 Interview Report 做成正式报告页，减少 raw JSON 暴露。
 3. 给直播面试房间补真实音视频/ASR/TTS 接口契约，当前麦克风、摄像头和共享题面是会议式状态控件。
 4. 给 Evaluation Harness 增加 assertion 明细、失败解释和批量回归汇总。
-5. 给 Admin 增加 Provider route 编辑、连通性测试入口和 worker health drill-down。
+5. 给设置中心增加 Provider route 编辑、连通性测试入口和 worker health drill-down。
 6. 增加前端 smoke 测试，覆盖登录页渲染、语言切换、导航和关键按钮状态。
