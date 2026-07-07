@@ -29,6 +29,7 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Go API | `cmd/api` | HTTP entrypoint, auth, providers, skills, interview sessions and ops APIs |
 | Worker | `cmd/worker` | Redis Stream consumption, outbox dispatch, pending reclaim and dead-letter handling |
 | Go internals | `internal` | auth, provider, skill, interview runtime, memory orchestration, workqueue, store and routing |
+| Web Frontend | `frontend` | Vanilla TypeScript workbench UI for training, coding, memory review, admin and evaluation harness flows |
 | AI Runtime | `python-runtime` | FastAPI task endpoint, prompt boundaries, structured output and memory APIs |
 | Database | `migrations` | PostgreSQL schema, pgvector extension and default seed data |
 | Skill packs | `skills` | Local skill packs, currently `java-backend` |
@@ -135,6 +136,8 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | `make run` | Start Go Core API on `8080` |
 | `make run-worker` | Start the standalone Redis Stream worker |
 | `make run-runtime` | Start FastAPI Runtime on `8090` |
+| `make run-frontend` | Start the TypeScript frontend dev server on `5173` with `/api` proxied to Go API |
+| `make build-frontend` | Type-check and build the frontend static assets |
 | `make test` | Run all Go tests with `go test ./...` |
 | `make test-python` | Run Python runtime unit tests |
 | `make fmt` | Run `gofmt` for `cmd` and `internal` |

@@ -29,6 +29,7 @@
 | Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话和运维 API |
 | Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim 和 dead-letter |
 | Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、workqueue、store、routing |
+| Web Frontend | `frontend` | Vanilla TypeScript 工作台 UI，负责训练、代码题、memory review、admin 和 evaluation harness 接入 |
 | AI Runtime | `python-runtime` | FastAPI task endpoint、Prompt 边界、结构化输出和 memory API |
 | 数据库 | `migrations` | PostgreSQL schema、pgvector 扩展和默认 seed |
 | Skill Pack | `skills` | 本地技能包，目前包含 `java-backend` |
@@ -135,6 +136,8 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | `make run` | 启动 Go Core API，监听 `8080` |
 | `make run-worker` | 启动独立 Redis Stream worker |
 | `make run-runtime` | 启动 FastAPI Runtime，监听 `8090` |
+| `make run-frontend` | 启动 TypeScript 前端开发服务，监听 `5173`，并代理 `/api` 到 Go API |
+| `make build-frontend` | 对前端执行 TypeScript 检查并构建静态产物 |
 | `make test` | 运行全部 Go 测试，即 `go test ./...` |
 | `make test-python` | 运行 Python Runtime 单元测试 |
 | `make fmt` | 对 `cmd` 和 `internal` 执行 `gofmt` |
