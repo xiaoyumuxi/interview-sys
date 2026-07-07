@@ -1,0 +1,170 @@
+export type Locale = "zh-CN" | "en-US";
+
+export const locales: Array<{ value: Locale; label: string }> = [
+  { value: "zh-CN", label: "中文" },
+  { value: "en-US", label: "English" }
+];
+
+const zh: Record<string, string> = {
+  "AI training runtime control surface": "AI 面试训练运行台",
+  "AI training runtime": "AI 训练运行时",
+  Email: "邮箱",
+  Password: "密码",
+  "Sign in": "登录",
+  "Sign out": "退出登录",
+  "Use the local root account from the backend bootstrap, or any user created through the API.":
+    "可使用后端 bootstrap 的本地 root 账号，或通过 API 创建的任意用户。",
+  Dashboard: "工作台",
+  Overview: "概览",
+  Interview: "面试",
+  Session: "会话",
+  Coding: "代码题",
+  Practice: "练习",
+  Memory: "记忆",
+  Review: "审核",
+  Admin: "管理",
+  Console: "控制台",
+  Evaluation: "评测",
+  Quality: "质量",
+  "Runtime health": "运行时健康",
+  Worker: "Worker",
+  "Poll with the dashboard refresh action.": "可在工作台点击刷新拉取最新状态。",
+  Refresh: "刷新",
+  "Training dashboard": "训练工作台",
+  "Interview session": "面试会话",
+  "Coding practice": "代码题练习",
+  "Memory review": "记忆审核",
+  "Admin console": "管理控制台",
+  "Evaluation harness": "评测样例集",
+  "Operational snapshot of sessions, queues, runtime health and quality gates.":
+    "查看会话、队列、运行时健康和质量门禁的实时概览。",
+  "Focused answer workflow with async evaluation, follow-up and trace evidence.":
+    "围绕作答、异步评估、追问和 trace 证据的训练流程。",
+  "Question list, editor, sample tests and asynchronous judge results.":
+    "题目列表、代码编辑、样例运行和异步判题结果。",
+  "Human-in-the-loop approval for durable candidate memory.": "人工审核候选记忆，决定是否进入长期画像。",
+  "Provider routing, workers and system operations.": "Provider 路由、Worker 和系统运维状态。",
+  "Quality samples, dry-run checks and regression records.": "质量样例、dry-run 检查和回归记录。",
+  "API status": "API 状态",
+  "Queue pending": "队列待处理",
+  "Outbox pending": "Outbox 待处理",
+  "Judge queued": "判题排队",
+  "coding submissions": "代码提交",
+  "Recent coding submissions": "最近代码提交",
+  "Latest judge-facing records for the signed-in user.": "当前登录用户的最新判题记录。",
+  "Evaluation runs": "评测运行",
+  "Quality gates from the backend evaluation harness.": "来自后端评测样例集的质量门禁。",
+  Question: "题目",
+  Language: "语言",
+  Status: "状态",
+  Score: "分数",
+  Case: "样例",
+  Task: "任务",
+  "Runtime timeline": "运行时流程",
+  "The front end should make asynchronous state visible instead of hiding backend work.":
+    "前端需要显式展示异步状态，而不是隐藏后端正在处理的工作。",
+  "Answer queued": "答案入队",
+  "Worker claimed": "Worker 领取",
+  "Runtime scored": "Runtime 评分",
+  "Report generated": "报告生成",
+  "Start or resume session": "创建或恢复会话",
+  "Create an interview session, answer the current question, then poll trace state.":
+    "创建面试会话，回答当前问题，然后轮询 trace 状态。",
+  "Poll session": "轮询会话",
+  Skill: "技能",
+  "Question type": "题目类型",
+  "Follow-ups": "追问次数",
+  "Create session": "创建会话",
+  "No active session": "暂无活跃会话",
+  "Create a session to load the first backend-generated question.": "创建会话后会加载第一道后端生成的问题。",
+  "Evaluation state": "评估状态",
+  Flow: "流程",
+  "Total score": "总分",
+  "Waiting for session": "等待会话",
+  "Trace and report controls appear after creation.": "创建会话后会显示 trace 和报告操作。",
+  "Load trace": "加载 trace",
+  "Generate report": "生成报告",
+  Finalize: "结束会话",
+  "Backend interview question": "后端面试题",
+  "The backend has not returned a current question yet. Poll the session after workers run.":
+    "后端暂未返回当前问题。Worker 运行后可轮询会话。",
+  "Your answer": "你的回答",
+  "Dry run runtime calls": "Dry run 调用 Runtime",
+  "Submit answer": "提交答案",
+  Turn: "轮次",
+  score: "分数",
+  "Question set": "题库",
+  "Published coding questions from PostgreSQL seed data.": "来自 PostgreSQL seed 数据的已发布代码题。",
+  Reload: "重新加载",
+  "No questions": "暂无题目",
+  "Run migrations and seed data before using coding practice.": "使用代码题练习前，请先执行 migration 和 seed。",
+  "Select a question": "选择一道题",
+  "Prompt and constraints appear here.": "题面和约束会显示在这里。",
+  "Submit to judge": "提交判题",
+  "Judge results": "判题结果",
+  "Pending memory candidates": "待审核候选记忆",
+  "Human review stays between runtime extraction and long-term profile admission.":
+    "Runtime 抽取和长期画像写入之间必须保留人工审核。",
+  "No runtime candidates": "暂无 Runtime 候选项",
+  "Start Python Runtime and load pending candidates to review memory.":
+    "启动 Python Runtime 后加载待审核候选记忆。",
+  "Review rule": "审核规则",
+  "Only approved memory can enter prompt context. Reject weak, private, or hallucinated candidates and keep Go as the audit boundary.":
+    "只有 approved memory 才能进入 Prompt 上下文。弱证据、隐私风险或幻觉内容应拒绝，并由 Go 保留审计边界。",
+  "Untitled candidate": "未命名候选项",
+  "No content returned by runtime.": "Runtime 未返回内容。",
+  confidence: "置信度",
+  Approve: "通过",
+  Reject: "拒绝",
+  "Provider routes": "Provider 路由",
+  "Root-only provider and task routing state.": "仅 root 可查看和管理的 Provider 与任务路由状态。",
+  Providers: "Provider",
+  Provider: "Provider",
+  Fallback: "Fallback",
+  Type: "类型",
+  Enabled: "启用",
+  "Worker summary": "Worker 摘要",
+  "Coding judge": "代码判题",
+  "Evaluation cases": "评测样例",
+  "Store quality samples and run them through the runtime task path.":
+    "保存质量样例，并通过 Runtime task 链路执行。",
+  "case_id, optional": "case_id，可选",
+  suite: "suite",
+  "Generate one Redis recovery interview question.": "生成一道 Redis 恢复相关的面试题。",
+  "Save case": "保存样例",
+  "Run dry": "Dry run",
+  Runs: "运行记录",
+  Duration: "耗时",
+  "No cases": "暂无样例",
+  "Create a small smoke case first.": "先创建一个轻量 smoke 样例。",
+  "No records": "暂无记录",
+  "Nothing has been returned by the API yet.": "API 暂未返回数据。",
+  unknown: "未知",
+  "Signed in": "已登录",
+  "Session created": "会话已创建",
+  "Answer accepted by API": "API 已接收答案",
+  "Submission queued": "提交已入队",
+  "Evaluation case saved": "评测样例已保存",
+  "Evaluation run recorded": "评测运行已记录",
+  "Memory approved": "记忆已通过",
+  "Memory rejected": "记忆已拒绝",
+  User: "用户",
+  "Language preference": "语言偏好"
+};
+
+export function normalizeLocale(value: string | null | undefined): Locale {
+  if (value?.toLowerCase().startsWith("zh")) return "zh-CN";
+  return "en-US";
+}
+
+export function translate(locale: Locale, value: string): string {
+  if (locale === "en-US") return value;
+  return zh[value] ?? value;
+}
+
+export function translateHtml(locale: Locale, html: string): string {
+  if (locale === "en-US") return html;
+  return Object.entries(zh)
+    .sort((a, b) => b[0].length - a[0].length)
+    .reduce((output, [source, target]) => output.replaceAll(source, target), html);
+}

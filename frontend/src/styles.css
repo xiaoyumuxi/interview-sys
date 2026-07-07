@@ -117,6 +117,25 @@ p {
   margin: 28px 0 16px;
 }
 
+.language-field {
+  display: inline-grid;
+  width: max-content;
+  min-width: 160px;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.language-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.language-select {
+  min-width: 150px;
+  background: #f8fafc;
+}
+
 label {
   display: grid;
   gap: 8px;
@@ -277,6 +296,18 @@ textarea {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.topbar-actions .language-field {
+  margin-top: 0;
+}
+
+.topbar-actions .language-field span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
 .user-pill {

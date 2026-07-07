@@ -12,12 +12,14 @@ import {
   type Skill,
   type User
 } from "./api";
+import { locales, normalizeLocale, translate, translateHtml, type Locale } from "./i18n";
 
 type View = "dashboard" | "interview" | "coding" | "memory" | "admin" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
 
 interface AppState {
   view: View;
+  locale: Locale;
   user: User | null;
   accessToken: string;
   refreshToken: string;
@@ -79,6 +81,7 @@ const appRoot = root;
 
 const state: AppState = {
   view: (localStorage.getItem("frontend:view") as View | null) ?? "dashboard",
+  locale: normalizeLocale(localStorage.getItem("frontend:locale") ?? navigator.language),
   user: null,
   accessToken: localStorage.getItem("frontend:access_token") ?? "",
   refreshToken: localStorage.getItem("frontend:refresh_token") ?? "",
@@ -126,7 +129,7 @@ async function loadInitialData(): Promise<void> {
 }
 
 function render(): void {
-  appRoot.innerHTML = state.user ? renderShell() : renderLogin();
+  appRoot.innerHTML = localize(state.user ? renderShell() : renderLogin());
   bindEvents();
 }
 
@@ -141,6 +144,7 @@ function renderLogin(): string {
             <p>AI training runtime control surface</p>
           </div>
         </div>
+        ${languageSelect("login-language")}
         <form id="login-form" class="login-form">
           <label>
             Email
@@ -194,6 +198,7 @@ function renderShell(): string {
           </div>
           <div class="topbar-actions">
             <button class="button ghost" data-action="refresh">Refresh</button>
+            ${languageSelect("topbar-language")}
             <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
             <button class="icon-button" data-action="logout" aria-label="Sign out">×</button>
           </div>
@@ -537,6 +542,11 @@ function bindEvents(): void {
     const form = new FormData(event.currentTarget as HTMLFormElement);
     void handleLogin(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
   });
+  document.querySelectorAll<HTMLSelectElement>("[data-action='set-locale']").forEach((select) => {
+    select.addEventListener("change", () => {
+      setLocale(normalizeLocale(select.value));
+    });
+  });
 
   document.querySelector<HTMLButtonElement>("[data-action='logout']")?.addEventListener("click", () => void handleLogout());
   document.querySelector<HTMLButtonElement>("[data-action='refresh']")?.addEventListener("click", () => void refreshCurrentView());
@@ -593,7 +603,7 @@ async function handleLogin(email: string, password: string): Promise<void> {
     const auth = await api.login(email, password);
     saveAuth(auth);
     await loadInitialData();
-    toast("Signed in");
+    toast(ui("Signed in"));
   } catch (error) {
     toast(errorMessage(error));
   }
@@ -729,7 +739,7 @@ async function onSessionSubmit(event: SubmitEvent): Promise<void> {
       String(form.get("question_type") ?? "backend"),
       Number(form.get("max_follow_ups") ?? 1)
     );
-    toast("Session created");
+    toast(ui("Session created"));
   } catch (error) {
     state.interview.error = errorMessage(error);
   }
@@ -745,7 +755,7 @@ async function onAnswerSubmit(event: SubmitEvent): Promise<void> {
   state.interview.dryRun = form.get("dry_run") === "on";
   try {
     await api.submitInterviewAnswer(state.interview.session, state.interview.answer, state.interview.dryRun);
-    toast("Answer accepted by API");
+    toast(ui("Answer accepted by API"));
     await pollSession();
   } catch (error) {
     state.interview.error = errorMessage(error);
@@ -801,7 +811,7 @@ async function onCodingSubmit(event: SubmitEvent): Promise<void> {
   state.coding.sourceCode = String(form.get("source_code") ?? "");
   try {
     await api.createCodingSubmission(state.coding.selectedQuestion.question_id, state.coding.language, state.coding.sourceCode);
-    toast("Submission queued");
+    toast(ui("Submission queued"));
     state.coding.submissions = await api.listCodingSubmissions(state.coding.selectedQuestion.question_id);
   } catch (error) {
     state.coding.error = errorMessage(error);
@@ -814,7 +824,7 @@ async function reviewMemory(candidateId: string, action: "approve" | "reject"): 
   try {
     if (action === "approve") await api.approveMemoryCandidate(candidateId, "Approved from frontend review");
     else await api.rejectMemoryCandidate(candidateId, "Rejected from frontend review");
-    toast(`Memory ${action}d`);
+    toast(ui(action === "approve" ? "Memory approved" : "Memory rejected"));
     await loadMemory();
   } catch (error) {
     state.memory.error = errorMessage(error);
@@ -839,7 +849,7 @@ async function onEvaluationSubmit(event: SubmitEvent): Promise<void> {
       tags: ["frontend", "smoke"],
       status: "active"
     });
-    toast("Evaluation case saved");
+    toast(ui("Evaluation case saved"));
     await loadEvaluation();
   } catch (error) {
     state.evaluation.error = errorMessage(error);
@@ -850,7 +860,7 @@ async function onEvaluationSubmit(event: SubmitEvent): Promise<void> {
 async function runEvaluation(caseId: string): Promise<void> {
   try {
     state.evaluation.lastRun = await api.runEvaluationCase(caseId, true);
-    toast("Evaluation run recorded");
+    toast(ui("Evaluation run recorded"));
     await loadEvaluation();
   } catch (error) {
     state.evaluation.error = errorMessage(error);
@@ -882,6 +892,31 @@ function toast(message: string): void {
     state.toast = "";
     render();
   }, 2600);
+}
+
+function setLocale(locale: Locale): void {
+  state.locale = locale;
+  localStorage.setItem("frontend:locale", locale);
+  render();
+}
+
+function localize(html: string): string {
+  return translateHtml(state.locale, html);
+}
+
+function ui(value: string): string {
+  return translate(state.locale, value);
+}
+
+function languageSelect(id: string): string {
+  return `
+    <label class="language-field" for="${id}">
+      <span>Language preference</span>
+      <select id="${id}" class="language-select" data-action="set-locale" aria-label="Language preference">
+        ${locales.map((locale) => `<option value="${locale.value}" ${locale.value === state.locale ? "selected" : ""}>${locale.label}</option>`).join("")}
+      </select>
+    </label>
+  `;
 }
 
 function skillOptions(selected = ""): string {

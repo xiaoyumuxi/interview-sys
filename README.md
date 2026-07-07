@@ -29,7 +29,7 @@
 | Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话和运维 API |
 | Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim 和 dead-letter |
 | Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、workqueue、store、routing |
-| Web Frontend | `frontend` | Vanilla TypeScript 工作台 UI，负责训练、代码题、memory review、admin 和 evaluation harness 接入 |
+| Web Frontend | `frontend` | Vanilla TypeScript 工作台 UI，内置中英文切换，负责训练、代码题、memory review、admin 和 evaluation harness 接入 |
 | AI Runtime | `python-runtime` | FastAPI task endpoint、Prompt 边界、结构化输出和 memory API |
 | 数据库 | `migrations` | PostgreSQL schema、pgvector 扩展和默认 seed |
 | Skill Pack | `skills` | 本地技能包，目前包含 `java-backend` |
@@ -49,6 +49,7 @@
 | Evaluation Harness | root-only 样例集和 run 记录 API，支持 dry-run、断言评分和 agent trace 关联 |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
 | Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
+| Web Frontend | Vanilla TypeScript + CSS，Vite 开发服务代理 `/api`，支持中文/英文语言设定 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
 | Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
 

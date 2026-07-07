@@ -29,7 +29,7 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Go API | `cmd/api` | HTTP entrypoint, auth, providers, skills, interview sessions and ops APIs |
 | Worker | `cmd/worker` | Redis Stream consumption, outbox dispatch, pending reclaim and dead-letter handling |
 | Go internals | `internal` | auth, provider, skill, interview runtime, memory orchestration, workqueue, store and routing |
-| Web Frontend | `frontend` | Vanilla TypeScript workbench UI for training, coding, memory review, admin and evaluation harness flows |
+| Web Frontend | `frontend` | Vanilla TypeScript workbench UI with Chinese/English switching for training, coding, memory review, admin and evaluation harness flows |
 | AI Runtime | `python-runtime` | FastAPI task endpoint, prompt boundaries, structured output and memory APIs |
 | Database | `migrations` | PostgreSQL schema, pgvector extension and default seed data |
 | Skill packs | `skills` | Local skill packs, currently `java-backend` |
@@ -49,6 +49,7 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Evaluation Harness | root-only case and run APIs with dry-run, assertion scoring and agent trace linkage |
 | Memory orchestration | Go `/api/memory/*` entrypoint for auth, user isolation and trace/audit; Python owns memory logic |
 | Memory admission | Context Engine admits only approved memory as `memory_context` and returns a `memory_admission` explanation |
+| Web Frontend | Vanilla TypeScript + CSS, Vite dev proxy for `/api`, and configurable Chinese/English UI language |
 | Python Runtime | task endpoint, prompt safety boundary, structured output and memory APIs |
 | Middleware | PostgreSQL + pgvector, Redis, MinIO and optional Python runtime container |
 
