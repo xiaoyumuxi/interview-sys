@@ -370,84 +370,137 @@ textarea {
 
 .settings-backdrop {
   position: fixed;
-  z-index: 20;
+  z-index: 40;
   inset: 0;
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.2);
-  backdrop-filter: blur(5px);
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(7px);
 }
 
 .settings-modal {
   display: grid;
-  width: min(920px, 100%);
-  max-height: min(760px, calc(100vh - 48px));
-  grid-template-columns: 240px minmax(0, 1fr);
+  width: min(1040px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 48px));
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  border: 1px solid rgba(148, 163, 184, 0.38);
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
 }
 
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px 18px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, rgba(15, 118, 110, 0.08), transparent 48%),
+    #fff;
+}
+
+.settings-header h2 {
+  margin-top: 7px;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.settings-header p {
+  margin-top: 5px;
+  color: #52657f;
+}
+
+.settings-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-layout {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
 .settings-nav {
   display: grid;
   align-content: start;
-  gap: 8px;
-  padding: 18px 12px;
+  gap: 6px;
+  min-height: 0;
+  padding: 14px;
   border-right: 1px solid var(--line);
-  background: #f8fafc;
+  background: #f7fafc;
 }
 
 .settings-close {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border: 0;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: transparent;
+  background: #fff;
   color: #0f172a;
-}
-
-.settings-title {
-  display: grid;
-  gap: 4px;
-  margin: 4px 6px 12px;
-}
-
-.settings-title strong {
-  font-size: 17px;
-}
-
-.settings-title small {
-  color: var(--muted);
-  line-height: 1.35;
 }
 
 .settings-nav-item {
-  display: flex;
-  min-height: 40px;
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  border: 0;
+  gap: 11px;
+  width: 100%;
+  border: 1px solid transparent;
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 8px 10px;
   background: transparent;
   color: #334155;
-  font-weight: 800;
+  text-align: left;
 }
 
 .settings-nav-item.active {
-  background: #e2e8f0;
+  border-color: rgba(15, 118, 110, 0.24);
+  background: #e6fffb;
   color: #0f172a;
+}
+
+.settings-nav-item svg {
+  color: var(--teal);
+}
+
+.settings-nav-item strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.settings-nav-item small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .settings-content {
   min-width: 0;
+  min-height: 0;
   overflow: auto;
-  padding: 22px;
+  padding: 22px 24px 26px;
+  background: #fff;
 }
 
 .settings-section {
@@ -460,7 +513,7 @@ textarea {
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  padding-bottom: 18px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -476,6 +529,32 @@ textarea {
 .settings-section-body {
   display: grid;
   gap: 16px;
+}
+
+.settings-block {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.settings-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-block-head h3 {
+  font-size: 15px;
+}
+
+.settings-block-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .settings-row {
@@ -499,6 +578,75 @@ textarea {
 .settings-json {
   max-height: 460px;
   margin: 0;
+}
+
+.settings-data-list {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.settings-data-row {
+  display: grid;
+  min-height: 46px;
+  grid-template-columns: minmax(140px, 0.42fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-data-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-data-row span {
+  color: #334155;
+  font-weight: 800;
+}
+
+.settings-data-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-raw {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.settings-raw summary {
+  cursor: pointer;
+  padding: 11px 12px;
+  color: #334155;
+  font-weight: 900;
+}
+
+.settings-raw .json-box {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.settings-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #ecfdf5;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .page-body {
@@ -2468,13 +2616,35 @@ th {
   }
 
   .settings-modal {
-    max-height: calc(100vh - 24px);
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+  }
+
+  .settings-header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .settings-header-actions {
+    justify-content: space-between;
+  }
+
+  .settings-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .settings-nav {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(150px, 1fr);
+    overflow-x: auto;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .settings-content {
+    padding: 16px;
   }
 
   .settings-section-head,
@@ -2482,6 +2652,15 @@ th {
   .ide-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .settings-block-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-data-row {
+    grid-template-columns: 1fr;
   }
 
   .completion-list {

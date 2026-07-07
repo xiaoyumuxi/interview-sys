@@ -999,34 +999,42 @@ function renderMemoryCandidate(item: JsonObject): string {
 
 function renderSettingsModal(): string {
   return `
-    <div class="settings-backdrop" role="presentation" data-action="close-settings">
-      <section class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings" data-role="settings-modal">
-        <aside class="settings-nav">
-          <button class="settings-close" data-action="close-settings" aria-label="Close settings">${icon("x")}</button>
-          <div class="settings-title">
-            <strong>Settings</strong>
-            <small>Runtime, judge and provider configuration.</small>
+    <div class="settings-backdrop" role="presentation">
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" data-role="settings-modal">
+        <header class="settings-header">
+          <div>
+            <span class="settings-kicker">${icon("settings-2")} Configuration center</span>
+            <h2 id="settings-dialog-title">Settings</h2>
+            <p>Runtime, judge and provider configuration.</p>
           </div>
-          ${settingsNavItem("general", "General", "settings-2")}
-          ${settingsNavItem("providers", "Providers", "radio")}
-          ${settingsNavItem("workers", "Workers", "terminal")}
-          ${settingsNavItem("judge", "Coding judge", "code-2")}
-          ${settingsNavItem("quality", "Quality gates", "clipboard-check")}
-        </aside>
-        <div class="settings-content">
-          ${renderSettingsPanel()}
+          <div class="settings-header-actions">
+            ${statusBadge(state.admin.loading ? "Updating" : "Ready")}
+            <button class="settings-close" data-action="close-settings" aria-label="Close settings">${icon("x")}</button>
+          </div>
+        </header>
+        <div class="settings-layout">
+          <aside class="settings-nav" aria-label="Settings sections">
+            ${settingsNavItem("general", "General", "Account and language", "settings-2")}
+            ${settingsNavItem("providers", "Providers", "Model routes", "radio")}
+            ${settingsNavItem("workers", "Workers", "Async lanes", "terminal")}
+            ${settingsNavItem("judge", "Coding judge", "Runner state", "code-2")}
+            ${settingsNavItem("quality", "Quality gates", "Eval signals", "clipboard-check")}
+          </aside>
+          <div class="settings-content">
+            ${renderSettingsPanel()}
+          </div>
         </div>
       </section>
     </div>
   `;
 }
 
-function settingsNavItem(panel: SettingsPanel, label: string, iconName: string): string {
+function settingsNavItem(panel: SettingsPanel, label: string, hint: string, iconName: string): string {
   const active = state.settings.panel === panel ? " active" : "";
   return `
-    <button class="settings-nav-item${active}" data-action="set-settings-panel" data-panel="${panel}">
+    <button class="settings-nav-item${active}" data-action="set-settings-panel" data-panel="${panel}" aria-pressed="${active ? "true" : "false"}">
       ${icon(iconName)}
-      <span>${label}</span>
+      <span><strong>${label}</strong><small>${hint}</small></span>
     </button>
   `;
 }
@@ -1039,14 +1047,20 @@ function renderSettingsPanel(): string {
       "Provider registry and task routes stay in the configuration center, away from training flow.",
       "load-admin",
       `
-        ${data.routes.length ? table(
-          ["Task", "Provider", "Fallback"],
-          data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
-        ) : emptyState("No records", "Nothing has been returned by the API yet.")}
-        ${data.providers.length ? table(
-          ["Provider", "Type", "Enabled"],
-          data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
-        ) : ""}
+        <div class="settings-block">
+          <div class="settings-block-head"><h3>Task routing</h3><span>${data.routes.length} records</span></div>
+          ${data.routes.length ? table(
+            ["Task", "Provider", "Fallback"],
+            data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
+          ) : emptyState("No records", "Nothing has been returned by the API yet.")}
+        </div>
+        <div class="settings-block">
+          <div class="settings-block-head"><h3>Provider registry</h3><span>${data.providers.length} records</span></div>
+          ${data.providers.length ? table(
+            ["Provider", "Type", "Enabled"],
+            data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
+          ) : emptyState("No records", "Nothing has been returned by the API yet.")}
+        </div>
       `
     );
   }
@@ -1055,7 +1069,7 @@ function renderSettingsPanel(): string {
       "Workers",
       "Redis stream, outbox and dead-letter state for the backend runtime.",
       "load-admin",
-      `<pre class="json-box settings-json">${escapeHtml(JSON.stringify(data.worker, null, 2))}</pre>`
+      settingsObjectPreview(data.worker, "Worker summary")
     );
   }
   if (state.settings.panel === "judge") {
@@ -1063,7 +1077,7 @@ function renderSettingsPanel(): string {
       "Coding judge",
       "Judge queue, runner mode and sandbox status for coding practice.",
       "load-admin",
-      `<pre class="json-box settings-json">${escapeHtml(JSON.stringify(data.judge, null, 2))}</pre>`
+      settingsObjectPreview(data.judge, "Coding judge")
     );
   }
   if (state.settings.panel === "quality") {
@@ -1075,6 +1089,7 @@ function renderSettingsPanel(): string {
         <div class="settings-row"><span>Evaluation harness</span><strong>Active page</strong></div>
         <div class="settings-row"><span>Runtime traces</span><strong>${state.interview.trace.length} records</strong></div>
         <div class="settings-row"><span>Recent runs</span><strong>${state.dashboard.data.evalRuns.length} records</strong></div>
+        ${settingsObjectPreview(state.dashboard.data.health, "Runtime health")}
       `
     );
   }
@@ -1087,6 +1102,7 @@ function renderSettingsPanel(): string {
       <div class="settings-row"><span>Signed in</span><strong>${escapeHtml(state.user?.display_name ?? "User")}</strong></div>
       <div class="settings-row"><span>API status</span><strong>${escapeHtml(stringValue(state.dashboard.data.health?.status, "unknown"))}</strong></div>
       <div class="settings-row"><span>Configuration source</span><strong>Go Core API</strong></div>
+      <div class="settings-note">${icon("panel-right-open")} Clicking outside will not close this window.</div>
     `
   );
 }
@@ -1107,6 +1123,36 @@ function settingsSection(title: string, copy: string, refreshAction: string, con
       </div>
     </div>
   `;
+}
+
+function settingsObjectPreview(value: JsonObject | null, label: string): string {
+  if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const entries = Object.entries(value).slice(0, 10);
+  if (!entries.length) return emptyState("No records", "Nothing has been returned by the API yet.");
+  return `
+    <div class="settings-data-list" aria-label="${escapeAttr(label)}">
+      ${entries.map(([key, item]) => `
+        <div class="settings-data-row">
+          <span>${escapeHtml(key)}</span>
+          <strong>${formatSettingValue(item)}</strong>
+        </div>
+      `).join("")}
+    </div>
+    <details class="settings-raw">
+      <summary>Raw payload</summary>
+      <pre class="json-box settings-json">${escapeHtml(JSON.stringify(value, null, 2))}</pre>
+    </details>
+  `;
+}
+
+function formatSettingValue(value: unknown): string {
+  if (typeof value === "boolean") return statusBadge(String(value));
+  if (typeof value === "number") return escapeHtml(String(value));
+  if (typeof value === "string") return escapeHtml(value);
+  if (value === null || value === undefined) return escapeHtml("unknown");
+  if (Array.isArray(value)) return escapeHtml(`${value.length} records`);
+  if (isRecord(value)) return escapeHtml(compactText(JSON.stringify(value), "object", 90));
+  return escapeHtml(String(value));
 }
 
 function renderAdmin(): string {
@@ -1207,11 +1253,9 @@ function bindEvents(): void {
       closeSettings();
     });
   });
-  document.querySelector<HTMLDivElement>(".settings-backdrop")?.addEventListener("click", (event) => {
-    if (event.target === event.currentTarget) {
-      closeSettings();
-    }
-  });
+  document.onkeydown = (event) => {
+    if (event.key === "Escape" && state.settings.open) closeSettings();
+  };
   document.querySelectorAll<HTMLButtonElement>("[data-action='set-settings-panel']").forEach((button) => {
     button.addEventListener("click", () => {
       setSettingsPanel((button.dataset.panel as SettingsPanel | undefined) ?? "general");
