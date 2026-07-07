@@ -2,7 +2,7 @@
 
 中文 | [English](./README.en.md)
 
-构建一个可回放、可审计、可恢复的 AI 面试训练后端。
+构建一个可回放、可审计、可恢复的 AI 面试训练平台。
 
 ![阶段](https://img.shields.io/badge/stage-async%20runtime%20%2B%20memory-334155)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
@@ -12,7 +12,7 @@
 ![Queue](https://img.shields.io/badge/Queue-Redis%20Streams-DC382D?logo=redis&logoColor=white)
 ![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
-本仓库是个人 AI 面试训练平台后端重写工程。Go Core API 负责确定性业务事实、状态机、幂等、审计和对外 API；Python AI Runtime 负责模型调用、Prompt 安全、结构化输出、memory 和后续 Agent/RAG 推理。
+本仓库是个人 AI 面试训练平台重写工程。Go Core API 负责确定性业务事实、状态机、幂等、审计和对外 API；Python AI Runtime 负责模型调用、Prompt 安全、结构化输出、memory 和后续 Agent/RAG 推理；Web Frontend 提供训练工作台，把面试、代码题、记忆审核、管理和评测串成可操作的用户流程。
 
 ## 为什么做
 
@@ -49,7 +49,7 @@
 | Evaluation Harness | root-only 样例集和 run 记录 API，支持 dry-run、断言评分和 agent trace 关联 |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
 | Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
-| Web Frontend | Vanilla TypeScript + CSS，Vite 开发服务代理 `/api`，支持中文/英文语言设定 |
+| Web Frontend | Vanilla TypeScript + CSS 工作台，Vite 代理 `/api`，支持中英文切换、lucide 图标、状态条、loading/disabled、表单校验、空状态动作和任务导向下一步 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
 | Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
 
@@ -97,6 +97,14 @@ docker compose --profile runtime up -d python-runtime
 curl http://localhost:8080/healthz
 curl http://localhost:8090/healthz
 ```
+
+启动前端工作台：
+
+```bash
+make run-frontend
+```
+
+默认访问 `http://localhost:5173`。如果端口被占用，Vite 会自动尝试下一个可用端口。前端开发服务会把 `/api` 代理到 Go API，因此通常需要同时运行 `make run`；面试异步评估、代码判题、memory review 和 evaluation run 还需要对应的 worker / runtime 服务。
 
 ## 默认登录
 
@@ -195,6 +203,7 @@ Python Runtime:
 | Evaluation harness | root-only `/api/evaluation/*` 管理样例和运行记录；`expected.required_fields`、`expected.contains`、`expected.equals` 用于可配置断言，`POST /run` 支持 `dry_run` |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 每次创建临时禁网容器；`docker_warm` 复用按语言命名的 stopped container，通过 tmpfs 回到初始状态；镜像可配置且可用 `make pull-judge-images` 预拉取；`native_trusted` 直接调用本机工具链，启动快但不隔离，只适合本地可信代码；默认 disabled evaluator 不执行用户代码 |
+| Frontend workbench | `frontend` 是面向用户的操作台，不直接写内部状态；登录后通过 Go API 使用训练工作台、面试会话、代码题、memory review、admin 和 evaluation harness。交互层负责展示系统状态、下一步动作、表单校验和空状态引导 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 | Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
 
@@ -243,6 +252,7 @@ make check-middleware
 | [docs/language-boundaries.md](./docs/language-boundaries.md) | 业务、Provider 和 runtime 边界 |
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter 链路和运维 API |
 | [docs/evaluation-harness.md](./docs/evaluation-harness.md) | Evaluation case、断言和 run 记录 |
+| [docs/frontend-workbench.md](./docs/frontend-workbench.md) | 前端工作台页面、交互原则和本地开发说明 |
 | [docs/deployment.md](./docs/deployment.md) | 本地部署和初始化 |
 | [docs/reference-projects.md](./docs/reference-projects.md) | 参考项目索引 |
 

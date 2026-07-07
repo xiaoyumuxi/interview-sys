@@ -2,7 +2,7 @@
 
 [中文](./README.md) | English
 
-Build a replayable and auditable AI interview backend.
+Build a replayable and auditable AI interview training platform.
 
 ![Stage](https://img.shields.io/badge/stage-async%20runtime%20%2B%20memory-334155)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
@@ -12,7 +12,7 @@ Build a replayable and auditable AI interview backend.
 ![Queue](https://img.shields.io/badge/Queue-Redis%20Streams-DC382D?logo=redis&logoColor=white)
 ![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
-This repository is a backend rewrite for a personal AI interview training platform. Go Core API owns deterministic business facts, state transitions, idempotency, audit and external APIs. Python AI Runtime owns model calls, prompt safety, structured output, memory and later Agent/RAG reasoning.
+This repository is a rewrite of a personal AI interview training platform. Go Core API owns deterministic business facts, state transitions, idempotency, audit and external APIs. Python AI Runtime owns model calls, prompt safety, structured output, memory and later Agent/RAG reasoning. Web Frontend provides the user-facing workbench that connects interview training, coding practice, memory review, admin operations and evaluation runs.
 
 ## Why This Exists
 
@@ -49,7 +49,7 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Evaluation Harness | root-only case and run APIs with dry-run, assertion scoring and agent trace linkage |
 | Memory orchestration | Go `/api/memory/*` entrypoint for auth, user isolation and trace/audit; Python owns memory logic |
 | Memory admission | Context Engine admits only approved memory as `memory_context` and returns a `memory_admission` explanation |
-| Web Frontend | Vanilla TypeScript + CSS, Vite dev proxy for `/api`, and configurable Chinese/English UI language |
+| Web Frontend | Vanilla TypeScript + CSS workbench with Vite `/api` proxy, Chinese/English switching, lucide icons, interaction status strip, loading/disabled states, form validation, empty-state actions and task-oriented next steps |
 | Python Runtime | task endpoint, prompt safety boundary, structured output and memory APIs |
 | Middleware | PostgreSQL + pgvector, Redis, MinIO and optional Python runtime container |
 
@@ -97,6 +97,14 @@ Health checks:
 curl http://localhost:8080/healthz
 curl http://localhost:8090/healthz
 ```
+
+Start the frontend workbench:
+
+```bash
+make run-frontend
+```
+
+The default URL is `http://localhost:5173`. If the port is already in use, Vite will try the next available port. The dev server proxies `/api` to the Go API, so `make run` should usually be running as well. Async interview evaluation, coding judge, memory review and evaluation runs also depend on the corresponding worker / runtime services.
 
 ## Default Login
 
@@ -195,6 +203,7 @@ Python Runtime:
 | Evaluation harness | root-only `/api/evaluation/*` manages cases and run records; `expected.required_fields`, `expected.contains` and `expected.equals` define configurable assertions, and `POST /run` supports `dry_run` |
 | Worker | The API process enqueues and queries; `cmd/worker` consumes Redis Stream events |
 | Coding judge | `CODING_JUDGE_ENABLED=true` starts the coding judge loop in `cmd/worker`; `docker`, `docker_warm`, and `native_trusted` modes are configurable |
+| Frontend workbench | `frontend` is the user-facing operating surface and does not mutate internal state directly; after login it uses Go API flows for training dashboard, interview sessions, coding practice, memory review, admin and evaluation harness. The interaction layer owns visible system status, next actions, validation and empty-state guidance |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` is only for local compatibility mode |
 | Memory context | Context Preview and answer evaluation admit approved memory by user, task_type, skill, query and token budget; `memory_extraction` does not admit long-term memory |
 
@@ -237,5 +246,6 @@ If `PROVIDER_KEY_ENCRYPTION_SECRET` is not set, API keys must not be written int
 | [docs/language-boundaries.md](./docs/language-boundaries.md) | Business, Provider and runtime boundaries |
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter pipeline and ops API |
 | [docs/evaluation-harness.md](./docs/evaluation-harness.md) | Evaluation cases, assertions and run records |
+| [docs/frontend-workbench.md](./docs/frontend-workbench.md) | Frontend workbench pages, interaction principles and local development notes |
 | [docs/deployment.md](./docs/deployment.md) | Local deployment and initialization |
 | [docs/reference-projects.md](./docs/reference-projects.md) | Reference project index |

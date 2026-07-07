@@ -6,7 +6,7 @@
 
 本项目是个人 AI 面试训练平台后端，当前重点是先完成可解释、可回放、可测试的后端闭环。Go Core API 负责确定性业务事实、状态机、幂等和审计；Python AI Runtime 负责模型调用、Prompt、结构化输出、memory 和后续 RAG/Agent 推理。
 
-当前不做招聘 SaaS、组织协作、候选人邀请、反作弊和完整前端重写。这些能力只保留接口和设计余量。
+当前不做招聘 SaaS、组织协作、候选人邀请和反作弊。这些能力只保留接口和设计余量。前端当前采用轻量 Vanilla TypeScript 工作台，先服务个人训练闭环，不引入重型前端框架或复杂组件体系。
 
 ## 已完成
 
@@ -39,18 +39,22 @@
 - Retrieval Harness MVP：`POST /api/retrieval/search` 返回 Skill reference、summary、recent history、approved memory 的 evidence、score、reason、source 和 debug trace；vector 索引未建立时显式返回 warning。
 - Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`docker` 每次创建临时禁网容器，`docker_warm` 复用按语言命名的 stopped container 并用 tmpfs 回到初始状态，二者都支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序和可配置镜像；`native_trusted` 可直接调用本机工具链加快本地可信开发，默认 disabled evaluator 不执行用户代码。
 - Evaluation Harness MVP：root-only `/api/evaluation/*` 支持样例 case 管理、dry-run 或真实 runtime 运行、`required_fields/contains/equals` 可配置断言、质量分数、错误 run 记录和 agent trace 关联。
+- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite，支持登录、中文/英文切换、lucide 图标、工作台概览、面试会话、代码题、memory review、admin 和 evaluation harness 接入；交互层包含状态条、loading/disabled 状态、表单校验、输入保留、空状态动作和危险操作确认。
 
 ## 下一批任务
 
 优先级按“能形成产品闭环”和“能降低后续返工风险”排序。
 
-1. Coding judge runner 增强。
+1. 前端产品化增强。
+   - Memory Review 做成队列式审核体验，补候选详情、风险标签、批量处理和审核后反馈。
+   - Interview Report 从 JSON preview 升级为正式报告页，展示总分、维度、证据、建议和 turn 回放。
+   - Evaluation Harness 增加 assertion 明细、失败解释、批量回归汇总和 latency/cost 指标。
+   - Admin 增加 Provider route 编辑、连通性测试入口、worker health drill-down 和 coding judge 配置可视化。
+   - 增加前端 smoke 测试，覆盖登录页、语言切换、导航、关键按钮状态和核心表单校验。
+
+2. Coding judge runner 增强。
    - 当前 Docker sandbox MVP 支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序。
    - 后续扩展统一编译缓存、镜像预拉取检查、更细的资源统计、长驻 runner 服务和函数签名式题目适配。
-
-2. 前端接入准备。
-   - 明确异步 trace 轮询、session 状态展示、报告页和 memory review 的接口契约。
-   - 复用现有后端 schema version，避免前端直接绑定内部实现。
 
 3. Evaluation Harness 增强。
    - 补齐出题、评分、追问、总结、RAG 命中和 memory 提取的默认样例集。
