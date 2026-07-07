@@ -57,6 +57,38 @@ const zh: Record<string, string> = {
   "Memory review": "记忆审核",
   "Admin console": "管理控制台",
   "Evaluation harness": "评测样例集",
+  "Live practice room": "直播练习房间",
+  "Run the interview like a focused call": "像专注会议一样进行面试",
+  "The layout follows meeting products: a main stage, participant tiles, a stable control bar and a right rail for session state.":
+    "布局参考会议产品：主舞台、参会者小窗、固定控制条和右侧会话状态栏。",
+  "AI Interviewer": "AI 面试官",
+  Live: "进行中",
+  Standby: "待命",
+  "Create a session to open the live interview room.": "创建会话后进入直播面试房间。",
+  "Create a session to receive the first backend-generated question.":
+    "创建会话后会收到第一道后端生成的问题。",
+  Candidate: "候选人",
+  You: "你",
+  "Camera off": "摄像头关闭",
+  "Self view": "自视图",
+  Runtime: "运行时",
+  Waiting: "等待中",
+  "No session": "暂无会话",
+  "AI channel": "AI 通道",
+  Muted: "已静音",
+  "Notes on": "笔记开启",
+  "Share prompt": "共享题面",
+  End: "结束",
+  "Session setup": "会话设置",
+  "Choose the room context before the first question is generated.":
+    "生成第一题前，先选择房间上下文。",
+  Poll: "轮询",
+  "Room state": "房间状态",
+  "Track the backend-owned state machine while the call is in progress.":
+    "在面试进行时跟踪后端状态机。",
+  "Candidate response": "候选人回答",
+  "Write the answer as if you are speaking in the live room. Submit when ready, then poll for the evaluation.":
+    "像在直播房间中口述一样写下答案。准备好后提交，再轮询评估结果。",
   "Control plane": "控制平面",
   "Keep the training loop visible": "让训练闭环保持可见",
   "Start from the work that changes state: create an interview, submit code, review memory, then use evaluation runs to catch regressions before the loop drifts.":

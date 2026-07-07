@@ -14,9 +14,12 @@ import {
 } from "./api";
 import { locales, normalizeLocale, translate, translateHtml, type Locale } from "./i18n";
 import {
+  Bot,
   BrainCircuit,
+  Captions,
   Check,
   ClipboardCheck,
+  Clock3,
   Code2,
   Database,
   FileSearch,
@@ -25,15 +28,25 @@ import {
   LayoutDashboard,
   LogIn,
   LogOut,
+  Mic,
+  MicOff,
   MessagesSquare,
+  MonitorUp,
+  PanelRightOpen,
+  PhoneOff,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   RotateCw,
   Save,
   Send,
   Settings2,
   Terminal,
+  UserRound,
+  Users,
+  Video,
+  VideoOff,
   X,
   createIcons
 } from "lucide";
@@ -104,9 +117,12 @@ interface AdminData {
 
 const api = new ApiClient();
 const iconSet = {
+  Bot,
   BrainCircuit,
+  Captions,
   Check,
   ClipboardCheck,
+  Clock3,
   Code2,
   Database,
   FileSearch,
@@ -115,15 +131,25 @@ const iconSet = {
   LayoutDashboard,
   LogIn,
   LogOut,
+  Mic,
+  MicOff,
   MessagesSquare,
+  MonitorUp,
+  PanelRightOpen,
+  PhoneOff,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   RotateCw,
   Save,
   Send,
   Settings2,
   Terminal,
+  UserRound,
+  Users,
+  Video,
+  VideoOff,
   X
 };
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -377,85 +403,152 @@ function renderInterview(): string {
   const session = state.interview.session;
   return `
     ${state.interview.error ? banner(state.interview.error, "error") : ""}
-    <section class="content-grid interview-board">
-      <article class="card session-card">
-        <div class="section-head">
-          <div><h2>Start or resume session</h2><p>Create an interview session, answer the current question, then poll trace state.</p></div>
-          <button class="button secondary" data-action="poll-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("rotate-cw")}<span>${state.interview.loading ? "Updating" : "Poll session"}</span></button>
+    <section class="live-room">
+      <div class="live-room-head">
+        <div>
+          <span class="eyebrow">Live practice room</span>
+          <h2>Run the interview like a focused call</h2>
+          <p>The layout follows meeting products: a main stage, participant tiles, a stable control bar and a right rail for session state.</p>
         </div>
-        <form id="session-form" class="form-row" aria-busy="${state.interview.loading ? "true" : "false"}">
-          <label>Skill
-            <select name="skill_id">${skillOptions(session?.skill_id)}</select>
-          </label>
-          <label>Question type
-            <select name="question_type">
-              <option value="backend">backend</option>
-              <option value="algorithm">algorithm</option>
-              <option value="system_design">system_design</option>
-            </select>
-          </label>
-          <label>Follow-ups
-            <input name="max_follow_ups" type="number" min="0" max="5" value="1" />
-          </label>
-          <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("plus")}<span>${state.interview.loading ? "Creating" : "Create session"}</span></button>
-        </form>
-        ${session ? renderSessionPanel(session) : emptyState("No active session", "Create a session to load the first backend-generated question.")}
-      </article>
-      <aside class="card state-card">
-        <div class="section-head compact">
-          <div><h2>Evaluation state</h2><p>Follow the backend-owned state machine without reading raw payloads first.</p></div>
+        <div class="room-clock">
+          ${icon("clock-3")}
+          <span>${escapeHtml(formatTime(session?.updated_at))}</span>
         </div>
-        ${session ? `
-          <div class="state-stack">
-            ${statePill("Flow", session.flow_status, "messages-square")}
-            ${statePill("Status", session.session_status, "terminal")}
-            ${statePill("Phase", session.phase, "clipboard-check")}
-            ${statePill("Total score", String(session.total_score), "file-text")}
-          </div>
-          <dl class="detail-list compact">
-            <div><dt>Session</dt><dd>${escapeHtml(session.session_id)}</dd></div>
-            <div><dt>Updated</dt><dd>${escapeHtml(formatTime(session.updated_at))}</dd></div>
-          </dl>
-        ` : emptyState("Waiting for session", "Trace and report controls appear after creation.")}
-        <div class="button-row">
-          <button class="button secondary" data-action="load-trace" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-search")}<span>Load trace</span></button>
-          <button class="button secondary" data-action="generate-report" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-text")}<span>Generate report</span></button>
-          <button class="button danger" data-action="finalize-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("flag")}<span>Finalize</span></button>
+      </div>
+      <div class="meeting-layout">
+        <div class="meeting-main">
+          ${renderLiveStage(session)}
+          ${session ? renderSessionPanel(session) : emptyState("No active session", "Create a session to open the live interview room.")}
         </div>
-        ${state.interview.trace.length ? renderTracePreview(state.interview.trace) : ""}
-        ${state.interview.report ? renderReportPreview(state.interview.report) : ""}
-      </aside>
+        <aside class="meeting-sidebar">
+          ${renderSessionSetup(session)}
+          ${renderEvaluationPanel(session)}
+        </aside>
+      </div>
     </section>
   `;
 }
 
-function renderSessionPanel(session: InterviewSession): string {
-  const question = session.current_question;
+function renderLiveStage(session: InterviewSession | null): string {
+  const question = session?.current_question;
   return `
-    <div class="question-card">
-      <div class="question-topline">
-        <span class="eyebrow">Question ${session.current_question_number || question?.number || 1}</span>
-        ${statusBadge(session.flow_status)}
+    <div class="live-stage">
+      <div class="speaker-tile interviewer-tile">
+        <div class="tile-bar">
+          <span>${icon("bot")}<strong>AI Interviewer</strong></span>
+          <b class="live-dot">${session ? "Live" : "Standby"}</b>
+        </div>
+        <div class="interviewer-avatar">${icon("brain-circuit", "avatar-icon")}</div>
+        <div class="question-card">
+          <div class="question-topline">
+            <span class="eyebrow">Question ${session?.current_question_number || question?.number || 1}</span>
+            ${statusBadge(session?.flow_status ?? "waiting")}
+          </div>
+          <h3>${escapeHtml(question?.title ?? "Backend interview question")}</h3>
+          <p>${escapeHtml(question?.prompt ?? "Create a session to receive the first backend-generated question.")}</p>
+          <div class="chip-row">${(question?.tags ?? ["runtime", "trace", "mock"]).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
+        </div>
       </div>
-      <h3>${escapeHtml(question?.title ?? "Backend interview question")}</h3>
-      <p>${escapeHtml(question?.prompt ?? "The backend has not returned a current question yet. Poll the session after workers run.")}</p>
-      <div class="question-meta">
-        <span>${icon("messages-square")}<strong>${escapeHtml(session.skill_id)}</strong></span>
-        <span>${icon("rotate-cw")}<strong>${session.follow_up_count}/${session.max_follow_ups}</strong></span>
-        <span>${icon("clipboard-check")}<strong>${escapeHtml(session.phase)}</strong></span>
+      <div class="participant-grid">
+        ${participantTile("Candidate", state.user?.display_name ?? "You", "user-round", "Camera off", "Self view")}
+        ${participantTile("Runtime", session ? session.skill_id : "Waiting", "radio", session ? session.flow_status : "No session", "AI channel")}
       </div>
-      <div class="chip-row">${(question?.tags ?? ["runtime", "trace"]).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
+      <div class="meeting-control-bar">
+        <span class="call-control muted">${icon("mic-off")}<b>Muted</b></span>
+        <span class="call-control muted">${icon("video-off")}<b>Camera off</b></span>
+        <span class="call-control">${icon("captions")}<b>Notes on</b></span>
+        <span class="call-control">${icon("monitor-up")}<b>Share prompt</b></span>
+        <button class="call-end" data-action="finalize-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("phone-off")}<span>End</span></button>
+      </div>
     </div>
-    <form id="answer-form" class="answer-form" aria-busy="${state.interview.loading ? "true" : "false"}">
-      <label>Your answer
-        <textarea name="answer" rows="8">${escapeHtml(state.interview.answer)}</textarea>
-      </label>
-      <div class="answer-actions">
-        <label class="check-row"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /> Dry run runtime calls</label>
-        <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("send")}<span>${state.interview.loading ? "Sending" : "Submit answer"}</span></button>
+  `;
+}
+
+function participantTile(role: string, name: string, iconName: string, stateText: string, caption: string): string {
+  return `
+    <div class="participant-tile">
+      <div class="participant-avatar">${icon(iconName)}</div>
+      <div>
+        <small>${escapeHtml(role)}</small>
+        <strong>${escapeHtml(name)}</strong>
+        <span>${escapeHtml(caption)} · ${escapeHtml(stateText)}</span>
       </div>
-    </form>
-    ${session.turns?.length ? renderTurns(session.turns) : ""}
+    </div>
+  `;
+}
+
+function renderSessionSetup(session: InterviewSession | null): string {
+  return `
+    <article class="room-card setup-card">
+      <div class="section-head compact">
+        <div><h2>Session setup</h2><p>Choose the room context before the first question is generated.</p></div>
+        <button class="button secondary" data-action="poll-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("rotate-cw")}<span>${state.interview.loading ? "Updating" : "Poll"}</span></button>
+      </div>
+      <form id="session-form" class="setup-form" aria-busy="${state.interview.loading ? "true" : "false"}">
+        <label>Skill
+          <select name="skill_id">${skillOptions(session?.skill_id)}</select>
+        </label>
+        <label>Question type
+          <select name="question_type">
+            <option value="backend">backend</option>
+            <option value="algorithm">algorithm</option>
+            <option value="system_design">system_design</option>
+          </select>
+        </label>
+        <label>Follow-ups
+          <input name="max_follow_ups" type="number" min="0" max="5" value="${session?.max_follow_ups ?? 1}" />
+        </label>
+        <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("plus")}<span>${state.interview.loading ? "Creating" : "Create session"}</span></button>
+      </form>
+    </article>
+  `;
+}
+
+function renderEvaluationPanel(session: InterviewSession | null): string {
+  return `
+    <article class="room-card state-card">
+      <div class="section-head compact">
+        <div><h2>Room state</h2><p>Track the backend-owned state machine while the call is in progress.</p></div>
+      </div>
+      ${session ? `
+        <div class="state-stack">
+          ${statePill("Flow", session.flow_status, "messages-square")}
+          ${statePill("Status", session.session_status, "terminal")}
+          ${statePill("Phase", session.phase, "clipboard-check")}
+          ${statePill("Total score", String(session.total_score), "file-text")}
+        </div>
+        <dl class="detail-list compact">
+          <div><dt>Session</dt><dd>${escapeHtml(session.session_id)}</dd></div>
+          <div><dt>Updated</dt><dd>${escapeHtml(formatTime(session.updated_at))}</dd></div>
+        </dl>
+      ` : emptyState("Waiting for session", "Trace and report controls appear after creation.")}
+      <div class="button-row">
+        <button class="button secondary" data-action="load-trace" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-search")}<span>Load trace</span></button>
+        <button class="button secondary" data-action="generate-report" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-text")}<span>Generate report</span></button>
+      </div>
+      ${state.interview.trace.length ? renderTracePreview(state.interview.trace) : ""}
+      ${state.interview.report ? renderReportPreview(state.interview.report) : ""}
+    </article>
+  `;
+}
+
+function renderSessionPanel(session: InterviewSession): string {
+  return `
+    <article class="answer-dock">
+      <div class="section-head compact">
+        <div><h2>Candidate response</h2><p>Write the answer as if you are speaking in the live room. Submit when ready, then poll for the evaluation.</p></div>
+      </div>
+      <form id="answer-form" class="answer-form" aria-busy="${state.interview.loading ? "true" : "false"}">
+        <label>Your answer
+          <textarea name="answer" rows="8">${escapeHtml(state.interview.answer)}</textarea>
+        </label>
+        <div class="answer-actions">
+          <label class="check-row"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /> Dry run runtime calls</label>
+          <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("send")}<span>${state.interview.loading ? "Sending" : "Submit answer"}</span></button>
+        </div>
+      </form>
+      ${session.turns?.length ? renderTurns(session.turns) : ""}
+    </article>
   `;
 }
 
@@ -665,17 +758,29 @@ function bindEvents(): void {
   });
 
   document.querySelector<HTMLButtonElement>("[data-action='logout']")?.addEventListener("click", () => void handleLogout());
-  document.querySelector<HTMLButtonElement>("[data-action='refresh']")?.addEventListener("click", () => void refreshCurrentView());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='refresh']").forEach((button) => {
+    button.addEventListener("click", () => void refreshCurrentView());
+  });
   document.querySelector<HTMLFormElement>("#session-form")?.addEventListener("submit", onSessionSubmit);
   document.querySelector<HTMLFormElement>("#answer-form")?.addEventListener("submit", onAnswerSubmit);
   document.querySelector<HTMLTextAreaElement>("textarea[name='answer']")?.addEventListener("input", (event) => {
     state.interview.answer = (event.currentTarget as HTMLTextAreaElement).value;
   });
-  document.querySelector<HTMLButtonElement>("[data-action='poll-session']")?.addEventListener("click", () => void pollSession());
-  document.querySelector<HTMLButtonElement>("[data-action='load-trace']")?.addEventListener("click", () => void loadTrace());
-  document.querySelector<HTMLButtonElement>("[data-action='generate-report']")?.addEventListener("click", () => void generateReport());
-  document.querySelector<HTMLButtonElement>("[data-action='finalize-session']")?.addEventListener("click", () => void finalizeSession());
-  document.querySelector<HTMLButtonElement>("[data-action='load-coding']")?.addEventListener("click", () => void loadCoding());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='poll-session']").forEach((button) => {
+    button.addEventListener("click", () => void pollSession());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-trace']").forEach((button) => {
+    button.addEventListener("click", () => void loadTrace());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='generate-report']").forEach((button) => {
+    button.addEventListener("click", () => void generateReport());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='finalize-session']").forEach((button) => {
+    button.addEventListener("click", () => void finalizeSession());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-coding']").forEach((button) => {
+    button.addEventListener("click", () => void loadCoding());
+  });
   document.querySelector<HTMLFormElement>("#coding-form")?.addEventListener("submit", onCodingSubmit);
   document.querySelector<HTMLSelectElement>("select[name='language']")?.addEventListener("change", (event) => {
     state.coding.language = (event.currentTarget as HTMLSelectElement).value;
@@ -686,15 +791,21 @@ function bindEvents(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-question-id]").forEach((button) => {
     button.addEventListener("click", () => void selectQuestion(button.dataset.questionId ?? ""));
   });
-  document.querySelector<HTMLButtonElement>("[data-action='load-memory']")?.addEventListener("click", () => void loadMemory());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-memory']").forEach((button) => {
+    button.addEventListener("click", () => void loadMemory());
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-action='approve-memory']").forEach((button) => {
     button.addEventListener("click", () => void reviewMemory(button.dataset.candidateId ?? "", "approve"));
   });
   document.querySelectorAll<HTMLButtonElement>("[data-action='reject-memory']").forEach((button) => {
     button.addEventListener("click", () => void reviewMemory(button.dataset.candidateId ?? "", "reject"));
   });
-  document.querySelector<HTMLButtonElement>("[data-action='load-admin']")?.addEventListener("click", () => void loadAdmin());
-  document.querySelector<HTMLButtonElement>("[data-action='load-evaluation']")?.addEventListener("click", () => void loadEvaluation());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-admin']").forEach((button) => {
+    button.addEventListener("click", () => void loadAdmin());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-evaluation']").forEach((button) => {
+    button.addEventListener("click", () => void loadEvaluation());
+  });
   document.querySelector<HTMLFormElement>("#evaluation-form")?.addEventListener("submit", onEvaluationSubmit);
   document.querySelectorAll<HTMLButtonElement>("[data-eval-case-id]").forEach((button) => {
     button.addEventListener("click", () => {

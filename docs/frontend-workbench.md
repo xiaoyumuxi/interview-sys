@@ -7,7 +7,7 @@
 | 页面 | 目的 | 主要交互 |
 |---|---|---|
 | 工作台 | 给用户一个全局入口和运行概览 | 查看 API、队列、outbox、judge 状态；跳转到面试、代码题和 memory review |
-| 面试 | 完成一次异步面试训练 | 创建 session、提交答案、轮询 session、加载 trace、生成 report、结束会话 |
+| 面试 | 以直播会议房间的方式完成一次异步面试训练 | 主舞台展示 AI 面试官和题目，参会者小窗展示候选人/Runtime，底部控制条提供静音、摄像头、笔记、共享题面和结束入口；右侧面板管理 session、trace 和 report |
 | 代码题 | 练习并提交完整程序到 judge | 浏览题库、选择题目、编辑代码、提交判题、查看异步 verdict |
 | 记忆 | 审核 Runtime 产出的候选记忆 | 加载 pending candidates、approve/reject，避免未审核 memory 进入 Prompt |
 | 管理 | 查看系统运维和配置状态 | 查看 Provider route、Provider 列表、worker summary、coding judge summary |
@@ -80,6 +80,7 @@ make build-frontend
 
 1. 把 Memory Review 做成队列式审核体验，支持候选详情、风险标签和批量处理。
 2. 把 Interview Report 做成正式报告页，减少 raw JSON 暴露。
-3. 给 Evaluation Harness 增加 assertion 明细、失败解释和批量回归汇总。
-4. 给 Admin 增加 Provider route 编辑、连通性测试入口和 worker health drill-down。
-5. 增加前端 smoke 测试，覆盖登录页渲染、语言切换、导航和关键按钮状态。
+3. 给直播面试房间补真实音视频/ASR/TTS 接口契约，当前麦克风、摄像头和共享题面是会议式状态控件。
+4. 给 Evaluation Harness 增加 assertion 明细、失败解释和批量回归汇总。
+5. 给 Admin 增加 Provider route 编辑、连通性测试入口和 worker health drill-down。
+6. 增加前端 smoke 测试，覆盖登录页渲染、语言切换、导航和关键按钮状态。
