@@ -742,22 +742,59 @@ function renderSessionPanel(session: InterviewSession): string {
 function renderTurns(turns: InterviewSession["turns"]): string {
   if (!turns?.length) return "";
   return `
-    <div class="turn-list rich">
-      <h3>Turn history</h3>
-      ${turns.map((turn) => `
-        <div class="turn-row">
+    <section class="turn-list transcript-list" aria-label="Interview transcript">
+      <div class="transcript-head">
+        <div>
+          <h3>Conversation replay</h3>
+          <p>Review each answer, runtime score, follow-up signal and trace handle.</p>
+        </div>
+        <span>${turns.length} turns</span>
+      </div>
+      ${turns.map(renderTurnCard).join("")}
+    </section>
+  `;
+}
+
+function renderTurnCard(turn: NonNullable<InterviewSession["turns"]>[number]): string {
+  const scoreTone = turn.score >= 80 ? "good" : turn.score >= 60 ? "warn" : "risk";
+  const followUp = turn.follow_up_needed
+    ? turn.follow_up_question || "Follow-up requested by runtime."
+    : "No follow-up requested.";
+  return `
+    <article class="transcript-turn">
+      <div class="transcript-marker">
+        <span>${icon("user-round")}</span>
+        <i></i>
+      </div>
+      <div class="transcript-body">
+        <div class="transcript-row-head">
           <div>
             <strong>Turn ${turn.question_number}.${turn.answer_round}</strong>
             <small>${escapeHtml(formatTime(turn.updated_at))}</small>
           </div>
-          <div class="turn-meta">
-            ${statusBadge(turn.turn_status)}
-            <span>score ${turn.score}</span>
-          </div>
-          ${turn.error_text ? `<p>${escapeHtml(turn.error_text)}</p>` : ""}
+          ${statusBadge(turn.turn_status)}
         </div>
-      `).join("")}
-    </div>
+        <div class="answer-bubble">
+          <small>Candidate answer</small>
+          <p>${escapeHtml(compactText(turn.user_answer, "No answer text recorded.", 360))}</p>
+        </div>
+        <div class="runtime-verdict">
+          <div class="score-ring ${scoreTone}">
+            <b>${Math.round(turn.score)}</b>
+            <small>score</small>
+          </div>
+          <div class="verdict-copy">
+            <strong>${turn.follow_up_needed ? "Follow-up needed" : "Answer accepted"}</strong>
+            <p>${escapeHtml(compactText(followUp, "No follow-up requested.", 220))}</p>
+          </div>
+          <div class="trace-chip">
+            ${icon("file-search")}
+            <span>${escapeHtml(turn.trace_id || turn.request_id || "trace pending")}</span>
+          </div>
+        </div>
+        ${turn.error_text ? `<div class="turn-error">${icon("x")}<span>${escapeHtml(turn.error_text)}</span></div>` : ""}
+      </div>
+    </article>
   `;
 }
 
@@ -1695,6 +1732,12 @@ function record(value: unknown): JsonObject {
 function stringValue(value: unknown, fallback = ""): string {
   if (value === null || value === undefined || value === "") return fallback;
   return String(value);
+}
+
+function compactText(value: unknown, fallback: string, maxLength: number): string {
+  const normalized = stringValue(value, fallback).replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
 }
 
 function formatTime(value: string | undefined): string {
