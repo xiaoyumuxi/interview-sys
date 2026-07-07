@@ -38,6 +38,7 @@
 - Final report generation：Go 聚合 session/turn 确定性事实并持久化 `interview_reports`，Python Runtime `summary` task 生成结构化报告内容。
 - Retrieval Harness MVP：`POST /api/retrieval/search` 返回 Skill reference、summary、recent history、approved memory 的 evidence、score、reason、source 和 debug trace；vector 索引未建立时显式返回 warning。
 - Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`docker` 每次创建临时禁网容器，`docker_warm` 复用按语言命名的 stopped container 并用 tmpfs 回到初始状态，二者都支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序和可配置镜像；`native_trusted` 可直接调用本机工具链加快本地可信开发，默认 disabled evaluator 不执行用户代码。
+- Evaluation Harness MVP：root-only `/api/evaluation/*` 支持样例 case 管理、dry-run 或真实 runtime 运行、`required_fields/contains/equals` 可配置断言、质量分数、错误 run 记录和 agent trace 关联。
 
 ## 下一批任务
 
@@ -47,14 +48,14 @@
    - 当前 Docker sandbox MVP 支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序。
    - 后续扩展统一编译缓存、镜像预拉取检查、更细的资源统计、长驻 runner 服务和函数签名式题目适配。
 
-2. Evaluation Harness。
-   - 建立出题、评分、追问、总结、RAG 命中和 memory 提取的样例集。
-   - 记录质量、成本、延迟和回归结果。
-   - 先服务后端稳定性，不急于做复杂评测平台。
-
-3. 前端接入准备。
+2. 前端接入准备。
    - 明确异步 trace 轮询、session 状态展示、报告页和 memory review 的接口契约。
    - 复用现有后端 schema version，避免前端直接绑定内部实现。
+
+3. Evaluation Harness 增强。
+   - 补齐出题、评分、追问、总结、RAG 命中和 memory 提取的默认样例集。
+   - 记录 token/cost 估算、延迟分布和批量回归汇总。
+   - 保持质量回归服务后端稳定性，不急于做复杂评测平台。
 
 ## 参考来源使用原则
 

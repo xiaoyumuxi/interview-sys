@@ -45,6 +45,7 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Async pipeline | PostgreSQL local outbox, Redis Stream, standalone worker and pending reclaim |
 | Reliability | answer idempotency, Redis single-flight, runtime snapshot and dead-letter handling |
 | Observability | agent traces, dead-letter analysis API and worker summary API |
+| Evaluation Harness | root-only case and run APIs with dry-run, assertion scoring and agent trace linkage |
 | Memory orchestration | Go `/api/memory/*` entrypoint for auth, user isolation and trace/audit; Python owns memory logic |
 | Memory admission | Context Engine admits only approved memory as `memory_context` and returns a `memory_admission` explanation |
 | Python Runtime | task endpoint, prompt safety boundary, structured output and memory APIs |
@@ -160,11 +161,12 @@ The current performance workflow is CI-level smoke load. It does not call real m
 | Providers | `GET/POST /api/providers`, `GET/PUT/DELETE /api/providers/{provider_id}`, `POST /api/providers/test` |
 | Routes | `GET /api/provider-routes`, `PUT /api/provider-routes/{task_type}` |
 | Skills | `GET/POST /api/skills`, `POST /api/skills/reload`, `GET /api/skills/{skill_id}` |
-| Context & Agent | `POST /api/context/preview`, `POST /api/agent/tasks` |
+| Context, Retrieval & Agent | `POST /api/context/preview`, `POST /api/retrieval/search`, `POST /api/agent/tasks` |
 | Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
-| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace` |
+| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
 | Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
-| Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary` |
+| Evaluation | `GET/POST /api/evaluation/cases`, `GET /api/evaluation/cases/{case_id}`, `POST /api/evaluation/cases/{case_id}/run`, `GET /api/evaluation/runs` |
+| Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary`, `GET /api/ops/coding-judge/summary` |
 
 Python Runtime:
 
@@ -184,7 +186,11 @@ Python Runtime:
 | Turn state | `interview_turns.turn_status` uses `queued -> running -> completed/failed`; stale running turns may return to `queued` |
 | Locks | No persistent business lock columns; concurrency relies on idempotency, `FOR UPDATE SKIP LOCKED`, turn state updates and short TTL Redis coordination |
 | Recovery | PostgreSQL runtime snapshots preserve business facts after Redis loss |
+| Final report | `interview_reports` stores report status and content; Go aggregates deterministic facts and Python Runtime only generates structured summary text |
+| Retrieval harness | `POST /api/retrieval/search` returns evidence, score, reason, source and debug trace across skill references, summaries, recent history and approved memory |
+| Evaluation harness | root-only `/api/evaluation/*` manages cases and run records; `expected.required_fields`, `expected.contains` and `expected.equals` define configurable assertions, and `POST /run` supports `dry_run` |
 | Worker | The API process enqueues and queries; `cmd/worker` consumes Redis Stream events |
+| Coding judge | `CODING_JUDGE_ENABLED=true` starts the coding judge loop in `cmd/worker`; `docker`, `docker_warm`, and `native_trusted` modes are configurable |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` is only for local compatibility mode |
 | Memory context | Context Preview and answer evaluation admit approved memory by user, task_type, skill, query and token budget; `memory_extraction` does not admit long-term memory |
 
@@ -226,5 +232,6 @@ If `PROVIDER_KEY_ENCRYPTION_SECRET` is not set, API keys must not be written int
 | [docs/go-python-responsibilities.md](./docs/go-python-responsibilities.md) | Go / Python responsibility split |
 | [docs/language-boundaries.md](./docs/language-boundaries.md) | Business, Provider and runtime boundaries |
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter pipeline and ops API |
+| [docs/evaluation-harness.md](./docs/evaluation-harness.md) | Evaluation cases, assertions and run records |
 | [docs/deployment.md](./docs/deployment.md) | Local deployment and initialization |
 | [docs/reference-projects.md](./docs/reference-projects.md) | Reference project index |

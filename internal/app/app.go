@@ -10,6 +10,7 @@ import (
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
+	"ai-interview-platform/internal/evalharness"
 	"ai-interview-platform/internal/httpapi"
 	"ai-interview-platform/internal/interview"
 	"ai-interview-platform/internal/provider"
@@ -57,6 +58,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	runtimeClient := airuntime.NewClient(cfg.AIRuntimeURL)
 	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
 	engine.SetMemorySource(runtimeClient)
+	evaluationService := evalharness.NewService(evalharness.NewStore(dbStore.DB()), dbStore, engine, runtimeClient)
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:         cfg.RedisAddr,
 		DialTimeout:  500 * time.Millisecond,
@@ -86,6 +88,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		AuthService:      authService,
 		RuntimeClient:    runtimeClient,
 		InterviewService: interviewService,
+		Evaluation:       evaluationService,
 	})
 
 	return &App{

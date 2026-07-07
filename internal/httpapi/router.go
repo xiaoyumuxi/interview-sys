@@ -10,6 +10,7 @@ import (
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
+	"ai-interview-platform/internal/evalharness"
 	"ai-interview-platform/internal/interview"
 	"ai-interview-platform/internal/provider"
 	airuntime "ai-interview-platform/internal/runtime"
@@ -30,6 +31,7 @@ type Dependencies struct {
 	AuthService      *auth.Service
 	RuntimeClient    *airuntime.Client
 	InterviewService *interview.Service
+	Evaluation       *evalharness.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -87,6 +89,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.POST("/coding/submissions", api.createSubmission)
 	group.GET("/coding/submissions", api.listSubmissions)
 	group.GET("/coding/submissions/:submission_id", api.getSubmission)
+	group.GET("/evaluation/cases", api.requireRoot(), api.listEvaluationCases)
+	group.POST("/evaluation/cases", api.requireRoot(), api.createEvaluationCase)
+	group.GET("/evaluation/cases/:case_id", api.requireRoot(), api.getEvaluationCase)
+	group.POST("/evaluation/cases/:case_id/run", api.requireRoot(), api.runEvaluationCase)
+	group.GET("/evaluation/runs", api.requireRoot(), api.listEvaluationRuns)
 	group.GET("/ops/dead-letters/summary", api.requireRoot(), api.deadLetterSummary)
 	group.GET("/ops/dead-letters", api.requireRoot(), api.listDeadLetters)
 	group.GET("/ops/dead-letters/:dead_letter_id", api.requireRoot(), api.getDeadLetter)

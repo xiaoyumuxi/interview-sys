@@ -45,6 +45,7 @@
 | Async pipeline | PostgreSQL local outbox、Redis Stream、独立 worker、pending reclaim |
 | Reliability | answer idempotency、Redis single-flight、runtime snapshot、dead-letter |
 | Observability | agent traces、dead-letter analysis API、worker summary API |
+| Evaluation Harness | root-only 样例集和 run 记录 API，支持 dry-run、断言评分和 agent trace 关联 |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
 | Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
@@ -164,6 +165,7 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
 | Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
 | Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
+| Evaluation | `GET/POST /api/evaluation/cases`, `GET /api/evaluation/cases/{case_id}`, `POST /api/evaluation/cases/{case_id}/run`, `GET /api/evaluation/runs` |
 | Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary`, `GET /api/ops/coding-judge/summary` |
 
 Python Runtime:
@@ -186,6 +188,7 @@ Python Runtime:
 | Recovery | PostgreSQL runtime snapshot 保留 Redis 丢失后的业务事实 |
 | Final report | `interview_reports` 保存报告状态和内容；Go 聚合确定性事实，Python Runtime `summary` task 只负责生成文本结构 |
 | Retrieval harness | `POST /api/retrieval/search` 返回 Skill reference、summary、recent history 和 approved memory 的 evidence、score、reason、source 与 debug trace；vector 暂以 warning 标记未建索引 |
+| Evaluation harness | root-only `/api/evaluation/*` 管理样例和运行记录；`expected.required_fields`、`expected.contains`、`expected.equals` 用于可配置断言，`POST /run` 支持 `dry_run` |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 每次创建临时禁网容器；`docker_warm` 复用按语言命名的 stopped container，通过 tmpfs 回到初始状态；镜像可配置且可用 `make pull-judge-images` 预拉取；`native_trusted` 直接调用本机工具链，启动快但不隔离，只适合本地可信代码；默认 disabled evaluator 不执行用户代码 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
@@ -235,6 +238,7 @@ make check-middleware
 | [docs/go-python-responsibilities.md](./docs/go-python-responsibilities.md) | Go / Python 职责分工 |
 | [docs/language-boundaries.md](./docs/language-boundaries.md) | 业务、Provider 和 runtime 边界 |
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter 链路和运维 API |
+| [docs/evaluation-harness.md](./docs/evaluation-harness.md) | Evaluation case、断言和 run 记录 |
 | [docs/deployment.md](./docs/deployment.md) | 本地部署和初始化 |
 | [docs/reference-projects.md](./docs/reference-projects.md) | 参考项目索引 |
 
