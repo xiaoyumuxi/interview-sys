@@ -123,6 +123,13 @@ const zh: Record<string, string> = {
   "Camera disabled": "摄像头已关闭",
   "Captions enabled": "字幕已开启",
   "Captions hidden": "字幕已隐藏",
+  "Speaking channel open": "发言通道已开启",
+  "Muted locally": "本地已静音",
+  "Answer with concrete tradeoffs, examples, and follow-up hooks.": "用具体取舍、例子和可追问点组织回答。",
+  characters: "字",
+  Round: "轮次",
+  "Dry run protected": "Dry run 保护中",
+  "Real runtime enabled": "真实 Runtime 已启用",
   "Session setup": "会话设置",
   "Choose the room context before the first question is generated.":
     "生成第一题前，先选择房间上下文。",

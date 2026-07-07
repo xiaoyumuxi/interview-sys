@@ -699,18 +699,39 @@ function renderEvaluationPanel(session: InterviewSession | null): string {
 }
 
 function renderSessionPanel(session: InterviewSession): string {
+  const answerLength = state.interview.answer.trim().length;
   return `
-    <article class="answer-dock">
-      <div class="section-head compact">
-        <div><h2>Candidate response</h2><p>Write the answer as if you are speaking in the live room. Submit when ready, then poll for the evaluation.</p></div>
+    <article class="answer-dock speaking-dock">
+      <div class="speaker-composer-head">
+        <div class="speaker-identity">
+          <span>${icon("user-round")}</span>
+          <div>
+            <h2>Candidate response</h2>
+            <p>Write the answer as if you are speaking in the live room. Submit when ready, then poll for the evaluation.</p>
+          </div>
+        </div>
+        <div class="speaker-state ${state.meeting.micOn ? "active" : "muted"}">
+          ${icon(state.meeting.micOn ? "mic" : "mic-off")}
+          <div>
+            <strong>${state.meeting.micOn ? "Speaking channel open" : "Muted locally"}</strong>
+            <small>${state.meeting.cameraOn ? "Camera on" : "Camera off"}</small>
+          </div>
+        </div>
       </div>
       <form id="answer-form" class="answer-form" aria-busy="${state.interview.loading ? "true" : "false"}">
-        <label>Your answer
-          <textarea name="answer" rows="8">${escapeHtml(state.interview.answer)}</textarea>
-        </label>
-        <div class="answer-actions">
-          <label class="check-row"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /> Dry run runtime calls</label>
-          <button class="button primary" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("send")}<span>${state.interview.loading ? "Sending" : "Submit answer"}</span></button>
+        <div class="answer-editor-shell">
+          <label class="answer-label">Your answer
+            <textarea name="answer" rows="8" placeholder="Answer with concrete tradeoffs, examples, and follow-up hooks.">${escapeHtml(state.interview.answer)}</textarea>
+          </label>
+          <div class="answer-cue-strip" aria-live="polite">
+            <span>${icon("messages-square")}<strong data-role="answer-length">${answerLength} characters</strong></span>
+            <span>${icon("flag")}<strong>Round ${session.current_question_number}.${session.answer_round}</strong></span>
+            <span>${icon("settings-2")}<strong>${state.interview.dryRun ? "Dry run protected" : "Real runtime enabled"}</strong></span>
+          </div>
+        </div>
+        <div class="answer-actions speaker-actions">
+          <label class="runtime-toggle"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /><span>${icon("settings-2")} Dry run runtime calls</span></label>
+          <button class="button primary submit-response" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("send")}<span>${state.interview.loading ? "Sending" : "Submit answer"}</span></button>
         </div>
       </form>
       ${session.turns?.length ? renderTurns(session.turns) : ""}
@@ -945,6 +966,10 @@ function bindEvents(): void {
   document.querySelector<HTMLFormElement>("#answer-form")?.addEventListener("submit", onAnswerSubmit);
   document.querySelector<HTMLTextAreaElement>("textarea[name='answer']")?.addEventListener("input", (event) => {
     state.interview.answer = (event.currentTarget as HTMLTextAreaElement).value;
+    const answerLength = document.querySelector<HTMLElement>("[data-role='answer-length']");
+    if (answerLength) {
+      answerLength.textContent = `${state.interview.answer.trim().length} ${ui("characters")}`;
+    }
   });
   document.querySelectorAll<HTMLButtonElement>("[data-action='poll-session']").forEach((button) => {
     button.addEventListener("click", () => void pollSession());
