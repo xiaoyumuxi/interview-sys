@@ -10,6 +10,7 @@
         {"id":"go.strconv.atoi","label":"strconv.Atoi","detail":"strconv.Atoi(s string) (int, error)","insert_text":"strconv.Atoi($0)","kind":"function","source":"standard_library","rank":75,"tags":["parse","int"]},
         {"id":"go.container.heap","label":"heap.Interface","detail":"container/heap priority queue contract","insert_text":"type hp []int\n\nfunc (h hp) Len() int { return len(h) }\nfunc (h hp) Less(i, j int) bool { return h[i] < h[j] }\nfunc (h hp) Swap(i, j int) { h[i], h[j] = h[j], h[i] }\nfunc (h *hp) Push(x any) { *h = append(*h, x.(int)) }\nfunc (h *hp) Pop() any {\n\told := *h\n\tx := old[len(old)-1]\n\t*h = old[:len(old)-1]\n\treturn x\n}","kind":"snippet","source":"standard_library","rank":76,"tags":["heap","priority","queue"]}
       ],
+      "types": {"strings.Builder":"strings.Builder","Builder":"strings.Builder","bytes.Buffer":"bytes.Buffer","Buffer":"bytes.Buffer","bufio.Scanner":"bufio.Scanner","Scanner":"bufio.Scanner"},
       "members": {
         "fmt": [
           {"id":"go.fmt.Println","label":"Println","detail":"fmt.Println(a ...any)","insert_text":"Println($0)","kind":"function","source":"standard_library","rank":5,"tags":["print","stdout"]},
@@ -30,6 +31,26 @@
           {"id":"go.strconv.Atoi","label":"Atoi","detail":"strconv.Atoi(s string) (int, error)","insert_text":"Atoi($0)","kind":"function","source":"standard_library","rank":5,"tags":["string","int"]},
           {"id":"go.strconv.Itoa","label":"Itoa","detail":"strconv.Itoa(i int) string","insert_text":"Itoa($0)","kind":"function","source":"standard_library","rank":6,"tags":["int","string"]},
           {"id":"go.strconv.ParseInt","label":"ParseInt","detail":"strconv.ParseInt(s, base, bitSize)","insert_text":"ParseInt($1, $2, $0)","kind":"function","source":"standard_library","rank":7,"tags":["parse"]}
+        ],
+        "strings.Builder": [
+          {"id":"go.strings.Builder.WriteString","label":"WriteString","detail":"builder.WriteString(s string) (int, error)","insert_text":"WriteString($0)","kind":"method","source":"inferred_type","rank":5,"tags":["write","append","string"]},
+          {"id":"go.strings.Builder.WriteRune","label":"WriteRune","detail":"builder.WriteRune(r rune) (int, error)","insert_text":"WriteRune($0)","kind":"method","source":"inferred_type","rank":6,"tags":["write","rune"]},
+          {"id":"go.strings.Builder.String","label":"String","detail":"builder.String() string","insert_text":"String()","kind":"method","source":"inferred_type","rank":7,"tags":["result","string"]},
+          {"id":"go.strings.Builder.Len","label":"Len","detail":"builder.Len() int","insert_text":"Len()","kind":"method","source":"inferred_type","rank":8,"tags":["length","size"]},
+          {"id":"go.strings.Builder.Reset","label":"Reset","detail":"builder.Reset()","insert_text":"Reset()","kind":"method","source":"inferred_type","rank":9,"tags":["clear","reset"]}
+        ],
+        "bytes.Buffer": [
+          {"id":"go.bytes.Buffer.Write","label":"Write","detail":"buffer.Write(p []byte) (int, error)","insert_text":"Write($0)","kind":"method","source":"inferred_type","rank":5,"tags":["write","bytes"]},
+          {"id":"go.bytes.Buffer.WriteString","label":"WriteString","detail":"buffer.WriteString(s string) (int, error)","insert_text":"WriteString($0)","kind":"method","source":"inferred_type","rank":6,"tags":["write","string"]},
+          {"id":"go.bytes.Buffer.String","label":"String","detail":"buffer.String() string","insert_text":"String()","kind":"method","source":"inferred_type","rank":7,"tags":["result","string"]},
+          {"id":"go.bytes.Buffer.Bytes","label":"Bytes","detail":"buffer.Bytes() []byte","insert_text":"Bytes()","kind":"method","source":"inferred_type","rank":8,"tags":["result","bytes"]},
+          {"id":"go.bytes.Buffer.Reset","label":"Reset","detail":"buffer.Reset()","insert_text":"Reset()","kind":"method","source":"inferred_type","rank":9,"tags":["clear","reset"]}
+        ],
+        "bufio.Scanner": [
+          {"id":"go.bufio.Scanner.Scan","label":"Scan","detail":"scanner.Scan() bool","insert_text":"Scan()","kind":"method","source":"inferred_type","rank":5,"tags":["input","next"]},
+          {"id":"go.bufio.Scanner.Text","label":"Text","detail":"scanner.Text() string","insert_text":"Text()","kind":"method","source":"inferred_type","rank":6,"tags":["input","string"]},
+          {"id":"go.bufio.Scanner.Bytes","label":"Bytes","detail":"scanner.Bytes() []byte","insert_text":"Bytes()","kind":"method","source":"inferred_type","rank":7,"tags":["input","bytes"]},
+          {"id":"go.bufio.Scanner.Err","label":"Err","detail":"scanner.Err() error","insert_text":"Err()","kind":"method","source":"inferred_type","rank":8,"tags":["error"]}
         ]
       }
     },
@@ -48,6 +69,7 @@
         {"id":"java.system.out.println","label":"System.out.println","detail":"System.out.println(value)","insert_text":"System.out.println($0)","kind":"method","source":"standard_library","rank":73,"tags":["sout","print","stdout"]},
         {"id":"java.sout","label":"sout println","detail":"System.out.println(...)","insert_text":"System.out.println($0);","kind":"snippet","source":"standard_library","rank":74,"tags":["sout","println","print","stdout"]}
       ],
+      "types": {"Map":"Map","HashMap":"Map","LinkedHashMap":"Map","List":"List","ArrayList":"List","LinkedList":"List","Set":"Set","HashSet":"Set","TreeSet":"Set","Queue":"Queue","Deque":"Queue","ArrayDeque":"Queue","PriorityQueue":"Queue","StringBuilder":"StringBuilder","String":"String"},
       "members": {
         "System": [
           {"id":"java.System.out","label":"out","detail":"System.out PrintStream","insert_text":"out","kind":"property","source":"standard_library","rank":5,"tags":["stdout","print","println"]},
@@ -74,6 +96,51 @@
           {"id":"java.Math.max","label":"max","detail":"Math.max(a, b)","insert_text":"max($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["max"]},
           {"id":"java.Math.min","label":"min","detail":"Math.min(a, b)","insert_text":"min($1, $0)","kind":"function","source":"standard_library","rank":6,"tags":["min"]},
           {"id":"java.Math.abs","label":"abs","detail":"Math.abs(x)","insert_text":"abs($0)","kind":"function","source":"standard_library","rank":7,"tags":["abs"]}
+        ],
+        "Map": [
+          {"id":"java.Map.put","label":"put","detail":"map.put(key, value)","insert_text":"put($1, $0)","kind":"method","source":"inferred_type","rank":5,"tags":["insert","map"]},
+          {"id":"java.Map.get","label":"get","detail":"map.get(key)","insert_text":"get($0)","kind":"method","source":"inferred_type","rank":6,"tags":["lookup","map"]},
+          {"id":"java.Map.getOrDefault","label":"getOrDefault","detail":"map.getOrDefault(key, defaultValue)","insert_text":"getOrDefault($1, $0)","kind":"method","source":"inferred_type","rank":7,"tags":["lookup","default"]},
+          {"id":"java.Map.containsKey","label":"containsKey","detail":"map.containsKey(key)","insert_text":"containsKey($0)","kind":"method","source":"inferred_type","rank":8,"tags":["contains","key"]},
+          {"id":"java.Map.remove","label":"remove","detail":"map.remove(key)","insert_text":"remove($0)","kind":"method","source":"inferred_type","rank":9,"tags":["delete"]},
+          {"id":"java.Map.size","label":"size","detail":"map.size() int","insert_text":"size()","kind":"method","source":"inferred_type","rank":10,"tags":["length","count"]},
+          {"id":"java.Map.computeIfAbsent","label":"computeIfAbsent","detail":"map.computeIfAbsent(key, mappingFunction)","insert_text":"computeIfAbsent($1, key -> $0)","kind":"method","source":"inferred_type","rank":11,"tags":["insert","default"]}
+        ],
+        "List": [
+          {"id":"java.List.add","label":"add","detail":"list.add(element)","insert_text":"add($0)","kind":"method","source":"inferred_type","rank":5,"tags":["append","insert"]},
+          {"id":"java.List.get","label":"get","detail":"list.get(index)","insert_text":"get($0)","kind":"method","source":"inferred_type","rank":6,"tags":["index","lookup"]},
+          {"id":"java.List.set","label":"set","detail":"list.set(index, element)","insert_text":"set($1, $0)","kind":"method","source":"inferred_type","rank":7,"tags":["update","index"]},
+          {"id":"java.List.size","label":"size","detail":"list.size() int","insert_text":"size()","kind":"method","source":"inferred_type","rank":8,"tags":["length","count"]},
+          {"id":"java.List.contains","label":"contains","detail":"list.contains(element)","insert_text":"contains($0)","kind":"method","source":"inferred_type","rank":9,"tags":["find","search"]},
+          {"id":"java.List.sort","label":"sort","detail":"list.sort(comparator)","insert_text":"sort($0)","kind":"method","source":"inferred_type","rank":10,"tags":["order","comparator"]}
+        ],
+        "Set": [
+          {"id":"java.Set.add","label":"add","detail":"set.add(element)","insert_text":"add($0)","kind":"method","source":"inferred_type","rank":5,"tags":["insert"]},
+          {"id":"java.Set.contains","label":"contains","detail":"set.contains(element)","insert_text":"contains($0)","kind":"method","source":"inferred_type","rank":6,"tags":["find","search"]},
+          {"id":"java.Set.remove","label":"remove","detail":"set.remove(element)","insert_text":"remove($0)","kind":"method","source":"inferred_type","rank":7,"tags":["delete"]},
+          {"id":"java.Set.size","label":"size","detail":"set.size() int","insert_text":"size()","kind":"method","source":"inferred_type","rank":8,"tags":["length","count"]},
+          {"id":"java.Set.isEmpty","label":"isEmpty","detail":"set.isEmpty() boolean","insert_text":"isEmpty()","kind":"method","source":"inferred_type","rank":9,"tags":["empty"]}
+        ],
+        "Queue": [
+          {"id":"java.Queue.offer","label":"offer","detail":"queue.offer(element)","insert_text":"offer($0)","kind":"method","source":"inferred_type","rank":5,"tags":["enqueue","push"]},
+          {"id":"java.Queue.poll","label":"poll","detail":"queue.poll()","insert_text":"poll()","kind":"method","source":"inferred_type","rank":6,"tags":["dequeue","pop"]},
+          {"id":"java.Queue.peek","label":"peek","detail":"queue.peek()","insert_text":"peek()","kind":"method","source":"inferred_type","rank":7,"tags":["front","top"]},
+          {"id":"java.Queue.size","label":"size","detail":"queue.size() int","insert_text":"size()","kind":"method","source":"inferred_type","rank":8,"tags":["length","count"]},
+          {"id":"java.Queue.isEmpty","label":"isEmpty","detail":"queue.isEmpty() boolean","insert_text":"isEmpty()","kind":"method","source":"inferred_type","rank":9,"tags":["empty"]}
+        ],
+        "StringBuilder": [
+          {"id":"java.StringBuilder.append","label":"append","detail":"builder.append(value)","insert_text":"append($0)","kind":"method","source":"inferred_type","rank":5,"tags":["write","string"]},
+          {"id":"java.StringBuilder.toString","label":"toString","detail":"builder.toString() String","insert_text":"toString()","kind":"method","source":"inferred_type","rank":6,"tags":["result","string"]},
+          {"id":"java.StringBuilder.length","label":"length","detail":"builder.length() int","insert_text":"length()","kind":"method","source":"inferred_type","rank":7,"tags":["size","count"]},
+          {"id":"java.StringBuilder.reverse","label":"reverse","detail":"builder.reverse()","insert_text":"reverse()","kind":"method","source":"inferred_type","rank":8,"tags":["reverse"]},
+          {"id":"java.StringBuilder.charAt","label":"charAt","detail":"builder.charAt(index)","insert_text":"charAt($0)","kind":"method","source":"inferred_type","rank":9,"tags":["index","character"]}
+        ],
+        "String": [
+          {"id":"java.String.length","label":"length","detail":"string.length() int","insert_text":"length()","kind":"method","source":"inferred_type","rank":5,"tags":["size","count"]},
+          {"id":"java.String.charAt","label":"charAt","detail":"string.charAt(index)","insert_text":"charAt($0)","kind":"method","source":"inferred_type","rank":6,"tags":["index","character"]},
+          {"id":"java.String.substring","label":"substring","detail":"string.substring(beginIndex, endIndex)","insert_text":"substring($1, $0)","kind":"method","source":"inferred_type","rank":7,"tags":["slice"]},
+          {"id":"java.String.indexOf","label":"indexOf","detail":"string.indexOf(value)","insert_text":"indexOf($0)","kind":"method","source":"inferred_type","rank":8,"tags":["find","search"]},
+          {"id":"java.String.toCharArray","label":"toCharArray","detail":"string.toCharArray() char[]","insert_text":"toCharArray()","kind":"method","source":"inferred_type","rank":9,"tags":["array","characters"]}
         ]
       }
     },
@@ -87,6 +154,7 @@
         {"id":"python.enumerate","label":"enumerate","detail":"enumerate(iterable)","insert_text":"enumerate($0)","kind":"function","source":"standard_library","rank":45,"tags":["loop","index"]},
         {"id":"python.stdin","label":"sys.stdin.readline","detail":"sys.stdin.readline()","insert_text":"sys.stdin.readline().strip()","kind":"function","source":"standard_library","rank":46,"tags":["stdin","input"]}
       ],
+      "types": {"list":"list","List":"list","dict":"dict","Dict":"dict","set":"set","Set":"set","deque":"deque","Deque":"deque","Counter":"Counter","str":"str","String":"str"},
       "members": {
         "sys": [
           {"id":"python.sys.stdin","label":"stdin","detail":"sys.stdin","insert_text":"stdin","kind":"property","source":"standard_library","rank":5,"tags":["input"]},
@@ -100,6 +168,49 @@
         "heapq": [
           {"id":"python.heapq.heappush","label":"heappush","detail":"heapq.heappush(heap, item)","insert_text":"heappush($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["heap"]},
           {"id":"python.heapq.heappop","label":"heappop","detail":"heapq.heappop(heap)","insert_text":"heappop($0)","kind":"function","source":"standard_library","rank":6,"tags":["heap"]}
+        ],
+        "list": [
+          {"id":"python.list.append","label":"append","detail":"list.append(value)","insert_text":"append($0)","kind":"method","source":"inferred_type","rank":5,"tags":["add","push"]},
+          {"id":"python.list.pop","label":"pop","detail":"list.pop(index=-1)","insert_text":"pop()","kind":"method","source":"inferred_type","rank":6,"tags":["remove","last"]},
+          {"id":"python.list.extend","label":"extend","detail":"list.extend(iterable)","insert_text":"extend($0)","kind":"method","source":"inferred_type","rank":7,"tags":["append","iterable"]},
+          {"id":"python.list.sort","label":"sort","detail":"list.sort(key=None, reverse=False)","insert_text":"sort()","kind":"method","source":"inferred_type","rank":8,"tags":["order"]},
+          {"id":"python.list.reverse","label":"reverse","detail":"list.reverse()","insert_text":"reverse()","kind":"method","source":"inferred_type","rank":9,"tags":["order"]},
+          {"id":"python.list.index","label":"index","detail":"list.index(value)","insert_text":"index($0)","kind":"method","source":"inferred_type","rank":10,"tags":["find","search"]}
+        ],
+        "dict": [
+          {"id":"python.dict.get","label":"get","detail":"dict.get(key, default=None)","insert_text":"get($0)","kind":"method","source":"inferred_type","rank":5,"tags":["lookup","map"]},
+          {"id":"python.dict.setdefault","label":"setdefault","detail":"dict.setdefault(key, default=None)","insert_text":"setdefault($1, $0)","kind":"method","source":"inferred_type","rank":6,"tags":["default","insert"]},
+          {"id":"python.dict.items","label":"items","detail":"dict.items()","insert_text":"items()","kind":"method","source":"inferred_type","rank":7,"tags":["iterate","pairs"]},
+          {"id":"python.dict.keys","label":"keys","detail":"dict.keys()","insert_text":"keys()","kind":"method","source":"inferred_type","rank":8,"tags":["iterate","keys"]},
+          {"id":"python.dict.values","label":"values","detail":"dict.values()","insert_text":"values()","kind":"method","source":"inferred_type","rank":9,"tags":["iterate","values"]},
+          {"id":"python.dict.pop","label":"pop","detail":"dict.pop(key)","insert_text":"pop($0)","kind":"method","source":"inferred_type","rank":10,"tags":["remove","delete"]}
+        ],
+        "set": [
+          {"id":"python.set.add","label":"add","detail":"set.add(value)","insert_text":"add($0)","kind":"method","source":"inferred_type","rank":5,"tags":["insert"]},
+          {"id":"python.set.discard","label":"discard","detail":"set.discard(value)","insert_text":"discard($0)","kind":"method","source":"inferred_type","rank":6,"tags":["remove","safe"]},
+          {"id":"python.set.remove","label":"remove","detail":"set.remove(value)","insert_text":"remove($0)","kind":"method","source":"inferred_type","rank":7,"tags":["delete"]},
+          {"id":"python.set.union","label":"union","detail":"set.union(other)","insert_text":"union($0)","kind":"method","source":"inferred_type","rank":8,"tags":["combine"]},
+          {"id":"python.set.intersection","label":"intersection","detail":"set.intersection(other)","insert_text":"intersection($0)","kind":"method","source":"inferred_type","rank":9,"tags":["common"]}
+        ],
+        "deque": [
+          {"id":"python.deque.append","label":"append","detail":"deque.append(value)","insert_text":"append($0)","kind":"method","source":"inferred_type","rank":5,"tags":["right","push"]},
+          {"id":"python.deque.appendleft","label":"appendleft","detail":"deque.appendleft(value)","insert_text":"appendleft($0)","kind":"method","source":"inferred_type","rank":6,"tags":["left","push"]},
+          {"id":"python.deque.pop","label":"pop","detail":"deque.pop()","insert_text":"pop()","kind":"method","source":"inferred_type","rank":7,"tags":["right","remove"]},
+          {"id":"python.deque.popleft","label":"popleft","detail":"deque.popleft()","insert_text":"popleft()","kind":"method","source":"inferred_type","rank":8,"tags":["left","remove"]},
+          {"id":"python.deque.extend","label":"extend","detail":"deque.extend(iterable)","insert_text":"extend($0)","kind":"method","source":"inferred_type","rank":9,"tags":["append","iterable"]}
+        ],
+        "Counter": [
+          {"id":"python.Counter.most_common","label":"most_common","detail":"counter.most_common(n=None)","insert_text":"most_common()","kind":"method","source":"inferred_type","rank":5,"tags":["frequency","top"]},
+          {"id":"python.Counter.elements","label":"elements","detail":"counter.elements()","insert_text":"elements()","kind":"method","source":"inferred_type","rank":6,"tags":["iterate"]},
+          {"id":"python.Counter.update","label":"update","detail":"counter.update(iterable_or_mapping)","insert_text":"update($0)","kind":"method","source":"inferred_type","rank":7,"tags":["add","frequency"]}
+        ],
+        "str": [
+          {"id":"python.str.split","label":"split","detail":"str.split(sep=None)","insert_text":"split()","kind":"method","source":"inferred_type","rank":5,"tags":["parts"]},
+          {"id":"python.str.strip","label":"strip","detail":"str.strip(chars=None)","insert_text":"strip()","kind":"method","source":"inferred_type","rank":6,"tags":["trim"]},
+          {"id":"python.str.startswith","label":"startswith","detail":"str.startswith(prefix)","insert_text":"startswith($0)","kind":"method","source":"inferred_type","rank":7,"tags":["prefix"]},
+          {"id":"python.str.endswith","label":"endswith","detail":"str.endswith(suffix)","insert_text":"endswith($0)","kind":"method","source":"inferred_type","rank":8,"tags":["suffix"]},
+          {"id":"python.str.replace","label":"replace","detail":"str.replace(old, new)","insert_text":"replace($1, $0)","kind":"method","source":"inferred_type","rank":9,"tags":["substitute"]},
+          {"id":"python.str.find","label":"find","detail":"str.find(sub)","insert_text":"find($0)","kind":"method","source":"inferred_type","rank":10,"tags":["search"]}
         ]
       }
     },
@@ -111,6 +222,7 @@
         {"id":"js.console.log","label":"console.log","detail":"console.log(...data)","insert_text":"console.log($0)","kind":"method","source":"standard_library","rank":43,"tags":["print","debug"]},
         {"id":"js.math.max","label":"Math.max","detail":"Math.max(...values)","insert_text":"Math.max($0)","kind":"function","source":"standard_library","rank":44,"tags":["max","math"]}
       ],
+      "types": {"Map":"MapInstance","Set":"SetInstance","Array":"ArrayInstance","Object":"ObjectInstance","String":"StringInstance"},
       "members": {
         "console": [
           {"id":"js.console.log","label":"log","detail":"console.log(...data)","insert_text":"log($0)","kind":"method","source":"standard_library","rank":5,"tags":["print","debug"]},
@@ -125,10 +237,40 @@
         "Array": [
           {"id":"js.Array.from","label":"from","detail":"Array.from(iterable)","insert_text":"from($0)","kind":"function","source":"standard_library","rank":5,"tags":["array","iterable"]},
           {"id":"js.Array.isArray","label":"isArray","detail":"Array.isArray(value)","insert_text":"isArray($0)","kind":"function","source":"standard_library","rank":6,"tags":["array","check"]}
+        ],
+        "MapInstance": [
+          {"id":"js.Map.set","label":"set","detail":"map.set(key, value)","insert_text":"set($1, $0)","kind":"method","source":"inferred_type","rank":5,"tags":["insert","map"]},
+          {"id":"js.Map.get","label":"get","detail":"map.get(key)","insert_text":"get($0)","kind":"method","source":"inferred_type","rank":6,"tags":["lookup","map"]},
+          {"id":"js.Map.has","label":"has","detail":"map.has(key)","insert_text":"has($0)","kind":"method","source":"inferred_type","rank":7,"tags":["contains","key"]},
+          {"id":"js.Map.delete","label":"delete","detail":"map.delete(key)","insert_text":"delete($0)","kind":"method","source":"inferred_type","rank":8,"tags":["remove"]},
+          {"id":"js.Map.entries","label":"entries","detail":"map.entries()","insert_text":"entries()","kind":"method","source":"inferred_type","rank":9,"tags":["iterate","pairs"]}
+        ],
+        "SetInstance": [
+          {"id":"js.Set.add","label":"add","detail":"set.add(value)","insert_text":"add($0)","kind":"method","source":"inferred_type","rank":5,"tags":["insert"]},
+          {"id":"js.Set.has","label":"has","detail":"set.has(value)","insert_text":"has($0)","kind":"method","source":"inferred_type","rank":6,"tags":["contains"]},
+          {"id":"js.Set.delete","label":"delete","detail":"set.delete(value)","insert_text":"delete($0)","kind":"method","source":"inferred_type","rank":7,"tags":["remove"]},
+          {"id":"js.Set.values","label":"values","detail":"set.values()","insert_text":"values()","kind":"method","source":"inferred_type","rank":8,"tags":["iterate"]}
+        ],
+        "ArrayInstance": [
+          {"id":"js.Array.push","label":"push","detail":"array.push(...items)","insert_text":"push($0)","kind":"method","source":"inferred_type","rank":5,"tags":["append","add"]},
+          {"id":"js.Array.pop","label":"pop","detail":"array.pop()","insert_text":"pop()","kind":"method","source":"inferred_type","rank":6,"tags":["remove","last"]},
+          {"id":"js.Array.map","label":"map","detail":"array.map(callback)","insert_text":"map(($1) => $0)","kind":"method","source":"inferred_type","rank":7,"tags":["transform"]},
+          {"id":"js.Array.filter","label":"filter","detail":"array.filter(predicate)","insert_text":"filter(($1) => $0)","kind":"method","source":"inferred_type","rank":8,"tags":["select"]},
+          {"id":"js.Array.reduce","label":"reduce","detail":"array.reduce(callback, initialValue)","insert_text":"reduce(($1, $2) => $0, $3)","kind":"method","source":"inferred_type","rank":9,"tags":["fold"]},
+          {"id":"js.Array.sort","label":"sort","detail":"array.sort(compareFn)","insert_text":"sort(($1, $2) => $0)","kind":"method","source":"inferred_type","rank":10,"tags":["order"]},
+          {"id":"js.Array.includes","label":"includes","detail":"array.includes(value)","insert_text":"includes($0)","kind":"method","source":"inferred_type","rank":11,"tags":["contains","search"]}
+        ],
+        "StringInstance": [
+          {"id":"js.String.includes","label":"includes","detail":"string.includes(searchString)","insert_text":"includes($0)","kind":"method","source":"inferred_type","rank":5,"tags":["contains"]},
+          {"id":"js.String.indexOf","label":"indexOf","detail":"string.indexOf(searchString)","insert_text":"indexOf($0)","kind":"method","source":"inferred_type","rank":6,"tags":["find","search"]},
+          {"id":"js.String.slice","label":"slice","detail":"string.slice(start, end)","insert_text":"slice($1, $0)","kind":"method","source":"inferred_type","rank":7,"tags":["substring"]},
+          {"id":"js.String.split","label":"split","detail":"string.split(separator)","insert_text":"split($0)","kind":"method","source":"inferred_type","rank":8,"tags":["parts"]},
+          {"id":"js.String.trim","label":"trim","detail":"string.trim()","insert_text":"trim()","kind":"method","source":"inferred_type","rank":9,"tags":["whitespace"]}
         ]
       }
     },
     "typescript": {
+      "extends": "javascript",
       "globals": [
         {"id":"ts.map","label":"Map<K,V>","detail":"new Map<K,V>()","insert_text":"new Map<$1, $2>()","kind":"class","source":"standard_library","rank":40,"tags":["map","hash"]},
         {"id":"ts.set","label":"Set<T>","detail":"new Set<T>()","insert_text":"new Set<$1>()","kind":"class","source":"standard_library","rank":41,"tags":["set","hash"]},
@@ -161,11 +303,65 @@
         {"id":"cpp.sort","label":"std::sort","detail":"std::sort(first, last)","insert_text":"sort($1, $0)","kind":"function","source":"standard_library","rank":70,"tags":["sort","array"]},
         {"id":"cpp.lower_bound","label":"std::lower_bound","detail":"std::lower_bound(first, last, value)","insert_text":"lower_bound($1, $2, $0)","kind":"function","source":"standard_library","rank":71,"tags":["binary","search"]}
       ],
+      "types": {"vector":"vector","unordered_map":"map","map":"map","unordered_set":"set","set":"set","priority_queue":"priority_queue","queue":"queue","deque":"deque","string":"string"},
       "members": {
         "std": [
           {"id":"cpp.std.sort","label":"sort","detail":"std::sort(first, last)","insert_text":"sort($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["sort"]},
           {"id":"cpp.std.lower_bound","label":"lower_bound","detail":"std::lower_bound(first, last, value)","insert_text":"lower_bound($1, $2, $0)","kind":"function","source":"standard_library","rank":6,"tags":["binary","search"]},
           {"id":"cpp.std.upper_bound","label":"upper_bound","detail":"std::upper_bound(first, last, value)","insert_text":"upper_bound($1, $2, $0)","kind":"function","source":"standard_library","rank":7,"tags":["binary","search"]}
+        ],
+        "vector": [
+          {"id":"cpp.vector.push_back","label":"push_back","detail":"vector.push_back(value)","insert_text":"push_back($0)","kind":"method","source":"inferred_type","rank":5,"tags":["append","add"]},
+          {"id":"cpp.vector.pop_back","label":"pop_back","detail":"vector.pop_back()","insert_text":"pop_back()","kind":"method","source":"inferred_type","rank":6,"tags":["remove","last"]},
+          {"id":"cpp.vector.size","label":"size","detail":"vector.size()","insert_text":"size()","kind":"method","source":"inferred_type","rank":7,"tags":["length","count"]},
+          {"id":"cpp.vector.empty","label":"empty","detail":"vector.empty()","insert_text":"empty()","kind":"method","source":"inferred_type","rank":8,"tags":["empty"]},
+          {"id":"cpp.vector.begin","label":"begin","detail":"vector.begin()","insert_text":"begin()","kind":"method","source":"inferred_type","rank":9,"tags":["iterator","first"]},
+          {"id":"cpp.vector.end","label":"end","detail":"vector.end()","insert_text":"end()","kind":"method","source":"inferred_type","rank":10,"tags":["iterator","last"]},
+          {"id":"cpp.vector.front","label":"front","detail":"vector.front()","insert_text":"front()","kind":"method","source":"inferred_type","rank":11,"tags":["first"]},
+          {"id":"cpp.vector.back","label":"back","detail":"vector.back()","insert_text":"back()","kind":"method","source":"inferred_type","rank":12,"tags":["last"]}
+        ],
+        "map": [
+          {"id":"cpp.map.find","label":"find","detail":"map.find(key)","insert_text":"find($0)","kind":"method","source":"inferred_type","rank":5,"tags":["lookup","iterator"]},
+          {"id":"cpp.map.count","label":"count","detail":"map.count(key)","insert_text":"count($0)","kind":"method","source":"inferred_type","rank":6,"tags":["contains","lookup"]},
+          {"id":"cpp.map.erase","label":"erase","detail":"map.erase(key)","insert_text":"erase($0)","kind":"method","source":"inferred_type","rank":7,"tags":["remove","delete"]},
+          {"id":"cpp.map.size","label":"size","detail":"map.size()","insert_text":"size()","kind":"method","source":"inferred_type","rank":8,"tags":["length","count"]},
+          {"id":"cpp.map.empty","label":"empty","detail":"map.empty()","insert_text":"empty()","kind":"method","source":"inferred_type","rank":9,"tags":["empty"]}
+        ],
+        "set": [
+          {"id":"cpp.set.insert","label":"insert","detail":"set.insert(value)","insert_text":"insert($0)","kind":"method","source":"inferred_type","rank":5,"tags":["add"]},
+          {"id":"cpp.set.find","label":"find","detail":"set.find(value)","insert_text":"find($0)","kind":"method","source":"inferred_type","rank":6,"tags":["lookup","iterator"]},
+          {"id":"cpp.set.count","label":"count","detail":"set.count(value)","insert_text":"count($0)","kind":"method","source":"inferred_type","rank":7,"tags":["contains"]},
+          {"id":"cpp.set.erase","label":"erase","detail":"set.erase(value)","insert_text":"erase($0)","kind":"method","source":"inferred_type","rank":8,"tags":["remove","delete"]},
+          {"id":"cpp.set.size","label":"size","detail":"set.size()","insert_text":"size()","kind":"method","source":"inferred_type","rank":9,"tags":["length","count"]}
+        ],
+        "priority_queue": [
+          {"id":"cpp.priority_queue.push","label":"push","detail":"priority_queue.push(value)","insert_text":"push($0)","kind":"method","source":"inferred_type","rank":5,"tags":["add","heap"]},
+          {"id":"cpp.priority_queue.pop","label":"pop","detail":"priority_queue.pop()","insert_text":"pop()","kind":"method","source":"inferred_type","rank":6,"tags":["remove","heap"]},
+          {"id":"cpp.priority_queue.top","label":"top","detail":"priority_queue.top()","insert_text":"top()","kind":"method","source":"inferred_type","rank":7,"tags":["peek","heap"]},
+          {"id":"cpp.priority_queue.size","label":"size","detail":"priority_queue.size()","insert_text":"size()","kind":"method","source":"inferred_type","rank":8,"tags":["length","count"]},
+          {"id":"cpp.priority_queue.empty","label":"empty","detail":"priority_queue.empty()","insert_text":"empty()","kind":"method","source":"inferred_type","rank":9,"tags":["empty"]}
+        ],
+        "queue": [
+          {"id":"cpp.queue.push","label":"push","detail":"queue.push(value)","insert_text":"push($0)","kind":"method","source":"inferred_type","rank":5,"tags":["enqueue","add"]},
+          {"id":"cpp.queue.pop","label":"pop","detail":"queue.pop()","insert_text":"pop()","kind":"method","source":"inferred_type","rank":6,"tags":["dequeue","remove"]},
+          {"id":"cpp.queue.front","label":"front","detail":"queue.front()","insert_text":"front()","kind":"method","source":"inferred_type","rank":7,"tags":["peek","first"]},
+          {"id":"cpp.queue.back","label":"back","detail":"queue.back()","insert_text":"back()","kind":"method","source":"inferred_type","rank":8,"tags":["last"]},
+          {"id":"cpp.queue.empty","label":"empty","detail":"queue.empty()","insert_text":"empty()","kind":"method","source":"inferred_type","rank":9,"tags":["empty"]}
+        ],
+        "deque": [
+          {"id":"cpp.deque.push_back","label":"push_back","detail":"deque.push_back(value)","insert_text":"push_back($0)","kind":"method","source":"inferred_type","rank":5,"tags":["right","add"]},
+          {"id":"cpp.deque.push_front","label":"push_front","detail":"deque.push_front(value)","insert_text":"push_front($0)","kind":"method","source":"inferred_type","rank":6,"tags":["left","add"]},
+          {"id":"cpp.deque.pop_back","label":"pop_back","detail":"deque.pop_back()","insert_text":"pop_back()","kind":"method","source":"inferred_type","rank":7,"tags":["right","remove"]},
+          {"id":"cpp.deque.pop_front","label":"pop_front","detail":"deque.pop_front()","insert_text":"pop_front()","kind":"method","source":"inferred_type","rank":8,"tags":["left","remove"]},
+          {"id":"cpp.deque.front","label":"front","detail":"deque.front()","insert_text":"front()","kind":"method","source":"inferred_type","rank":9,"tags":["first"]},
+          {"id":"cpp.deque.back","label":"back","detail":"deque.back()","insert_text":"back()","kind":"method","source":"inferred_type","rank":10,"tags":["last"]}
+        ],
+        "string": [
+          {"id":"cpp.string.size","label":"size","detail":"string.size()","insert_text":"size()","kind":"method","source":"inferred_type","rank":5,"tags":["length","count"]},
+          {"id":"cpp.string.substr","label":"substr","detail":"string.substr(pos, count)","insert_text":"substr($1, $0)","kind":"method","source":"inferred_type","rank":6,"tags":["substring"]},
+          {"id":"cpp.string.find","label":"find","detail":"string.find(value)","insert_text":"find($0)","kind":"method","source":"inferred_type","rank":7,"tags":["search"]},
+          {"id":"cpp.string.push_back","label":"push_back","detail":"string.push_back(char)","insert_text":"push_back($0)","kind":"method","source":"inferred_type","rank":8,"tags":["append","character"]},
+          {"id":"cpp.string.empty","label":"empty","detail":"string.empty()","insert_text":"empty()","kind":"method","source":"inferred_type","rank":9,"tags":["empty"]}
         ]
       }
     }

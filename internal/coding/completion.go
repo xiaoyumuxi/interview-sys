@@ -24,8 +24,10 @@ type completionCatalog struct {
 }
 
 type completionCatalogLanguage struct {
+	Extends string                            `json:"extends"`
 	Globals []CompletionSuggestion            `json:"globals"`
 	Members map[string][]CompletionSuggestion `json:"members"`
+	Types   map[string]string                 `json:"types"`
 }
 
 type CompletionRequest struct {
@@ -91,7 +93,7 @@ func SuggestCompletions(req CompletionRequest, question *Question) (CompletionRe
 	}
 	ctx := newCompletionContext(req)
 	resp := CompletionResponse{
-		SchemaVersion: "coding.completion.v1",
+		SchemaVersion: "coding.completion.v2",
 		Language:      language,
 		Prefix:        ctx.query,
 		CursorOffset:  ctx.cursor,
@@ -99,6 +101,7 @@ func SuggestCompletions(req CompletionRequest, question *Question) (CompletionRe
 			"starter_templates",
 			"standard_library_members",
 			"local_symbol_scan",
+			"local_receiver_type_inference",
 			"prefix_filtering",
 			"data_driven_standard_library_catalog",
 		},
@@ -259,21 +262,157 @@ func standardLibrarySuggestions(language string) []CompletionSuggestion {
 }
 
 func standardLibraryMemberSuggestions(language string, source string, ctx completionContext) []CompletionSuggestion {
-	qualifier := ctx.qualifier
-	if language == "go" {
-		qualifier = resolveGoImportQualifier(source, qualifier)
-	}
 	catalog, ok := completionCatalogForLanguage(language)
 	if !ok {
 		return nil
 	}
+	qualifier := ctx.qualifier
+	if language == "go" {
+		qualifier = resolveGoImportQualifier(source, qualifier)
+	}
 	items := catalog.Members[qualifier]
+	if len(items) == 0 {
+		if inferredType := inferReceiverType(language, sourceBeforeCursor(source, ctx.cursor), ctx.qualifier); inferredType != "" {
+			items = catalog.Members[resolveCatalogType(catalog.Types, inferredType)]
+		}
+	}
 	return filterCompletionSuggestions(items, ctx.query)
+}
+
+func sourceBeforeCursor(source string, cursor int) string {
+	if cursor < 0 || cursor > len(source) {
+		return source
+	}
+	return source[:cursor]
+}
+
+func resolveCatalogType(types map[string]string, inferredType string) string {
+	typeName := strings.TrimSpace(inferredType)
+	if resolved := types[typeName]; resolved != "" {
+		return resolved
+	}
+	typeName = strings.TrimLeft(typeName, "*&")
+	if strings.HasSuffix(typeName, "[]") {
+		if resolved := types["Array"]; resolved != "" {
+			return resolved
+		}
+	}
+	if generic := strings.IndexAny(typeName, "<["); generic >= 0 {
+		typeName = typeName[:generic]
+	}
+	typeName = strings.TrimPrefix(typeName, "std::")
+	if dot := strings.LastIndex(typeName, "."); dot >= 0 {
+		typeName = typeName[dot+1:]
+	}
+	if resolved := types[typeName]; resolved != "" {
+		return resolved
+	}
+	return typeName
+}
+
+func inferReceiverType(language string, source string, receiver string) string {
+	if !regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`).MatchString(receiver) {
+		return ""
+	}
+	name := regexp.QuoteMeta(receiver)
+	switch language {
+	case "java":
+		if value := lastCapturedMatch(source, `\b`+name+`\s*=\s*new\s+([A-Za-z_$][\w$.,]*(?:\s*<[^;(){}=]*>)?)\s*\(`); value != "" {
+			return value
+		}
+		return lastCapturedMatch(source, `\b([A-Za-z_$][\w$.]*(?:\s*<[^;(){}=]+>)?(?:\[\])?)\s+`+name+`\s*(?:=|;|,)`)
+	case "python":
+		if value := lastCapturedMatch(source, `(?m)^\s*`+name+`\s*:\s*([A-Za-z_][\w.\[\], ]*)\s*(?:=|$)`); value != "" {
+			return value
+		}
+		if value := lastCapturedMatch(source, `(?m)^\s*`+name+`\s*=\s*([A-Za-z_][\w.]*)\s*\(`); value != "" {
+			return resolvePythonImportedType(source, value)
+		}
+		return inferLiteralType(source, name, map[string]string{
+			`\[`:   "list",
+			`\{`:   "dict",
+			`["']`: "str",
+		})
+	case "javascript", "typescript":
+		if value := lastCapturedMatch(source, `\b(?:const|let|var)\s+`+name+`\s*:\s*([A-Za-z_$][\w$<>,.\[\] ]*)\s*(?:=|;)`); value != "" {
+			return value
+		}
+		if value := lastCapturedMatch(source, `\b(?:const|let|var)\s+`+name+`\s*=\s*new\s+([A-Za-z_$][\w$]*)\s*(?:<[^;(){}=]*>)?\s*\(`); value != "" {
+			return value
+		}
+		return inferLiteralType(source, name, map[string]string{
+			`\[`:     "Array",
+			`\{`:     "Object",
+			"[`\"']": "String",
+		})
+	case "cpp", "c++":
+		return lastCapturedMatch(source, `\b((?:std::)?[A-Za-z_]\w*(?:\s*<[^;{}=]+>)?)\s+`+name+`\s*(?:[;={]|\(|$)`)
+	case "go":
+		if value := lastCapturedMatch(source, `\bvar\s+`+name+`\s+([*\[\]A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)`); value != "" {
+			return value
+		}
+		if value := lastCapturedMatch(source, `\b`+name+`\s*:=\s*&?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)\s*\{`); value != "" {
+			return value
+		}
+		return lastCapturedMatch(source, `\b`+name+`\s*:=\s*new\(\s*([^)]+)\s*\)`)
+	}
+	return ""
+}
+
+func lastCapturedMatch(source string, pattern string) string {
+	matches := regexp.MustCompile(pattern).FindAllStringSubmatch(source, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	match := matches[len(matches)-1]
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func inferLiteralType(source string, name string, literals map[string]string) string {
+	for pattern, typeName := range literals {
+		if regexp.MustCompile(`(?m)^\s*(?:const\s+|let\s+|var\s+)?` + name + `\s*=\s*` + pattern).MatchString(source) {
+			return typeName
+		}
+	}
+	return ""
+}
+
+func resolvePythonImportedType(source string, typeName string) string {
+	if dot := strings.LastIndex(typeName, "."); dot >= 0 {
+		return typeName[dot+1:]
+	}
+	for _, match := range regexp.MustCompile(`(?m)^\s*from\s+[\w.]+\s+import\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?`).FindAllStringSubmatch(source, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		alias := match[2]
+		if alias == "" {
+			alias = match[1]
+		}
+		if alias == typeName {
+			return match[1]
+		}
+	}
+	return typeName
 }
 
 func completionCatalogForLanguage(language string) (completionCatalogLanguage, bool) {
 	completionCatalogOnce.Do(func() {
 		completionCatalogErr = json.Unmarshal(completionCatalogJSON, &completionCatalogData)
+		if completionCatalogErr != nil {
+			return
+		}
+		for name, catalog := range completionCatalogData.Languages {
+			if catalog.Extends == "" {
+				continue
+			}
+			if base, ok := completionCatalogData.Languages[catalog.Extends]; ok {
+				completionCatalogData.Languages[name] = inheritCompletionCatalog(catalog, base)
+			}
+		}
 	})
 	if completionCatalogErr != nil || completionCatalogData.Languages == nil {
 		return completionCatalogLanguage{}, false
@@ -286,6 +425,30 @@ func completionCatalogForLanguage(language string) (completionCatalogLanguage, b
 	}
 	catalog, ok := completionCatalogData.Languages[language]
 	return catalog, ok
+}
+
+func inheritCompletionCatalog(catalog completionCatalogLanguage, base completionCatalogLanguage) completionCatalogLanguage {
+	types := make(map[string]string, len(base.Types)+len(catalog.Types))
+	for typeName, memberGroup := range catalog.Types {
+		types[typeName] = memberGroup
+	}
+	for typeName, memberGroup := range base.Types {
+		if types[typeName] == "" {
+			types[typeName] = memberGroup
+		}
+	}
+	catalog.Types = types
+	membersByQualifier := make(map[string][]CompletionSuggestion, len(base.Members)+len(catalog.Members))
+	for qualifier, members := range catalog.Members {
+		membersByQualifier[qualifier] = members
+	}
+	for qualifier, members := range base.Members {
+		if len(membersByQualifier[qualifier]) == 0 {
+			membersByQualifier[qualifier] = members
+		}
+	}
+	catalog.Members = membersByQualifier
+	return catalog
 }
 
 func resolveGoImportQualifier(source string, qualifier string) string {

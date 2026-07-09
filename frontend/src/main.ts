@@ -1358,6 +1358,7 @@ function sourceLabel(source: string): string {
     question_pattern: "Question",
     starter_template: "Starter",
     standard_library: "Library",
+    inferred_type: "Type inference",
     local_symbol: "Local",
     local: "Local"
   };
