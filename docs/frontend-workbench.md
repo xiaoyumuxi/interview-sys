@@ -50,11 +50,18 @@
 
 - 编辑体验：Monaco 提供 Tab 缩进、括号匹配、当前文档单词联想、基础语法高亮、光标/选择和可滚动代码区。
 - 语言切换：切换 Go、Java、Python、JavaScript、TypeScript、C++ 时会保存当前语言草稿，并加载目标语言草稿；如果目标语言还没有草稿，则加载对应 starter。
-- 轻量联想：前端 completion provider 组合当前文件符号和 Go API 的 `POST /api/coding/completions` v2 profile。后端根据语言、题目标签、当前源码和光标前缀返回 starter、题目模式、数据化标准库 catalog 和本地符号建议，并从光标前的显式声明、构造器、类型标注和常见字面量推断局部接收者类型。前端只保留 starter / loop / guard 等编辑快捷片段作为低延迟兜底，不再维护标准库 API 表；completion profile 使用有界内存缓存，并合并相同上下文的并发请求。典型实例补全包括 Java `Map<String, Integer> counts; counts.`、Python `queue = deque(); queue.`、JavaScript `const seen = new Map(); seen.`、TypeScript 类型标注、C++ `vector<int> nums; nums.` 和 Go `strings.Builder`。
+- 轻量联想：Monaco completion provider 优先调用浏览器 Web Worker。Worker 按当前语言懒加载 Tree-sitter WASM grammar，增量维护源码 AST，从变量声明、函数参数、构造表达式、类型标注、import alias 和常见字面量建立局部符号表，再查询自动生成的 OJ SDK 索引。典型实例补全包括 Java `Map<String, Integer> counts; counts.`、Python `queue = deque(); queue.`、JavaScript `const seen = new Map(); seen.`、TypeScript 类型标注、C++ `vector<int> nums; nums.` 和 Go `strings.Builder`。
+- 后端兜底：AST 无法确定接收者类型或索引没有候选时，才调用 Go API `POST /api/coding/completions` v2；题目加载和手动刷新也会读取后端的 starter、题型模式和确定性 profile。编辑和光标移动不会周期性请求后端，同一后端上下文仍使用有界缓存与并发合并。
 - 快捷工具：提供 `Format` 和 `Starter` 按钮，分别执行本地缩进整理和插入当前语言 starter。
 - 判题边界：编辑器只处理本地文本体验，不执行代码；真正提交仍走 Go API 和 coding judge worker。
 
-轻量联想不是完整 LSP：它能识别 catalog 中常见容器的泛型外层类型，但不会编译第三方依赖、解析跨文件符号、做重载决议或给出真实编译诊断。后端 completion API 是确定性建议服务，不调用模型、不写数据库，也不为用户维持常驻语言进程；前端按题目、语言、前缀、光标和源码指纹做小型缓存，减少重复请求。这个局部类型推断 + catalog 层适合高并发 OJ；需要完整 IDE 语义时，再通过独立 completion gateway 按需接入 Eclipse JDT LS、clangd、Pyright/Jedi、gopls 或 tsserver。
+轻量联想不是完整 LSP：它不会解析任意第三方依赖、跨文件符号、重载决议或真实编译诊断。语法分析与标准 OJ 类型补全都在浏览器执行，不为用户维持常驻语言进程；需要完整 IDE 语义时，再通过独立 completion gateway 按需接入 Eclipse JDT LS、clangd、Pyright、gopls 或 tsserver。
+
+### OJ SDK 索引
+
+`frontend/oj-completion-profile.json` 只维护算法场景需要的类型、别名、模块和工厂函数白名单，不维护具体方法。`npm run generate:oj-index` 会生成 `frontend/src/generated/oj-completion-index.json`：Java 方法来自 `javap`，Go 来自 `go doc`，Python 来自标准库 introspection，JavaScript/TypeScript 来自 TypeScript `lib*.d.ts`，C++ 来自 Clang code completion。`npm run check:oj-index` 用于确认已提交索引与当前工具链生成结果一致。
+
+Tree-sitter 运行时和六种 grammar 是独立静态资源；页面只请求当前语言 grammar。主线程只处理 Monaco，AST 解析、增量 tree 更新、作用域扫描和候选过滤全部在 Worker 内完成。
 
 ## 设置中心
 

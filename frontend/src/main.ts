@@ -24,6 +24,8 @@ import {
   type User
 } from "./api";
 import { locales, normalizeLocale, translate, translateHtml, type Locale } from "./i18n";
+import { suggestOJCompletions } from "./completion/oj-completion-client";
+import type { OJCompletionSuggestion } from "./completion/types";
 import {
   Bot,
   BrainCircuit,
@@ -221,7 +223,6 @@ let codeEditor: monaco.editor.IStandaloneCodeEditor | null = null;
 let codeEditorModel: monaco.editor.ITextModel | null = null;
 let completionProvider: monaco.IDisposable | null = null;
 let monacoThemeReady = false;
-let completionRefreshTimer: number | null = null;
 let completionRequestSeq = 0;
 const completionProfileCache = new Map<string, CodingCompletionResponse>();
 const completionProfileRequests = new Map<string, Promise<CodingCompletionResponse>>();
@@ -355,10 +356,6 @@ function mountCodeEditor(): void {
 }
 
 function disposeCodeEditor(): void {
-  if (completionRefreshTimer !== null) {
-    window.clearTimeout(completionRefreshTimer);
-    completionRefreshTimer = null;
-  }
   completionProvider?.dispose();
   completionProvider = null;
   codeEditor?.dispose();
@@ -422,10 +419,53 @@ function registerCodeCompletionProvider(language: string): void {
         sortText: `3_${String(index).padStart(3, "0")}_${item.label}`,
         range
       }));
-      const remoteSuggestions = await remoteCompletionItems(model, position, language, word.word, range);
-      return { suggestions: dedupeMonacoSuggestions([...remoteSuggestions, ...symbolSuggestions, ...snippetSuggestions]) };
+      const astSuggestions = await astCompletionItems(model, position, language, word.word, range);
+      const remoteSuggestions = astSuggestions.length
+        ? []
+        : await remoteCompletionItems(model, position, language, word.word, range);
+      return {
+        suggestions: dedupeMonacoSuggestions([
+          ...astSuggestions,
+          ...remoteSuggestions,
+          ...symbolSuggestions,
+          ...snippetSuggestions
+        ])
+      };
     }
   });
+}
+
+async function astCompletionItems(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  language: string,
+  prefix: string,
+  range: monaco.Range
+): Promise<monaco.languages.CompletionItem[]> {
+  const source = model.getValue();
+  const suggestions = await suggestOJCompletions({
+    language,
+    source,
+    cursorOffset: model.getOffsetAt(position),
+    prefix
+  });
+  return suggestions.map((item, index) => ojSuggestionToMonaco(item, index, range));
+}
+
+function ojSuggestionToMonaco(
+  item: OJCompletionSuggestion,
+  index: number,
+  range: monaco.Range
+): monaco.languages.CompletionItem {
+  return {
+    label: item.label,
+    kind: monacoCompletionKind(item.kind),
+    detail: `${sourceLabel(item.source)} · ${item.detail}`,
+    insertText: item.insert_text,
+    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+    sortText: `0_${String(item.rank ?? index).padStart(3, "0")}_${item.label}`,
+    range
+  };
 }
 
 function monacoLanguage(language: string): string {
@@ -1359,6 +1399,7 @@ function sourceLabel(source: string): string {
     starter_template: "Starter",
     standard_library: "Library",
     inferred_type: "Type inference",
+    oj_sdk_index: "OJ SDK",
     local_symbol: "Local",
     local: "Local"
   };
@@ -2011,17 +2052,6 @@ async function loadCompletionProfile(shouldRender = false): Promise<void> {
   }
 }
 
-function scheduleCompletionProfileRefresh(): void {
-  if (!state.coding.selectedQuestion) return;
-  if (completionRefreshTimer !== null) {
-    window.clearTimeout(completionRefreshTimer);
-  }
-  completionRefreshTimer = window.setTimeout(() => {
-    completionRefreshTimer = null;
-    void loadCompletionProfile(false);
-  }, 650);
-}
-
 async function selectQuestion(questionId: string, shouldRender = true): Promise<void> {
   const fallback = state.coding.questions.find((item) => item.question_id === questionId) ?? null;
   state.coding.selectedQuestion = fallback;
@@ -2310,7 +2340,6 @@ function syncCodeEditorState(): void {
   if (lineMetric) lineMetric.textContent = `${lineCount(value)} ${ui("lines")}`;
   if (charMetric) charMetric.textContent = `${value.length} ${ui("chars")}`;
   if (list) list.innerHTML = completionPanelItems(state.coding.language, value).map(renderCompletionButton).join("");
-  scheduleCompletionProfileRefresh();
 }
 
 function updateCompletionPanel(): void {

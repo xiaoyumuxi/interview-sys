@@ -1,0 +1,70 @@
+{
+  "schema_version": "oj.completion.profile.v1",
+  "languages": {
+    "java": {
+      "types": {
+        "Map": {"probe":"java.util.Map","aliases":["Map","HashMap","LinkedHashMap","TreeMap"],"mode":"instance"},
+        "List": {"probe":"java.util.List","aliases":["List","ArrayList","LinkedList"],"mode":"instance"},
+        "Set": {"probe":"java.util.Set","aliases":["Set","HashSet","LinkedHashSet","TreeSet"],"mode":"instance"},
+        "Queue": {"probe":"java.util.Queue","aliases":["Queue","Deque","ArrayDeque","PriorityQueue"],"mode":"instance"},
+        "String": {"probe":"java.lang.String","aliases":["String"],"mode":"instance"},
+        "StringBuilder": {"probe":"java.lang.StringBuilder","aliases":["StringBuilder"],"mode":"instance"},
+        "Scanner": {"probe":"java.util.Scanner","aliases":["Scanner"],"mode":"instance"},
+        "BufferedReader": {"probe":"java.io.BufferedReader","aliases":["BufferedReader"],"mode":"instance"},
+        "Arrays": {"probe":"java.util.Arrays","aliases":["Arrays"],"mode":"static"},
+        "Collections": {"probe":"java.util.Collections","aliases":["Collections"],"mode":"static"},
+        "Math": {"probe":"java.lang.Math","aliases":["Math"],"mode":"static"}
+      }
+    },
+    "go": {
+      "types": {
+        "strings.Builder": {"probe":"strings.Builder","aliases":["strings.Builder","Builder"],"mode":"type"},
+        "bytes.Buffer": {"probe":"bytes.Buffer","aliases":["bytes.Buffer","Buffer"],"mode":"type"},
+        "bufio.Scanner": {"probe":"bufio.Scanner","aliases":["bufio.Scanner","Scanner"],"mode":"type","factories":["bufio.NewScanner"]},
+        "fmt": {"probe":"fmt","aliases":["fmt"],"mode":"package"},
+        "sort": {"probe":"sort","aliases":["sort"],"mode":"package"},
+        "strings": {"probe":"strings","aliases":["strings"],"mode":"package"},
+        "strconv": {"probe":"strconv","aliases":["strconv"],"mode":"package"},
+        "heap": {"probe":"container/heap","aliases":["heap"],"mode":"package"}
+      }
+    },
+    "python": {
+      "types": {
+        "list": {"probe":"builtins.list","aliases":["list","List"]},
+        "dict": {"probe":"builtins.dict","aliases":["dict","Dict"]},
+        "set": {"probe":"builtins.set","aliases":["set","Set"]},
+        "str": {"probe":"builtins.str","aliases":["str","String"]},
+        "deque": {"probe":"collections.deque","aliases":["deque","Deque"]},
+        "Counter": {"probe":"collections.Counter","aliases":["Counter"]},
+        "heapq": {"probe":"heapq","aliases":["heapq"],"mode":"module"},
+        "bisect": {"probe":"bisect","aliases":["bisect"],"mode":"module"},
+        "math": {"probe":"math","aliases":["math"],"mode":"module"}
+      }
+    },
+    "javascript": {
+      "types": {
+        "Array": {"probe":"Array","aliases":["Array"]},
+        "Map": {"probe":"Map","aliases":["Map"]},
+        "Set": {"probe":"Set","aliases":["Set"]},
+        "String": {"probe":"String","aliases":["String"]},
+        "Math": {"probe":"Math","aliases":["Math"]},
+        "Console": {"probe":"Console","aliases":["console","Console"]}
+      }
+    },
+    "typescript": {"extends":"javascript","types":{}},
+    "cpp": {
+      "types": {
+        "vector": {"probe":"std::vector<int>","include":"vector","aliases":["vector","std::vector"]},
+        "map": {"probe":"std::map<int, int>","include":"map","aliases":["map","std::map"]},
+        "unordered_map": {"probe":"std::unordered_map<int, int>","include":"unordered_map","aliases":["unordered_map","std::unordered_map"]},
+        "set": {"probe":"std::set<int>","include":"set","aliases":["set","std::set"]},
+        "unordered_set": {"probe":"std::unordered_set<int>","include":"unordered_set","aliases":["unordered_set","std::unordered_set"]},
+        "queue": {"probe":"std::queue<int>","include":"queue","aliases":["queue","std::queue"]},
+        "deque": {"probe":"std::deque<int>","include":"deque","aliases":["deque","std::deque"]},
+        "stack": {"probe":"std::stack<int>","include":"stack","aliases":["stack","std::stack"]},
+        "priority_queue": {"probe":"std::priority_queue<int>","include":"queue","aliases":["priority_queue","std::priority_queue"]},
+        "string": {"probe":"std::string","include":"string","aliases":["string","std::string"]}
+      }
+    }
+  }
+}
