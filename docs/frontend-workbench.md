@@ -1,6 +1,6 @@
 # 前端工作台
 
-`frontend` 是面向用户的训练工作台，不是后端 API 调试页。它使用 Vanilla TypeScript、CSS、Vite 和少量图标依赖，目标是在不引入重型前端框架的前提下，把 Go Core API、Worker、Python Runtime 和 Evaluation Harness 串成可操作的训练流程。
+`frontend` 是面向用户的训练工作台，不是后端 API 调试页。它使用 Vanilla TypeScript、CSS、Vite、Monaco Editor 和少量图标依赖，目标是在不引入重型前端框架和语言服务进程的前提下，把 Go Core API、Worker、Python Runtime 和 Evaluation Harness 串成可操作的训练流程。
 
 ## 当前页面
 
@@ -8,7 +8,7 @@
 |---|---|---|
 | 工作台 | 给用户一个全局入口和运行概览 | 查看 API、队列、outbox、judge 状态；跳转到面试、代码题和 memory review |
 | 面试 | 以直播会议房间的方式完成一次异步面试训练 | 主舞台展示 AI 面试官和题目，参会者小窗展示候选人/Runtime，底部控制条提供静音、摄像头、笔记、共享题面和结束入口；右侧面板管理 session、trace 和 report |
-| 代码题 | 练习并提交完整程序到 judge | 浏览题库、使用轻量 IDE 编辑代码、格式化/插入模板/补全片段、提交判题、查看异步 verdict |
+| 代码题 | 练习并提交完整程序到 judge | 浏览题库、使用 Monaco 轻量 IDE 编辑代码、切换语言草稿、格式化/插入模板/轻量联想补全、提交判题、查看异步 verdict |
 | 记忆 | 审核 Runtime 产出的候选记忆 | 加载 pending candidates、approve/reject，避免未审核 memory 进入 Prompt |
 | 评测 | 维护轻量质量样例 | 保存 evaluation case、dry-run 执行、查看 run 记录和最近结果 |
 | 设置中心 | 管理系统配置和运维信号 | 通过顶部设置按钮打开弹窗，查看 Provider route、Provider 列表、worker summary、coding judge summary 和质量门禁信号 |
@@ -46,12 +46,15 @@
 
 ## 代码题 IDE
 
-代码题页使用自研轻量编辑器层，不引入 Monaco 或大型组件库：
+代码题页使用 Monaco Editor 承载核心编辑体验，但不启动 gopls、jdtls、tsserver 等语言服务进程：
 
-- 语法配色：textarea 上叠加只读高亮层，提供接近 VS Code 的关键字、字符串、数字和注释配色。
-- 自动补全：根据当前语言和光标前缀展示常用模板，例如 main/solution、Map/Counter、two pointers、guard clause 等。
+- 编辑体验：Monaco 提供 Tab 缩进、括号匹配、当前文档单词联想、基础语法高亮、光标/选择和可滚动代码区。
+- 语言切换：切换 Go、Java、Python、JavaScript、TypeScript、C++ 时会保存当前语言草稿，并加载目标语言草稿；如果目标语言还没有草稿，则加载对应 starter。
+- 轻量联想：前端 completion provider 组合三类候选：当前文件函数/变量/类型扫描、常见标准库/工具类成员表、语言 snippets。典型例子包括 Go 的 `fmt.` / `sort.` / `strings.`、Java 的 `System.out.` / `Arrays.`、JavaScript/TypeScript 的 `console.` / `Math.`、Python 的 `math.` / `collections.` 等。
 - 快捷工具：提供 `Format` 和 `Starter` 按钮，分别执行本地缩进整理和插入当前语言 starter。
 - 判题边界：编辑器只处理本地文本体验，不执行代码；真正提交仍走 Go API 和 coding judge worker。
+
+轻量联想不是完整 LSP：它不会解析第三方包类型、跨文件符号、泛型实例类型或真实编译错误。这个取舍是为了让面试练习页具备接近 LeetCode 的常用补全体验，同时避免在前端工作台里引入长期运行的语言服务和复杂进程管理。
 
 ## 设置中心
 
@@ -106,10 +109,10 @@ make build-frontend
 
 - 还不是完整产品级前端：memory、settings 和 evaluation 的细节视图仍需要继续产品化。
 - 目前没有路由库，页面切换由本地 state 和 `localStorage` 管理。
-- 没有引入复杂组件库，样式集中在 `frontend/src/styles.css`。
+- 没有引入复杂组件库；除 Monaco Editor 和 lucide 图标外，样式集中在 `frontend/src/styles.css`。
 - report、trace、worker summary 等仍保留部分 JSON 预览，后续应继续转成更适合用户阅读的结构化视图。
 - 会议房间的麦克风、摄像头、字幕和共享题面当前是本地可配置状态，还没有接入真实设备、ASR/TTS 或同步服务。
-- 暂未实现键盘快捷键、批量操作、搜索过滤和可配置 dashboard。
+- 暂未实现批量操作、搜索过滤和可配置 dashboard；代码题 IDE 只提供 Monaco 基础快捷键和轻量联想，不提供完整 LSP 语义分析。
 
 ## 后续方向
 

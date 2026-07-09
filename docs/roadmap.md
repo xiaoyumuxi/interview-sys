@@ -39,7 +39,7 @@
 - Retrieval Harness MVP：`POST /api/retrieval/search` 返回 Skill reference、summary、recent history、approved memory 的 evidence、score、reason、source 和 debug trace；vector 索引未建立时显式返回 warning。
 - Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`docker` 每次创建临时禁网容器，`docker_warm` 复用按语言命名的 stopped container 并用 tmpfs 回到初始状态，二者都支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序和可配置镜像；`native_trusted` 可直接调用本机工具链加快本地可信开发，默认 disabled evaluator 不执行用户代码。
 - Evaluation Harness MVP：root-only `/api/evaluation/*` 支持样例 case 管理、dry-run 或真实 runtime 运行、`required_fields/contains/equals` 可配置断言、质量分数、错误 run 记录和 agent trace 关联。
-- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite，支持登录、中文/英文切换、lucide 图标、工作台概览、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入；交互层包含状态条、loading/disabled 状态、表单校验、输入保留、空状态动作、危险操作确认、本地可配置会议控制条和 Companion 面板。
+- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite + Monaco Editor，支持登录、中文/英文切换、lucide 图标、工作台概览、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入；交互层包含状态条、loading/disabled 状态、表单校验、输入保留、空状态动作、危险操作确认、本地可配置会议控制条和 Companion 面板；代码题 IDE 支持语言草稿切换、当前文件符号扫描、常见标准库/工具类成员表和 snippets 组合的轻量联想补全，不启动完整 LSP。
 
 ## 下一批任务
 
@@ -51,7 +51,7 @@
    - 面试房间继续接入真实音视频、ASR/TTS、共享题面同步和后端 notes API；当前麦克风、摄像头、字幕、共享题面和笔记是本地可配置状态。
    - Evaluation Harness 增加 assertion 明细、失败解释、批量回归汇总和 latency/cost 指标。
    - Admin 增加 Provider route 编辑、连通性测试入口、worker health drill-down 和 coding judge 配置可视化。
-   - 增加前端 smoke 测试，覆盖登录页、语言切换、导航、关键按钮状态和核心表单校验。
+   - 增加前端 smoke 测试，覆盖登录页、语言切换、Monaco 代码题 IDE、导航、关键按钮状态和核心表单校验。
 
 2. Coding judge runner 增强。
    - 当前 Docker sandbox MVP 支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序。

@@ -2438,70 +2438,16 @@ th {
 
 .code-editor-shell {
   position: relative;
-  min-height: 380px;
+  min-height: 420px;
   overflow: hidden;
   border-right: 1px solid #1e293b;
   border-left: 1px solid #1e293b;
   background: #0b1220;
 }
 
-.code-syntax-layer,
-.code-input {
-  position: absolute;
-  inset: 0;
-  overflow: auto;
-  margin: 0;
-  padding: 18px 18px 18px 56px;
-  border: 0;
-  border-radius: 0;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1.65;
-  tab-size: 2;
-  white-space: pre;
-}
-
-.code-syntax-layer {
-  pointer-events: none;
-  color: #d1d5db;
-}
-
-.code-syntax-layer::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 42px;
-  background: #111827;
-}
-
-.code-input {
-  min-height: 380px;
-  resize: vertical;
-  background: transparent;
-  color: transparent;
-  caret-color: #f8fafc;
-}
-
-.code-input::selection {
-  background: rgba(59, 130, 246, 0.42);
-}
-
-.tok-keyword {
-  color: #c084fc;
-}
-
-.tok-string {
-  color: #86efac;
-}
-
-.tok-number {
-  color: #fbbf24;
-}
-
-.tok-comment {
-  color: #64748b;
+.code-monaco {
+  width: 100%;
+  height: 420px;
 }
 
 .editor-statusbar {

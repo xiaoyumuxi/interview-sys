@@ -1,4 +1,13 @@
 import "./styles.css";
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import "monaco-editor/min/vs/editor/editor.main.css";
+import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution";
+import "monaco-editor/esm/vs/basic-languages/go/go.contribution";
+import "monaco-editor/esm/vs/basic-languages/java/java.contribution";
+import "monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution";
+import "monaco-editor/esm/vs/basic-languages/python/python.contribution";
+import "monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution";
 import {
   ApiClient,
   ApiError,
@@ -99,6 +108,7 @@ interface AppState {
     selectedQuestion: CodingQuestion | null;
     submissions: CodingSubmission[];
     language: string;
+    languageDrafts: Record<string, string>;
     sourceCode: string;
     completionPrefix: string;
     loading: boolean;
@@ -139,7 +149,30 @@ interface CodeCompletion {
   keywords: string[];
 }
 
+interface MemberCompletion {
+  id: string;
+  label: string;
+  detail: string;
+  insertText: string;
+  kind: monaco.languages.CompletionItemKind;
+  keywords: string[];
+}
+
+interface SymbolCompletion {
+  label: string;
+  detail: string;
+  insertText: string;
+  kind: monaco.languages.CompletionItemKind;
+  keywords: string[];
+}
+
 const api = new ApiClient();
+const monacoEnvironment = self as unknown as {
+  MonacoEnvironment?: { getWorker: (_workerId: string, _label: string) => Worker };
+};
+monacoEnvironment.MonacoEnvironment = {
+  getWorker: () => new EditorWorker()
+};
 const iconSet = {
   Bot,
   BrainCircuit,
@@ -177,6 +210,10 @@ const iconSet = {
   X
 };
 const root = document.querySelector<HTMLDivElement>("#app");
+let codeEditor: monaco.editor.IStandaloneCodeEditor | null = null;
+let codeEditorModel: monaco.editor.ITextModel | null = null;
+let completionProvider: monaco.IDisposable | null = null;
+let monacoThemeReady = false;
 
 if (!root) {
   throw new Error("missing #app");
@@ -210,6 +247,7 @@ const state: AppState = {
     selectedQuestion: null,
     submissions: [],
     language: "go",
+    languageDrafts: {},
     sourceCode: defaultGoSolution(),
     completionPrefix: "",
     loading: false,
@@ -245,9 +283,11 @@ async function loadInitialData(): Promise<void> {
 }
 
 function render(): void {
+  disposeCodeEditor();
   appRoot.innerHTML = localize(state.user ? renderShell() : renderLogin());
   mountIcons();
   bindEvents();
+  mountCodeEditor();
 }
 
 function mountIcons(): void {
@@ -259,6 +299,135 @@ function mountIcons(): void {
       "stroke-width": "2.2"
     } as Record<string, string>
   });
+}
+
+function mountCodeEditor(): void {
+  const container = document.querySelector<HTMLDivElement>("[data-role='code-editor']");
+  if (!container) return;
+  ensureMonacoTheme();
+  registerCodeCompletionProvider(state.coding.language);
+  codeEditorModel = monaco.editor.createModel(state.coding.sourceCode, monacoLanguage(state.coding.language));
+  codeEditor = monaco.editor.create(container, {
+    model: codeEditorModel,
+    theme: "interview-dark",
+    automaticLayout: true,
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: 13,
+    lineHeight: 22,
+    tabSize: 2,
+    insertSpaces: true,
+    detectIndentation: false,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderWhitespace: "selection",
+    wordBasedSuggestions: "currentDocument",
+    quickSuggestions: { other: true, comments: false, strings: false },
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: "on",
+    tabCompletion: "on",
+    snippetSuggestions: "top",
+    formatOnPaste: true,
+    formatOnType: true,
+    bracketPairColorization: { enabled: true },
+    guides: { bracketPairs: true, indentation: true }
+  });
+  codeEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, () => {
+    codeEditor?.trigger("keyboard", "editor.action.triggerSuggest", {});
+  });
+  codeEditor.onDidChangeModelContent(syncCodeEditorState);
+  codeEditor.onDidChangeCursorPosition(syncCodeEditorState);
+  syncCodeEditorState();
+}
+
+function disposeCodeEditor(): void {
+  completionProvider?.dispose();
+  completionProvider = null;
+  codeEditor?.dispose();
+  codeEditor = null;
+  codeEditorModel?.dispose();
+  codeEditorModel = null;
+}
+
+function ensureMonacoTheme(): void {
+  if (monacoThemeReady) return;
+  monaco.editor.defineTheme("interview-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "keyword", foreground: "c084fc" },
+      { token: "string", foreground: "86efac" },
+      { token: "number", foreground: "fbbf24" },
+      { token: "comment", foreground: "64748b" }
+    ],
+    colors: {
+      "editor.background": "#0b1220",
+      "editor.foreground": "#d1d5db",
+      "editorLineNumber.foreground": "#64748b",
+      "editorLineNumber.activeForeground": "#cbd5e1",
+      "editorCursor.foreground": "#f8fafc",
+      "editor.selectionBackground": "#2563eb66",
+      "editor.inactiveSelectionBackground": "#33415566",
+      "editorIndentGuide.background1": "#1e293b",
+      "editorIndentGuide.activeBackground1": "#475569",
+      "editorSuggestWidget.background": "#111827",
+      "editorSuggestWidget.border": "#334155",
+      "editorSuggestWidget.selectedBackground": "#1e293b"
+    }
+  });
+  monacoThemeReady = true;
+}
+
+function registerCodeCompletionProvider(language: string): void {
+  completionProvider?.dispose();
+  const monacoLang = monacoLanguage(language);
+  completionProvider = monaco.languages.registerCompletionItemProvider(monacoLang, {
+    triggerCharacters: [".", ":", "_"],
+    provideCompletionItems: (model, position) => {
+      const word = model.getWordUntilPosition(position);
+      const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+      const memberSuggestions = memberCompletions(language, model, position).map((item, index) => ({
+        label: item.label,
+        kind: item.kind,
+        detail: item.detail,
+        insertText: item.insertText,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: `0_${String(index).padStart(3, "0")}_${item.label}`,
+        range: memberCompletionRange(model, position)
+      }));
+      if (memberSuggestions.length) return { suggestions: memberSuggestions };
+      const symbolSuggestions = symbolCompletions(language, model, word.word).map((item, index) => ({
+        label: item.label,
+        kind: item.kind,
+        detail: item.detail,
+        insertText: item.insertText,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: `1_${String(index).padStart(3, "0")}_${item.label}`,
+        range
+      }));
+      const snippetSuggestions = codeCompletions(language, word.word).map((item, index) => ({
+        label: item.label,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        detail: item.detail,
+        insertText: item.insertText,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: `2_${String(index).padStart(3, "0")}_${item.label}`,
+        range
+      }));
+      return { suggestions: [...symbolSuggestions, ...snippetSuggestions] };
+    }
+  });
+}
+
+function monacoLanguage(language: string): string {
+  const languages: Record<string, string> = {
+    go: "go",
+    java: "java",
+    python: "python",
+    javascript: "javascript",
+    typescript: "typescript",
+    cpp: "cpp"
+  };
+  return languages[language.toLowerCase()] ?? "go";
 }
 
 function icon(name: string, className = "ui-icon"): string {
@@ -898,7 +1067,7 @@ function renderCoding(): string {
           <div class="ide-toolbar">
             <div>
               <strong>Practice IDE</strong>
-              <small>Lightweight autocomplete, syntax color and formatter.</small>
+              <small>Monaco editor with local symbols, member hints, snippets and formatting.</small>
             </div>
             <div class="ide-actions">
               <button class="button secondary" type="button" data-action="format-code">${icon("clipboard-check")}<span>Format</span></button>
@@ -906,13 +1075,14 @@ function renderCoding(): string {
             </div>
           </div>
           <div class="code-editor-shell" data-role="code-editor-shell">
-            <pre class="code-syntax-layer" aria-hidden="true" data-role="syntax-layer">${highlightCode(state.coding.sourceCode, state.coding.language)}</pre>
-            <textarea class="code-input" name="source_code" spellcheck="false" autocomplete="off" autocapitalize="off" data-role="code-editor">${escapeHtml(state.coding.sourceCode)}</textarea>
+            <div class="code-monaco" data-role="code-editor" aria-label="Source code editor"></div>
           </div>
+          <input type="hidden" name="source_code" data-role="code-source-field" value="${escapeAttr(state.coding.sourceCode)}" />
           <div class="editor-statusbar">
             <span>${icon("code-2")}<strong data-role="editor-lines">${lineCount(state.coding.sourceCode)} lines</strong></span>
             <span>${icon("file-text")}<strong data-role="editor-chars">${state.coding.sourceCode.length} chars</strong></span>
             <span>${icon("settings-2")}<strong>${escapeHtml(state.coding.language)}</strong></span>
+            <span><strong>Monaco</strong></span>
           </div>
           ${renderCodeAssistPanel(state.coding.language, state.coding.sourceCode)}
           <button class="button primary" type="submit" ${selected && !state.coding.loading ? "" : "disabled"}>${icon("terminal")}<span>${state.coding.loading ? "Submitting" : "Submit to judge"}</span></button>
@@ -938,7 +1108,7 @@ function renderCodeAssistPanel(language: string, source: string): string {
       <div class="assist-head">
         <span>${icon("brain-circuit")}</span>
         <div>
-          <strong>Smart completions</strong>
+          <strong>Snippets</strong>
           <small>${prefix ? `Matching "${prefix}"` : "Common patterns for the selected language."}</small>
         </div>
       </div>
@@ -1407,17 +1577,8 @@ function bindEvents(): void {
   });
   document.querySelector<HTMLFormElement>("#coding-form")?.addEventListener("submit", onCodingSubmit);
   document.querySelector<HTMLSelectElement>("select[name='language']")?.addEventListener("change", (event) => {
-    state.coding.language = (event.currentTarget as HTMLSelectElement).value;
+    switchCodingLanguage((event.currentTarget as HTMLSelectElement).value);
     render();
-  });
-  document.querySelector<HTMLTextAreaElement>("textarea[name='source_code']")?.addEventListener("input", (event) => {
-    const editor = event.currentTarget as HTMLTextAreaElement;
-    state.coding.sourceCode = editor.value;
-    state.coding.completionPrefix = currentCodePrefix(editor.value, editor.selectionStart);
-    updateCodeEditorChrome(editor);
-  });
-  document.querySelector<HTMLTextAreaElement>("textarea[name='source_code']")?.addEventListener("scroll", (event) => {
-    syncSyntaxScroll(event.currentTarget as HTMLTextAreaElement);
   });
   document.querySelector<HTMLButtonElement>("[data-action='format-code']")?.addEventListener("click", () => {
     formatCurrentCode();
@@ -1775,64 +1936,87 @@ async function onCodingSubmit(event: SubmitEvent): Promise<void> {
 }
 
 function formatCurrentCode(): void {
-  const editor = document.querySelector<HTMLTextAreaElement>("[data-role='code-editor']");
-  if (!editor) return;
-  state.coding.sourceCode = formatSource(state.coding.language, editor.value);
-  editor.value = state.coding.sourceCode;
-  editor.setSelectionRange(editor.value.length, editor.value.length);
-  updateCodeEditorChrome(editor);
+  if (!codeEditor) return;
+  state.coding.sourceCode = formatSource(state.coding.language, codeEditor.getValue());
+  codeEditor.setValue(state.coding.sourceCode);
+  syncCodeEditorState();
   toast(ui("Code formatted"));
 }
 
 function insertStarterCode(): void {
-  const editor = document.querySelector<HTMLTextAreaElement>("[data-role='code-editor']");
-  if (!editor) return;
-  insertIntoEditor(editor, defaultSourceForLanguage(state.coding.language), false);
+  if (!codeEditor) return;
+  insertIntoCodeEditor(defaultSourceForLanguage(state.coding.language), false);
   toast(ui("Starter inserted"));
 }
 
 function insertCompletion(completionId: string): void {
-  const editor = document.querySelector<HTMLTextAreaElement>("[data-role='code-editor']");
   const completion = completionById(state.coding.language, completionId);
-  if (!editor || !completion) return;
-  const cursor = editor.selectionStart;
-  const prefix = currentCodePrefix(editor.value, cursor);
-  const start = Math.max(0, cursor - prefix.length);
-  insertIntoEditor(editor, completion.insertText, true, start, editor.selectionEnd);
+  if (!codeEditor || !completion) return;
+  insertIntoCodeEditor(completion.insertText, true);
   toast(ui("Completion inserted"));
 }
 
-function insertIntoEditor(editor: HTMLTextAreaElement, text: string, replaceSelection = true, start = editor.selectionStart, end = editor.selectionEnd): void {
-  const before = editor.value.slice(0, replaceSelection ? start : editor.selectionStart);
-  const after = editor.value.slice(replaceSelection ? end : editor.selectionStart);
-  const spacer = before && !before.endsWith("\n") ? "\n" : "";
-  const suffix = after && !text.endsWith("\n") ? "\n" : "";
-  const insert = `${spacer}${text}${suffix}`;
-  editor.value = `${before}${insert}${after}`;
-  const cursor = before.length + insert.length;
-  editor.setSelectionRange(cursor, cursor);
-  editor.focus();
-  state.coding.sourceCode = editor.value;
-  state.coding.completionPrefix = currentCodePrefix(editor.value, cursor);
-  updateCodeEditorChrome(editor);
+function switchCodingLanguage(nextLanguage: string): void {
+  const previousLanguage = state.coding.language;
+  const currentSource = codeEditor?.getValue() ?? state.coding.sourceCode;
+  state.coding.languageDrafts[previousLanguage] = currentSource;
+  state.coding.language = nextLanguage;
+  state.coding.sourceCode = state.coding.languageDrafts[nextLanguage] ?? defaultSourceForLanguage(nextLanguage);
+  state.coding.completionPrefix = currentCodePrefix(state.coding.sourceCode);
 }
 
-function updateCodeEditorChrome(editor: HTMLTextAreaElement): void {
-  const syntaxLayer = document.querySelector<HTMLElement>("[data-role='syntax-layer']");
+function insertIntoCodeEditor(text: string, replaceSelection: boolean): void {
+  if (!codeEditor) return;
+  const selection = codeEditor.getSelection();
+  const model = codeEditor.getModel();
+  if (!selection || !model) return;
+  const normalizedText = stripSnippetMarkers(text);
+  const range = replaceSelection ? selection : new monaco.Range(selection.endLineNumber, selection.endColumn, selection.endLineNumber, selection.endColumn);
+  const prefix = replaceSelection ? codePrefixAtCursor(model, selection.getStartPosition()) : "";
+  const insertRange = prefix && selection.isEmpty()
+    ? new monaco.Range(selection.startLineNumber, Math.max(1, selection.startColumn - prefix.length), selection.endLineNumber, selection.endColumn)
+    : range;
+  const previousText = model.getValueInRange(insertRange);
+  const needsLeadingLine = previousText === "" && insertRange.startColumn > 1 && !normalizedText.startsWith("\n");
+  const insertText = `${needsLeadingLine ? "\n" : ""}${normalizedText}`;
+  codeEditor.executeEdits("coding-snippet", [{ range: insertRange, text: insertText, forceMoveMarkers: true }]);
+  const end = model.getPositionAt(model.getOffsetAt(insertRange.getStartPosition()) + insertText.length);
+  codeEditor.setPosition(end);
+  codeEditor.focus();
+  syncCodeEditorState();
+}
+
+function stripSnippetMarkers(text: string): string {
+  return text
+    .replace(/\$\{\d+:([^}]+)\}/g, "$1")
+    .replace(/\$\d+/g, "");
+}
+
+function syncCodeEditorState(): void {
+  if (!codeEditor) return;
+  const value = codeEditor.getValue();
+  state.coding.sourceCode = value;
+  state.coding.languageDrafts[state.coding.language] = value;
+  state.coding.completionPrefix = currentEditorPrefix();
+  const hiddenField = document.querySelector<HTMLInputElement>("[data-role='code-source-field']");
+  if (hiddenField) hiddenField.value = value;
   const lineMetric = document.querySelector<HTMLElement>("[data-role='editor-lines']");
   const charMetric = document.querySelector<HTMLElement>("[data-role='editor-chars']");
   const list = document.querySelector<HTMLElement>("[data-role='completion-list']");
-  if (syntaxLayer) syntaxLayer.innerHTML = highlightCode(editor.value, state.coding.language);
-  if (lineMetric) lineMetric.textContent = `${lineCount(editor.value)} ${ui("lines")}`;
-  if (charMetric) charMetric.textContent = `${editor.value.length} ${ui("chars")}`;
+  if (lineMetric) lineMetric.textContent = `${lineCount(value)} ${ui("lines")}`;
+  if (charMetric) charMetric.textContent = `${value.length} ${ui("chars")}`;
   if (list) list.innerHTML = codeCompletions(state.coding.language, state.coding.completionPrefix).slice(0, 6).map(renderCompletionButton).join("");
-  syncSyntaxScroll(editor);
 }
 
-function syncSyntaxScroll(editor: HTMLTextAreaElement): void {
-  const layer = document.querySelector<HTMLElement>("[data-role='syntax-layer']");
-  if (!layer) return;
-  layer.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`;
+function currentEditorPrefix(): string {
+  const model = codeEditor?.getModel();
+  const position = codeEditor?.getPosition();
+  if (!model || !position) return currentCodePrefix(state.coding.sourceCode);
+  return codePrefixAtCursor(model, position);
+}
+
+function codePrefixAtCursor(model: monaco.editor.ITextModel, position: monaco.Position): string {
+  return model.getWordUntilPosition(position).word;
 }
 
 async function reviewMemory(candidateId: string, action: "approve" | "reject"): Promise<void> {
@@ -2295,13 +2479,248 @@ function escapeAttr(value: string): string {
   return escapeHtml(value).replaceAll("`", "&#096;");
 }
 
+function symbolCompletions(language: string, model: monaco.editor.ITextModel, prefix = ""): SymbolCompletion[] {
+  const normalized = language.toLowerCase();
+  const source = model.getValue();
+  const items = dedupeSymbols([
+    ...declaredSymbolCompletions(normalized, source),
+    ...wordSymbolCompletions(source)
+  ]);
+  const query = prefix.toLowerCase();
+  if (!query) return items.slice(0, 40);
+  return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query))).slice(0, 40);
+}
+
+function declaredSymbolCompletions(language: string, source: string): SymbolCompletion[] {
+  const fn = monaco.languages.CompletionItemKind.Function;
+  const variable = monaco.languages.CompletionItemKind.Variable;
+  const classKind = monaco.languages.CompletionItemKind.Class;
+  const items: SymbolCompletion[] = [];
+  const pushMatches = (pattern: RegExp, kind: monaco.languages.CompletionItemKind, detail: string, call = false) => {
+    for (const match of source.matchAll(pattern)) {
+      const label = match[1];
+      if (!label) continue;
+      items.push(symbol(label, detail, call ? `${label}($0)` : label, kind, [label]));
+    }
+  };
+  if (language === "go") {
+    pushMatches(/\bfunc\s+([A-Za-z_]\w*)\s*\(/g, fn, "local Go function", true);
+    pushMatches(/\b(?:var|const)\s+([A-Za-z_]\w*)\b/g, variable, "local Go binding");
+    pushMatches(/\b([A-Za-z_]\w*)\s*:=/g, variable, "local Go binding");
+    pushMatches(/\btype\s+([A-Za-z_]\w*)\s+(?:struct|interface)\b/g, classKind, "local Go type");
+  } else if (language === "java") {
+    pushMatches(/\b(?:class|interface|enum)\s+([A-Za-z_]\w*)\b/g, classKind, "local Java type");
+    pushMatches(/\b(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\], ?]+\s+([A-Za-z_]\w*)\s*\(/g, fn, "local Java method", true);
+    pushMatches(/\b(?:int|long|double|float|boolean|char|String|var|List<[^>]+>|Map<[^>]+>)\s+([A-Za-z_]\w*)\b/g, variable, "local Java variable");
+  } else if (language === "python") {
+    pushMatches(/\bdef\s+([A-Za-z_]\w*)\s*\(/g, fn, "local Python function", true);
+    pushMatches(/\bclass\s+([A-Za-z_]\w*)\s*[:(]/g, classKind, "local Python class");
+    pushMatches(/^\s*([A-Za-z_]\w*)\s*=/gm, variable, "local Python variable");
+  } else if (language === "javascript" || language === "typescript") {
+    pushMatches(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g, fn, "local function", true);
+    pushMatches(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(?[^=;]*\)?\s*=>/g, fn, "local function", true);
+    pushMatches(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\b/g, variable, "local binding");
+    pushMatches(/\bclass\s+([A-Za-z_$][\w$]*)\b/g, classKind, "local class");
+  } else if (language === "cpp") {
+    pushMatches(/\b(?:int|long|double|float|bool|void|string|auto|vector<[^>]+>)\s+([A-Za-z_]\w*)\s*\(/g, fn, "local C++ function", true);
+    pushMatches(/\b(?:int|long|double|float|bool|string|auto|vector<[^>]+>|unordered_map<[^>]+>)\s+([A-Za-z_]\w*)\b/g, variable, "local C++ variable");
+    pushMatches(/\b(?:class|struct)\s+([A-Za-z_]\w*)\b/g, classKind, "local C++ type");
+  }
+  return items;
+}
+
+function wordSymbolCompletions(source: string): SymbolCompletion[] {
+  const reserved = new Set([
+    "package", "import", "func", "return", "if", "else", "for", "while", "class", "public", "private",
+    "const", "let", "var", "function", "def", "from", "include", "using", "namespace", "true", "false"
+  ]);
+  const words = source.match(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g) ?? [];
+  return words
+    .filter((word) => !reserved.has(word))
+    .map((word) => symbol(word, "current file word", word, monaco.languages.CompletionItemKind.Text, [word]));
+}
+
+function dedupeSymbols(items: SymbolCompletion[]): SymbolCompletion[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.kind}:${item.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function symbol(label: string, detail: string, insertText: string, kind: monaco.languages.CompletionItemKind, keywords: string[]): SymbolCompletion {
+  return { label, detail, insertText, kind, keywords };
+}
+
+function memberCompletions(language: string, model: monaco.editor.ITextModel, position: monaco.Position): MemberCompletion[] {
+  const context = memberAccessContext(model, position);
+  if (!context) return [];
+  const normalized = language.toLowerCase();
+  const qualifier = normalized === "go" ? resolveGoQualifier(model.getValue(), context.qualifier) : context.qualifier;
+  const table = memberCompletionTable(normalized);
+  const items = table[qualifier] ?? [];
+  const query = context.prefix.toLowerCase();
+  if (!query) return items;
+  return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query)));
+}
+
+function memberCompletionRange(model: monaco.editor.ITextModel, position: monaco.Position): monaco.Range {
+  const context = memberAccessContext(model, position);
+  const startColumn = context ? Math.max(1, position.column - context.prefix.length) : position.column;
+  return new monaco.Range(position.lineNumber, startColumn, position.lineNumber, position.column);
+}
+
+function memberAccessContext(model: monaco.editor.ITextModel, position: monaco.Position): { qualifier: string; prefix: string } | null {
+  const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+  const match = linePrefix.match(/((?:[A-Za-z_$][\w$]*(?:\.|::))*[A-Za-z_$][\w$]*)(?:\.|::)([A-Za-z_$][\w$]*)?$/);
+  if (!match?.[1]) return null;
+  return { qualifier: match[1], prefix: match[2] ?? "" };
+}
+
+function resolveGoQualifier(source: string, qualifier: string): string {
+  const imports = goImportAliases(source);
+  return imports[qualifier] ?? qualifier;
+}
+
+function goImportAliases(source: string): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  for (const match of source.matchAll(/import\s+(?:(\w+)\s+)?["`]([^"`]+)["`]/g)) {
+    const alias = match[1];
+    const path = match[2] ?? "";
+    const packageName = path.split("/").at(-1) ?? path;
+    aliases[alias || packageName] = packageName;
+  }
+  const blockMatch = source.match(/import\s*\(([\s\S]*?)\)/);
+  const block = blockMatch?.[1] ?? "";
+  for (const match of block.matchAll(/^\s*(?:(\w+)\s+)?["`]([^"`]+)["`]/gm)) {
+    const alias = match[1];
+    const path = match[2] ?? "";
+    const packageName = path.split("/").at(-1) ?? path;
+    aliases[alias || packageName] = packageName;
+  }
+  return aliases;
+}
+
+function memberCompletionTable(language: string): Record<string, MemberCompletion[]> {
+  const fn = monaco.languages.CompletionItemKind.Function;
+  const method = monaco.languages.CompletionItemKind.Method;
+  const property = monaco.languages.CompletionItemKind.Property;
+  const value = monaco.languages.CompletionItemKind.Value;
+  const go: Record<string, MemberCompletion[]> = {
+    fmt: [
+      member("fmt.Println", "Println", "fmt.Println(a ...any) (n int, err error)", "Println($0)", fn, ["print", "stdout", "line"]),
+      member("fmt.Printf", "Printf", "fmt.Printf(format string, a ...any) (n int, err error)", "Printf(\"$1\", $0)", fn, ["format", "print"]),
+      member("fmt.Print", "Print", "fmt.Print(a ...any) (n int, err error)", "Print($0)", fn, ["print"]),
+      member("fmt.Sprintf", "Sprintf", "fmt.Sprintf(format string, a ...any) string", "Sprintf(\"$1\", $0)", fn, ["format", "string"]),
+      member("fmt.Sprint", "Sprint", "fmt.Sprint(a ...any) string", "Sprint($0)", fn, ["string"]),
+      member("fmt.Errorf", "Errorf", "fmt.Errorf(format string, a ...any) error", "Errorf(\"$1\", $0)", fn, ["error", "format"]),
+      member("fmt.Fprintln", "Fprintln", "fmt.Fprintln(w io.Writer, a ...any) (n int, err error)", "Fprintln($1, $0)", fn, ["writer", "print"]),
+      member("fmt.Fprintf", "Fprintf", "fmt.Fprintf(w io.Writer, format string, a ...any) (n int, err error)", "Fprintf($1, \"$2\", $0)", fn, ["writer", "format"]),
+      member("fmt.Scan", "Scan", "fmt.Scan(a ...any) (n int, err error)", "Scan($0)", fn, ["stdin", "scan"]),
+      member("fmt.Scanf", "Scanf", "fmt.Scanf(format string, a ...any) (n int, err error)", "Scanf(\"$1\", $0)", fn, ["stdin", "format"])
+    ],
+    sort: [
+      member("sort.Ints", "Ints", "sort.Ints(x []int)", "Ints($0)", fn, ["array", "slice"]),
+      member("sort.Strings", "Strings", "sort.Strings(x []string)", "Strings($0)", fn, ["array", "slice"]),
+      member("sort.Slice", "Slice", "sort.Slice(x any, less func(i, j int) bool)", "Slice($1, func(i, j int) bool {\n\treturn $0\n})", fn, ["custom", "less"]),
+      member("sort.Search", "Search", "sort.Search(n int, f func(int) bool) int", "Search($1, func(i int) bool {\n\treturn $0\n})", fn, ["binary", "search"])
+    ],
+    strings: [
+      member("strings.Contains", "Contains", "strings.Contains(s, substr string) bool", "Contains($1, $0)", fn, ["substring"]),
+      member("strings.HasPrefix", "HasPrefix", "strings.HasPrefix(s, prefix string) bool", "HasPrefix($1, $0)", fn, ["prefix"]),
+      member("strings.HasSuffix", "HasSuffix", "strings.HasSuffix(s, suffix string) bool", "HasSuffix($1, $0)", fn, ["suffix"]),
+      member("strings.Split", "Split", "strings.Split(s, sep string) []string", "Split($1, $0)", fn, ["split"]),
+      member("strings.Join", "Join", "strings.Join(elems []string, sep string) string", "Join($1, $0)", fn, ["join"]),
+      member("strings.TrimSpace", "TrimSpace", "strings.TrimSpace(s string) string", "TrimSpace($0)", fn, ["trim"]),
+      member("strings.ToLower", "ToLower", "strings.ToLower(s string) string", "ToLower($0)", fn, ["lower"]),
+      member("strings.ToUpper", "ToUpper", "strings.ToUpper(s string) string", "ToUpper($0)", fn, ["upper"]),
+      member("strings.Index", "Index", "strings.Index(s, substr string) int", "Index($1, $0)", fn, ["index"]),
+      member("strings.Fields", "Fields", "strings.Fields(s string) []string", "Fields($0)", fn, ["split", "space"])
+    ],
+    strconv: [
+      member("strconv.Atoi", "Atoi", "strconv.Atoi(s string) (int, error)", "Atoi($0)", fn, ["string", "int"]),
+      member("strconv.Itoa", "Itoa", "strconv.Itoa(i int) string", "Itoa($0)", fn, ["int", "string"]),
+      member("strconv.ParseInt", "ParseInt", "strconv.ParseInt(s string, base int, bitSize int) (int64, error)", "ParseInt($1, $2, $0)", fn, ["parse"]),
+      member("strconv.FormatInt", "FormatInt", "strconv.FormatInt(i int64, base int) string", "FormatInt($1, $0)", fn, ["format"])
+    ],
+    math: [
+      member("math.Abs", "Abs", "math.Abs(x float64) float64", "Abs($0)", fn, ["absolute"]),
+      member("math.Max", "Max", "math.Max(x, y float64) float64", "Max($1, $0)", fn, ["maximum"]),
+      member("math.Min", "Min", "math.Min(x, y float64) float64", "Min($1, $0)", fn, ["minimum"]),
+      member("math.Sqrt", "Sqrt", "math.Sqrt(x float64) float64", "Sqrt($0)", fn, ["square", "root"]),
+      member("math.Pow", "Pow", "math.Pow(x, y float64) float64", "Pow($1, $0)", fn, ["power"])
+    ]
+  };
+  const js: Record<string, MemberCompletion[]> = {
+    console: [
+      member("console.log", "log", "console.log(...data)", "log($0)", method, ["print", "debug"]),
+      member("console.error", "error", "console.error(...data)", "error($0)", method, ["stderr"]),
+      member("console.warn", "warn", "console.warn(...data)", "warn($0)", method, ["warning"])
+    ],
+    Math: [
+      member("Math.max", "max", "Math.max(...values)", "max($0)", fn, ["maximum"]),
+      member("Math.min", "min", "Math.min(...values)", "min($0)", fn, ["minimum"]),
+      member("Math.floor", "floor", "Math.floor(x)", "floor($0)", fn, ["round"]),
+      member("Math.ceil", "ceil", "Math.ceil(x)", "ceil($0)", fn, ["round"])
+    ],
+    Array: [
+      member("Array.from", "from", "Array.from(iterable)", "from($0)", fn, ["array", "iterable"]),
+      member("Array.isArray", "isArray", "Array.isArray(value)", "isArray($0)", fn, ["array", "check"])
+    ]
+  };
+  const py: Record<string, MemberCompletion[]> = {
+    sys: [member("sys.stdin", "stdin", "sys.stdin", "stdin", property, ["input"]), member("sys.stdout", "stdout", "sys.stdout", "stdout", property, ["output"])],
+    math: [
+      member("math.sqrt", "sqrt", "math.sqrt(x)", "sqrt($0)", fn, ["square", "root"]),
+      member("math.ceil", "ceil", "math.ceil(x)", "ceil($0)", fn, ["round"]),
+      member("math.floor", "floor", "math.floor(x)", "floor($0)", fn, ["round"])
+    ],
+    collections: [member("collections.Counter", "Counter", "collections.Counter(iterable)", "Counter($0)", value, ["count", "frequency"])]
+  };
+  const cpp: Record<string, MemberCompletion[]> = {
+    std: [
+      member("std.sort", "sort", "std::sort(first, last)", "sort($1, $0)", fn, ["array", "vector"]),
+      member("std.lower_bound", "lower_bound", "std::lower_bound(first, last, value)", "lower_bound($1, $2, $0)", fn, ["binary", "search"]),
+      member("std.upper_bound", "upper_bound", "std::upper_bound(first, last, value)", "upper_bound($1, $2, $0)", fn, ["binary", "search"])
+    ]
+  };
+  const java: Record<string, MemberCompletion[]> = {
+    "System.out": [
+      member("System.out.println", "println", "System.out.println(value)", "println($0)", method, ["print", "stdout", "line"]),
+      member("System.out.print", "print", "System.out.print(value)", "print($0)", method, ["print", "stdout"]),
+      member("System.out.printf", "printf", "System.out.printf(format, args)", "printf(\"$1\", $0)", method, ["format", "print"])
+    ],
+    "System.err": [
+      member("System.err.println", "println", "System.err.println(value)", "println($0)", method, ["print", "stderr", "line"]),
+      member("System.err.print", "print", "System.err.print(value)", "print($0)", method, ["print", "stderr"])
+    ],
+    Arrays: [
+      member("Arrays.sort", "sort", "Arrays.sort(array)", "sort($0)", fn, ["array"]),
+      member("Arrays.binarySearch", "binarySearch", "Arrays.binarySearch(array, key)", "binarySearch($1, $0)", fn, ["search"]),
+      member("Arrays.fill", "fill", "Arrays.fill(array, value)", "fill($1, $0)", fn, ["array"])
+    ],
+    Collections: [
+      member("Collections.sort", "sort", "Collections.sort(list)", "sort($0)", fn, ["list"]),
+      member("Collections.reverse", "reverse", "Collections.reverse(list)", "reverse($0)", fn, ["list"]),
+      member("Collections.binarySearch", "binarySearch", "Collections.binarySearch(list, key)", "binarySearch($1, $0)", fn, ["search"])
+    ]
+  };
+  if (language === "go") return go;
+  if (language === "javascript" || language === "typescript") return js;
+  if (language === "python") return py;
+  if (language === "cpp") return cpp;
+  if (language === "java") return java;
+  return {};
+}
+
+function member(id: string, label: string, detail: string, insertText: string, kind: monaco.languages.CompletionItemKind, keywords: string[]): MemberCompletion {
+  return { id, label, detail, insertText, kind, keywords };
+}
+
 function codeCompletions(language: string, prefix = ""): CodeCompletion[] {
   const normalized = language.toLowerCase();
-  const common: CodeCompletion[] = [
-    { id: "for-loop", label: "for loop", detail: "Index-based loop", insertText: "for (let i = 0; i < n; i++) {\n  \n}", keywords: ["for", "loop", "iteration"] },
-    { id: "if-guard", label: "guard clause", detail: "Early return check", insertText: "if (!condition) {\n  return;\n}", keywords: ["if", "guard", "return"] },
-    { id: "two-pointers", label: "two pointers", detail: "left/right scan", insertText: "let left = 0;\nlet right = nums.length - 1;\nwhile (left < right) {\n  \n}", keywords: ["two", "pointer", "left", "right"] }
-  ];
   const byLanguage: Record<string, CodeCompletion[]> = {
     go: [
       { id: "go-main", label: "main package", detail: "Go executable starter", insertText: defaultGoSolution(), keywords: ["main", "package", "go"] },
@@ -2329,7 +2748,39 @@ function codeCompletions(language: string, prefix = ""): CodeCompletion[] {
       { id: "cpp-map", label: "unordered_map", detail: "frequency table", insertText: "unordered_map<int, int> count;\nfor (int value : nums) {\n    count[value]++;\n}", keywords: ["map", "hash", "counter"] }
     ]
   };
-  const items = [...(byLanguage[normalized] ?? []), ...common];
+  const commonByLanguage: Record<string, CodeCompletion[]> = {
+    go: [
+      { id: "go-for", label: "for loop", detail: "Go index loop", insertText: "for i := 0; i < n; i++ {\n\t$0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "go-guard", label: "guard clause", detail: "Go early return", insertText: "if condition {\n\treturn $0\n}", keywords: ["if", "guard", "return"] },
+      { id: "go-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "left, right := 0, len(nums)-1\nfor left < right {\n\t$0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    java: [
+      { id: "java-for", label: "for loop", detail: "Java index loop", insertText: "for (int i = 0; i < n; i++) {\n    $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "java-guard", label: "guard clause", detail: "Java early return", insertText: "if (condition) {\n    return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "java-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "int left = 0, right = nums.length - 1;\nwhile (left < right) {\n    $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    python: [
+      { id: "py-for", label: "for loop", detail: "Python range loop", insertText: "for i in range(n):\n    $0", keywords: ["for", "loop", "iteration"] },
+      { id: "py-guard", label: "guard clause", detail: "Python early return", insertText: "if condition:\n    return $0", keywords: ["if", "guard", "return"] },
+      { id: "py-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "left, right = 0, len(nums) - 1\nwhile left < right:\n    $0", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    javascript: [
+      { id: "js-for", label: "for loop", detail: "JavaScript index loop", insertText: "for (let i = 0; i < n; i++) {\n  $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "js-guard", label: "guard clause", detail: "JavaScript early return", insertText: "if (!condition) {\n  return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "js-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "let left = 0;\nlet right = nums.length - 1;\nwhile (left < right) {\n  $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    typescript: [
+      { id: "ts-for", label: "for loop", detail: "TypeScript index loop", insertText: "for (let i = 0; i < n; i++) {\n  $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "ts-guard", label: "guard clause", detail: "TypeScript early return", insertText: "if (!condition) {\n  return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "ts-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "let left = 0;\nlet right = nums.length - 1;\nwhile (left < right) {\n  $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    cpp: [
+      { id: "cpp-for", label: "for loop", detail: "C++ index loop", insertText: "for (int i = 0; i < n; i++) {\n    $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "cpp-guard", label: "guard clause", detail: "C++ early return", insertText: "if (condition) {\n    return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "cpp-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "int left = 0, right = nums.size() - 1;\nwhile (left < right) {\n    $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ]
+  };
+  const items = [...(byLanguage[normalized] ?? []), ...(commonByLanguage[normalized] ?? [])];
   const query = prefix.toLowerCase();
   if (!query) return items;
   return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query)));
@@ -2379,38 +2830,6 @@ function formatSource(language: string, source: string): string {
     if (line.endsWith("{")) depth += 1;
     return output;
   }).join("\n") + "\n";
-}
-
-function highlightCode(source: string, language: string): string {
-  const keywords = keywordSet(language);
-  return escapeHtml(source || " ").split("\n").map((line) => highlightCodeLine(line, keywords, language)).join("\n");
-}
-
-function highlightCodeLine(escapedLine: string, keywords: Set<string>, language: string): string {
-  const commentMarker = language === "python" ? "#" : "//";
-  const commentIndex = escapedLine.indexOf(commentMarker);
-  const code = commentIndex >= 0 ? escapedLine.slice(0, commentIndex) : escapedLine;
-  const comment = commentIndex >= 0 ? escapedLine.slice(commentIndex) : "";
-  const highlighted = code.replace(/(&quot;.*?&quot;|&#039;.*?&#039;|`.*?`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g, (token) => {
-    const plain = token.replaceAll("&quot;", "\"").replaceAll("&#039;", "'");
-    if (token.startsWith("&quot;") || token.startsWith("&#039;") || token.startsWith("`")) return `<span class="tok-string">${token}</span>`;
-    if (/^\d/.test(token)) return `<span class="tok-number">${token}</span>`;
-    if (keywords.has(plain)) return `<span class="tok-keyword">${token}</span>`;
-    return token;
-  });
-  return comment ? `${highlighted}<span class="tok-comment">${comment}</span>` : highlighted;
-}
-
-function keywordSet(language: string): Set<string> {
-  const shared = ["return", "if", "else", "for", "while", "break", "continue", "class", "function", "const", "let", "var", "new"];
-  const extra: Record<string, string[]> = {
-    go: ["package", "import", "func", "range", "map", "struct", "defer", "go", "nil"],
-    java: ["public", "private", "static", "void", "int", "boolean", "String", "Map", "HashMap"],
-    python: ["def", "from", "import", "in", "not", "and", "or", "None", "True", "False", "self"],
-    typescript: ["type", "interface", "number", "string", "boolean"],
-    cpp: ["include", "using", "namespace", "int", "long", "vector", "unordered_map", "auto"]
-  };
-  return new Set([...shared, ...(extra[language] ?? [])]);
 }
 
 function isRecord(value: unknown): value is JsonObject {
