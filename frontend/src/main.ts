@@ -11,6 +11,8 @@ import "monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution"
 import {
   ApiClient,
   ApiError,
+  type CodingCompletionResponse,
+  type CodingCompletionSuggestion,
   type ApiState,
   type CodingQuestion,
   type CodingSubmission,
@@ -111,6 +113,9 @@ interface AppState {
     languageDrafts: Record<string, string>;
     sourceCode: string;
     completionPrefix: string;
+    completionProfile: CodingCompletionResponse | null;
+    completionLoading: boolean;
+    completionError: string;
     loading: boolean;
     error: string;
   };
@@ -147,6 +152,8 @@ interface CodeCompletion {
   detail: string;
   insertText: string;
   keywords: string[];
+  kind?: string;
+  source?: string;
 }
 
 interface MemberCompletion {
@@ -214,6 +221,8 @@ let codeEditor: monaco.editor.IStandaloneCodeEditor | null = null;
 let codeEditorModel: monaco.editor.ITextModel | null = null;
 let completionProvider: monaco.IDisposable | null = null;
 let monacoThemeReady = false;
+let completionRefreshTimer: number | null = null;
+let completionRequestSeq = 0;
 
 if (!root) {
   throw new Error("missing #app");
@@ -250,6 +259,9 @@ const state: AppState = {
     languageDrafts: {},
     sourceCode: defaultGoSolution(),
     completionPrefix: "",
+    completionProfile: null,
+    completionLoading: false,
+    completionError: "",
     loading: false,
     error: ""
   },
@@ -340,6 +352,10 @@ function mountCodeEditor(): void {
 }
 
 function disposeCodeEditor(): void {
+  if (completionRefreshTimer !== null) {
+    window.clearTimeout(completionRefreshTimer);
+    completionRefreshTimer = null;
+  }
   completionProvider?.dispose();
   completionProvider = null;
   codeEditor?.dispose();
@@ -382,19 +398,9 @@ function registerCodeCompletionProvider(language: string): void {
   const monacoLang = monacoLanguage(language);
   completionProvider = monaco.languages.registerCompletionItemProvider(monacoLang, {
     triggerCharacters: [".", ":", "_"],
-    provideCompletionItems: (model, position) => {
+    provideCompletionItems: async (model, position) => {
       const word = model.getWordUntilPosition(position);
       const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
-      const memberSuggestions = memberCompletions(language, model, position).map((item, index) => ({
-        label: item.label,
-        kind: item.kind,
-        detail: item.detail,
-        insertText: item.insertText,
-        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        sortText: `0_${String(index).padStart(3, "0")}_${item.label}`,
-        range: memberCompletionRange(model, position)
-      }));
-      if (memberSuggestions.length) return { suggestions: memberSuggestions };
       const symbolSuggestions = symbolCompletions(language, model, word.word).map((item, index) => ({
         label: item.label,
         kind: item.kind,
@@ -410,10 +416,11 @@ function registerCodeCompletionProvider(language: string): void {
         detail: item.detail,
         insertText: item.insertText,
         insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        sortText: `2_${String(index).padStart(3, "0")}_${item.label}`,
+        sortText: `3_${String(index).padStart(3, "0")}_${item.label}`,
         range
       }));
-      return { suggestions: [...symbolSuggestions, ...snippetSuggestions] };
+      const remoteSuggestions = await remoteCompletionItems(model, position, language, word.word, range);
+      return { suggestions: dedupeMonacoSuggestions([...remoteSuggestions, ...symbolSuggestions, ...snippetSuggestions]) };
     }
   });
 }
@@ -428,6 +435,62 @@ function monacoLanguage(language: string): string {
     cpp: "cpp"
   };
   return languages[language.toLowerCase()] ?? "go";
+}
+
+async function remoteCompletionItems(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  language: string,
+  prefix: string,
+  range: monaco.Range
+): Promise<monaco.languages.CompletionItem[]> {
+  if (!state.accessToken) return [];
+  try {
+    const profile = await api.suggestCodingCompletions({
+      question_id: state.coding.selectedQuestion?.question_id,
+      language,
+      source_code: model.getValue(),
+      cursor_offset: model.getOffsetAt(position),
+      prefix,
+      limit: 16
+    });
+    state.coding.completionProfile = profile;
+    state.coding.completionError = "";
+    updateCompletionPanel();
+    return profile.suggestions.map((item, index) => ({
+      label: item.label,
+      kind: monacoCompletionKind(item.kind),
+      detail: `${sourceLabel(item.source)} · ${item.detail}`,
+      insertText: item.insert_text,
+      insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+      sortText: `2_${String(item.rank ?? index).padStart(3, "0")}_${item.label}`,
+      range
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function monacoCompletionKind(kind: string): monaco.languages.CompletionItemKind {
+  const normalized = kind.toLowerCase();
+  if (normalized === "function") return monaco.languages.CompletionItemKind.Function;
+  if (normalized === "method") return monaco.languages.CompletionItemKind.Method;
+  if (normalized === "variable") return monaco.languages.CompletionItemKind.Variable;
+  if (normalized === "class") return monaco.languages.CompletionItemKind.Class;
+  if (normalized === "property") return monaco.languages.CompletionItemKind.Property;
+  if (normalized === "keyword") return monaco.languages.CompletionItemKind.Keyword;
+  return monaco.languages.CompletionItemKind.Snippet;
+}
+
+function dedupeMonacoSuggestions(items: monaco.languages.CompletionItem[]): monaco.languages.CompletionItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const label = typeof item.label === "string" ? item.label : item.label.label;
+    const key = `${label}:${item.detail ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function icon(name: string, className = "ui-icon"): string {
@@ -1036,8 +1099,12 @@ function renderCoding(): string {
     <section class="content-grid coding-layout">
       <article class="card question-browser">
         <div class="section-head">
-          <div><h2>Question set</h2><p>Published coding questions from PostgreSQL seed data.</p></div>
+          <div><h2>Question set</h2><p>OJ-style questions with hidden-case judging and async verdicts.</p></div>
           <button class="button secondary" data-action="load-coding" ${state.coding.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.coding.loading ? "Updating" : "Reload"}</span></button>
+        </div>
+        <div class="question-browser-metrics">
+          <span><strong>${state.coding.questions.length}</strong><small>published</small></span>
+          <span><strong>${state.coding.submissions.length}</strong><small>recent runs</small></span>
         </div>
         <div class="list-panel">
           ${state.coding.questions.map((question) => `
@@ -1051,13 +1118,9 @@ function renderCoding(): string {
       </article>
       <article class="card editor-card code-studio">
         <div class="section-head">
-          <div><h2>${escapeHtml(selected?.title ?? "Select a question")}</h2><p>${escapeHtml(selected?.constraints_text ?? "Prompt and constraints appear here.")}</p></div>
+          <div><h2>${escapeHtml(selected?.title ?? "Select a question")}</h2><p>${escapeHtml(selected ? `${selected.difficulty} · ${selected.question_type}` : "Prompt and constraints appear here.")}</p></div>
         </div>
-        <div class="prompt-panel">
-          <span class="eyebrow">Problem brief</span>
-          <p class="prompt-text">${escapeHtml(selected?.prompt ?? "")}</p>
-          <div class="chip-row">${(selected?.topic_tags ?? ["backend", "practice"]).slice(0, 5).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
-        </div>
+        ${renderProblemPanel(selected)}
         <form id="coding-form" class="coding-form" aria-busy="${state.coding.loading ? "true" : "false"}">
           <label>Language
             <select name="language">
@@ -1092,6 +1155,7 @@ function renderCoding(): string {
         <div class="section-head compact">
           <div><h2>Judge results</h2><p>Latest asynchronous verdicts for this question.</p></div>
         </div>
+        ${renderJudgeSummary()}
         <div class="submission-list">
           ${state.coding.submissions.map(renderSubmissionCard).join("") || emptyState("No records", "Nothing has been returned by the API yet.")}
         </div>
@@ -1100,17 +1164,60 @@ function renderCoding(): string {
   `;
 }
 
+function renderProblemPanel(selected: CodingQuestion | null): string {
+  const tags = selected?.topic_tags?.length ? selected.topic_tags : ["backend", "practice"];
+  return `
+    <div class="prompt-panel oj-spec">
+      <div>
+        <span class="eyebrow">Problem brief</span>
+        <p class="prompt-text">${escapeHtml(selected?.prompt ?? "Choose a question to load the problem statement.")}</p>
+      </div>
+      <div class="spec-grid">
+        ${specBlock("Input", selected?.input_format || "Read from standard input or follow the question contract.")}
+        ${specBlock("Output", selected?.output_format || "Write the answer to standard output.")}
+        ${specBlock("Limits", selected?.constraints_text || "Use the configured judge time and memory limits.")}
+      </div>
+      <div class="chip-row">${tags.slice(0, 6).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
+    </div>
+  `;
+}
+
+function specBlock(label: string, value: string): string {
+  return `<div class="spec-block"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value)}</p></div>`;
+}
+
+function renderJudgeSummary(): string {
+  const accepted = state.coding.submissions.filter((item) => item.status === "accepted").length;
+  const running = state.coding.submissions.filter((item) => item.status === "queued" || item.status === "running").length;
+  const bestScore = state.coding.submissions.reduce((max, item) => Math.max(max, Number(item.score) || 0), 0);
+  return `
+    <div class="judge-summary">
+      <span><strong>${accepted}</strong><small>AC</small></span>
+      <span><strong>${running}</strong><small>pending</small></span>
+      <span><strong>${bestScore.toFixed(0)}</strong><small>best score</small></span>
+    </div>
+  `;
+}
+
 function renderCodeAssistPanel(language: string, source: string): string {
   const prefix = currentCodePrefix(source);
-  const completions = codeCompletions(language, prefix).slice(0, 6);
+  const completions = completionPanelItems(language, source);
+  const status = state.coding.completionLoading
+    ? "Syncing backend profile"
+    : state.coding.completionError
+      ? "Local fallback"
+      : state.coding.completionProfile
+        ? `${state.coding.completionProfile.suggestions.length} backend suggestions`
+        : "Local suggestions";
   return `
     <div class="code-assist-panel" data-role="code-assist-panel">
       <div class="assist-head">
         <span>${icon("brain-circuit")}</span>
         <div>
-          <strong>Snippets</strong>
-          <small>${prefix ? `Matching "${prefix}"` : "Common patterns for the selected language."}</small>
+          <strong>Completion profile</strong>
+          <small data-role="completion-status">${escapeHtml(status)}${prefix ? ` · ${escapeHtml(prefix)}` : ""}</small>
         </div>
+        <button class="icon-button light" type="button" data-action="refresh-completions" aria-label="Refresh completions">${icon("refresh-cw")}</button>
       </div>
       <div class="completion-list" data-role="completion-list">
         ${completions.map(renderCompletionButton).join("")}
@@ -1122,10 +1229,60 @@ function renderCodeAssistPanel(language: string, source: string): string {
 function renderCompletionButton(item: CodeCompletion): string {
   return `
     <button class="completion-item" type="button" data-action="insert-completion" data-completion-id="${escapeAttr(item.id)}">
+      <span>${escapeHtml(sourceLabel(item.source ?? "local"))}</span>
       <strong>${escapeHtml(item.label)}</strong>
       <small>${escapeHtml(item.detail)}</small>
     </button>
   `;
+}
+
+function completionPanelItems(language: string, source: string): CodeCompletion[] {
+  const prefix = currentCodePrefix(source);
+  const remote = (state.coding.completionProfile?.suggestions ?? [])
+    .map(remoteToCodeCompletion)
+    .filter((item) => codeCompletionMatches(item, prefix));
+  const local = codeCompletions(language, prefix);
+  return dedupeCodeCompletions([...remote, ...local]).slice(0, 6);
+}
+
+function remoteToCodeCompletion(item: CodingCompletionSuggestion): CodeCompletion {
+  return {
+    id: item.id,
+    label: item.label,
+    detail: item.detail,
+    insertText: item.insert_text,
+    keywords: item.tags ?? [],
+    kind: item.kind,
+    source: item.source
+  };
+}
+
+function dedupeCodeCompletions(items: CodeCompletion[]): CodeCompletion[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.label}:${item.insertText}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function codeCompletionMatches(item: CodeCompletion, prefix: string): boolean {
+  const query = prefix.toLowerCase();
+  if (!query) return true;
+  return [item.label, item.detail, item.kind ?? "", item.source ?? "", ...item.keywords]
+    .some((value) => value.toLowerCase().includes(query));
+}
+
+function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    question_pattern: "Question",
+    starter_template: "Starter",
+    standard_library: "Library",
+    local_symbol: "Local",
+    local: "Local"
+  };
+  return labels[source] ?? source.replaceAll("_", " ");
 }
 
 function renderMemory(): string {
@@ -1586,6 +1743,9 @@ function bindEvents(): void {
   document.querySelector<HTMLButtonElement>("[data-action='insert-starter']")?.addEventListener("click", () => {
     insertStarterCode();
   });
+  document.querySelector<HTMLButtonElement>("[data-action='refresh-completions']")?.addEventListener("click", () => {
+    void loadCompletionProfile(false);
+  });
   document.querySelector<HTMLDivElement>("[data-role='code-assist-panel']")?.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-action='insert-completion']");
     if (button) {
@@ -1727,16 +1887,66 @@ async function loadCoding(): Promise<void> {
   render();
 }
 
+async function loadCompletionProfile(shouldRender = false): Promise<void> {
+  if (!state.accessToken || !state.coding.selectedQuestion) return;
+  const requestSeq = ++completionRequestSeq;
+  state.coding.completionLoading = true;
+  state.coding.completionError = "";
+  if (shouldRender) render();
+  updateCompletionPanel();
+  try {
+    const source = codeEditor?.getValue() ?? state.coding.sourceCode;
+    const model = codeEditor?.getModel();
+    const position = codeEditor?.getPosition();
+    const cursorOffset = model && position ? model.getOffsetAt(position) : source.length;
+    const profile = await api.suggestCodingCompletions({
+      question_id: state.coding.selectedQuestion.question_id,
+      language: state.coding.language,
+      source_code: source,
+      cursor_offset: cursorOffset,
+      prefix: model && position ? model.getWordUntilPosition(position).word : currentCodePrefix(source),
+      limit: 12
+    });
+    if (requestSeq !== completionRequestSeq) return;
+    state.coding.completionProfile = profile;
+  } catch (error) {
+    if (requestSeq !== completionRequestSeq) return;
+    state.coding.completionError = errorMessage(error);
+  } finally {
+    if (requestSeq === completionRequestSeq) {
+      state.coding.completionLoading = false;
+      updateCompletionPanel();
+      if (shouldRender) render();
+    }
+  }
+}
+
+function scheduleCompletionProfileRefresh(): void {
+  if (!state.coding.selectedQuestion) return;
+  if (completionRefreshTimer !== null) {
+    window.clearTimeout(completionRefreshTimer);
+  }
+  completionRefreshTimer = window.setTimeout(() => {
+    completionRefreshTimer = null;
+    void loadCompletionProfile(false);
+  }, 650);
+}
+
 async function selectQuestion(questionId: string, shouldRender = true): Promise<void> {
   const fallback = state.coding.questions.find((item) => item.question_id === questionId) ?? null;
   state.coding.selectedQuestion = fallback;
+  state.coding.completionProfile = null;
+  state.coding.completionError = "";
+  let loaded = false;
   try {
     state.coding.selectedQuestion = await api.getCodingQuestion(questionId);
     state.coding.submissions = await api.listCodingSubmissions(questionId);
+    loaded = true;
   } catch (error) {
     state.coding.error = errorMessage(error);
   }
   if (shouldRender) render();
+  if (loaded) void loadCompletionProfile(false);
 }
 
 async function loadMemory(): Promise<void> {
@@ -1950,7 +2160,9 @@ function insertStarterCode(): void {
 }
 
 function insertCompletion(completionId: string): void {
-  const completion = completionById(state.coding.language, completionId);
+  const completion = completionPanelItems(state.coding.language, codeEditor?.getValue() ?? state.coding.sourceCode)
+    .find((item) => item.id === completionId)
+    ?? completionById(state.coding.language, completionId);
   if (!codeEditor || !completion) return;
   insertIntoCodeEditor(completion.insertText, true);
   toast(ui("Completion inserted"));
@@ -1963,6 +2175,8 @@ function switchCodingLanguage(nextLanguage: string): void {
   state.coding.language = nextLanguage;
   state.coding.sourceCode = state.coding.languageDrafts[nextLanguage] ?? defaultSourceForLanguage(nextLanguage);
   state.coding.completionPrefix = currentCodePrefix(state.coding.sourceCode);
+  state.coding.completionProfile = null;
+  state.coding.completionError = "";
 }
 
 function insertIntoCodeEditor(text: string, replaceSelection: boolean): void {
@@ -2005,7 +2219,28 @@ function syncCodeEditorState(): void {
   const list = document.querySelector<HTMLElement>("[data-role='completion-list']");
   if (lineMetric) lineMetric.textContent = `${lineCount(value)} ${ui("lines")}`;
   if (charMetric) charMetric.textContent = `${value.length} ${ui("chars")}`;
-  if (list) list.innerHTML = codeCompletions(state.coding.language, state.coding.completionPrefix).slice(0, 6).map(renderCompletionButton).join("");
+  if (list) list.innerHTML = completionPanelItems(state.coding.language, value).map(renderCompletionButton).join("");
+  scheduleCompletionProfileRefresh();
+}
+
+function updateCompletionPanel(): void {
+  const source = codeEditor?.getValue() ?? state.coding.sourceCode;
+  const list = document.querySelector<HTMLElement>("[data-role='completion-list']");
+  const status = document.querySelector<HTMLElement>("[data-role='completion-status']");
+  if (list) {
+    list.innerHTML = completionPanelItems(state.coding.language, source).map(renderCompletionButton).join("");
+  }
+  if (status) {
+    const prefix = currentEditorPrefix();
+    const text = state.coding.completionLoading
+      ? "Syncing backend profile"
+      : state.coding.completionError
+        ? "Local fallback"
+        : state.coding.completionProfile
+          ? `${state.coding.completionProfile.suggestions.length} backend suggestions`
+          : "Local suggestions";
+    status.textContent = prefix ? `${ui(text)} · ${prefix}` : ui(text);
+  }
 }
 
 function currentEditorPrefix(): string {
@@ -2317,19 +2552,40 @@ function renderReportPreview(report: JsonObject): string {
 function renderSubmissionCard(item: CodingSubmission): string {
   const result = record(item.result);
   const message = stringValue(result.message ?? result.error ?? result.verdict, "Awaiting judge details");
+  const testResults = Array.isArray(result.test_results) ? result.test_results.filter(isRecord) : [];
+  const passed = testResults.filter((test) => test.passed === true).length;
+  const failed = testResults.find((test) => test.passed === false);
   return `
     <div class="submission-card">
-      <div>
-        <strong>${escapeHtml(item.language)}</strong>
-        <small>${escapeHtml(formatTime(item.updated_at || item.created_at))}</small>
+      <div class="submission-head">
+        <div>
+          <strong>${escapeHtml(verdictLabel(item.status))}</strong>
+          <small>${escapeHtml(item.language)} · ${escapeHtml(formatTime(item.updated_at || item.created_at))}</small>
+        </div>
+        ${statusBadge(item.status)}
       </div>
       <div class="submission-score">
-        ${statusBadge(item.status)}
-        <b>${item.score}</b>
+        <b>${Number(item.score).toFixed(0)}</b>
+        <span>score</span>
       </div>
       <p>${escapeHtml(message)}</p>
+      ${testResults.length ? `<div class="case-strip"><span>${passed}/${testResults.length} cases</span>${failed ? `<span>first failed: ${escapeHtml(stringValue(failed.test_case_id, "case"))}</span>` : "<span>all visible cases passed</span>"}</div>` : ""}
     </div>
   `;
+}
+
+function verdictLabel(status: string): string {
+  const labels: Record<string, string> = {
+    queued: "Pending judge",
+    running: "Running",
+    accepted: "Accepted",
+    wrong_answer: "Wrong answer",
+    runtime_error: "Runtime error",
+    time_limit_exceeded: "Time limit exceeded",
+    compile_error: "Compile error",
+    system_error: "System error"
+  };
+  return labels[status] ?? status;
 }
 
 function metricCard(label: string, value: string, hint: string, tone: string, iconName: string): string {
@@ -2361,7 +2617,7 @@ function statusBadge(status: string): string {
   const normalized = status.toLowerCase();
   const tone = ["passed", "completed", "accepted", "ready", "true", "ok", "enabled", "report"].includes(normalized)
     ? "ok"
-    : ["failed", "error", "wrong_answer", "false", "disabled"].includes(normalized)
+    : ["failed", "error", "wrong_answer", "runtime_error", "time_limit_exceeded", "compile_error", "system_error", "false", "disabled"].includes(normalized)
       ? "danger"
       : "info";
   return `<span class="status ${tone}">${escapeHtml(status)}</span>`;
@@ -2687,6 +2943,12 @@ function memberCompletionTable(language: string): Record<string, MemberCompletio
     ]
   };
   const java: Record<string, MemberCompletion[]> = {
+    System: [
+      member("System.out", "out", "System.out PrintStream", "out", property, ["stdout", "print", "println"]),
+      member("System.err", "err", "System.err PrintStream", "err", property, ["stderr", "print"]),
+      member("System.currentTimeMillis", "currentTimeMillis", "System.currentTimeMillis() long", "currentTimeMillis()", method, ["time", "millis"]),
+      member("System.nanoTime", "nanoTime", "System.nanoTime() long", "nanoTime()", method, ["time", "nano"])
+    ],
     "System.out": [
       member("System.out.println", "println", "System.out.println(value)", "println($0)", method, ["print", "stdout", "line"]),
       member("System.out.print", "print", "System.out.print(value)", "print($0)", method, ["print", "stdout"]),
@@ -2723,29 +2985,23 @@ function codeCompletions(language: string, prefix = ""): CodeCompletion[] {
   const normalized = language.toLowerCase();
   const byLanguage: Record<string, CodeCompletion[]> = {
     go: [
-      { id: "go-main", label: "main package", detail: "Go executable starter", insertText: defaultGoSolution(), keywords: ["main", "package", "go"] },
-      { id: "go-map", label: "map counter", detail: "map[int]int frequency table", insertText: "count := map[int]int{}\nfor _, value := range nums {\n\tcount[value]++\n}", keywords: ["map", "counter", "hash"] },
-      { id: "go-sort", label: "sort ints", detail: "sort.Ints(nums)", insertText: "sort.Ints(nums)", keywords: ["sort", "ints"] }
+      { id: "go-main", label: "main package", detail: "Go executable starter", insertText: defaultGoSolution(), keywords: ["main", "package", "go"] }
     ],
     java: [
-      { id: "java-class", label: "Solution class", detail: "LeetCode-style class", insertText: "class Solution {\n    public int solve(int[] nums) {\n        return 0;\n    }\n}", keywords: ["class", "solution", "java"] },
-      { id: "java-map", label: "HashMap", detail: "frequency map", insertText: "Map<Integer, Integer> count = new HashMap<>();\nfor (int value : nums) {\n    count.put(value, count.getOrDefault(value, 0) + 1);\n}", keywords: ["hashmap", "map", "count"] }
+      { id: "java-class", label: "Main class", detail: "Java stdin/stdout starter", insertText: defaultJavaProgram(), keywords: ["class", "main", "java", "stdin"] },
+      { id: "java-sout", label: "sout println", detail: "System.out.println(...)", insertText: "System.out.println($0);", keywords: ["sout", "println", "print", "stdout"] }
     ],
     python: [
-      { id: "py-solution", label: "Solution class", detail: "Python class starter", insertText: "class Solution:\n    def solve(self, nums):\n        return 0", keywords: ["class", "solution", "python"] },
-      { id: "py-counter", label: "Counter", detail: "collections.Counter", insertText: "from collections import Counter\ncount = Counter(nums)", keywords: ["counter", "dict", "map"] }
+      { id: "py-solution", label: "Python main", detail: "Python stdin/stdout starter", insertText: defaultPythonProgram(), keywords: ["main", "python", "stdin"] }
     ],
     javascript: [
-      { id: "js-function", label: "function solve", detail: "JavaScript function starter", insertText: "function solve(nums) {\n  return 0;\n}", keywords: ["function", "solve", "javascript"] },
-      { id: "js-map", label: "Map counter", detail: "ES Map frequency table", insertText: "const count = new Map();\nfor (const value of nums) {\n  count.set(value, (count.get(value) ?? 0) + 1);\n}", keywords: ["map", "counter", "hash"] }
+      { id: "js-function", label: "Node main", detail: "Node.js stdin/stdout starter", insertText: defaultJavaScriptProgram(), keywords: ["function", "main", "javascript", "stdin"] }
     ],
     typescript: [
-      { id: "ts-function", label: "typed solve", detail: "TypeScript function starter", insertText: "function solve(nums: number[]): number {\n  return 0;\n}", keywords: ["function", "typed", "typescript"] },
-      { id: "ts-map", label: "Map<number, number>", detail: "typed frequency table", insertText: "const count = new Map<number, number>();\nfor (const value of nums) {\n  count.set(value, (count.get(value) ?? 0) + 1);\n}", keywords: ["map", "counter", "hash"] }
+      { id: "ts-function", label: "Deno main", detail: "TypeScript stdin/stdout starter", insertText: defaultTypeScriptProgram(), keywords: ["function", "main", "typescript", "stdin"] }
     ],
     cpp: [
-      { id: "cpp-main", label: "C++ main", detail: "Standalone runner", insertText: "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    return 0;\n}", keywords: ["main", "cpp", "include"] },
-      { id: "cpp-map", label: "unordered_map", detail: "frequency table", insertText: "unordered_map<int, int> count;\nfor (int value : nums) {\n    count[value]++;\n}", keywords: ["map", "hash", "counter"] }
+      { id: "cpp-main", label: "C++ main", detail: "C++ stdin/stdout starter", insertText: defaultCppProgram(), keywords: ["main", "cpp", "include", "stdin"] }
     ]
   };
   const commonByLanguage: Record<string, CodeCompletion[]> = {
@@ -2843,6 +3099,72 @@ import "fmt"
 
 func main() {
   fmt.Println("ready")
+}
+`;
+}
+
+function defaultJavaProgram(): string {
+  return `import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("ready");
+    }
+}
+`;
+}
+
+function defaultPythonProgram(): string {
+  return `import sys
+
+
+def main():
+    data = sys.stdin.read().strip().split()
+    print("ready")
+
+
+if __name__ == "__main__":
+    main()
+`;
+}
+
+function defaultJavaScriptProgram(): string {
+  return `const fs = require("fs");
+const input = fs.readFileSync(0, "utf8").trim();
+
+function main() {
+  console.log("ready");
+}
+
+main();
+`;
+}
+
+function defaultTypeScriptProgram(): string {
+  return `const decoder = new TextDecoder();
+let input = "";
+for await (const chunk of Deno.stdin.readable) {
+  input += decoder.decode(chunk);
+}
+
+function main(): void {
+  console.log("ready");
+}
+
+main();
+`;
+}
+
+function defaultCppProgram(): string {
+  return `#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+    cout << "ready" << '\\n';
+    return 0;
 }
 `;
 }

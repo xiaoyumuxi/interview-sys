@@ -50,11 +50,11 @@
 
 - 编辑体验：Monaco 提供 Tab 缩进、括号匹配、当前文档单词联想、基础语法高亮、光标/选择和可滚动代码区。
 - 语言切换：切换 Go、Java、Python、JavaScript、TypeScript、C++ 时会保存当前语言草稿，并加载目标语言草稿；如果目标语言还没有草稿，则加载对应 starter。
-- 轻量联想：前端 completion provider 组合三类候选：当前文件函数/变量/类型扫描、常见标准库/工具类成员表、语言 snippets。典型例子包括 Go 的 `fmt.` / `sort.` / `strings.`、Java 的 `System.out.` / `Arrays.`、JavaScript/TypeScript 的 `console.` / `Math.`、Python 的 `math.` / `collections.` 等。
+- 轻量联想：前端 completion provider 组合当前文件符号和 Go API 的 `POST /api/coding/completions` profile。后端根据语言、题目标签、当前源码和光标前缀返回 starter、题目模式、数据化标准库 catalog 和本地符号建议；前端只保留 starter / loop / guard 等编辑快捷片段作为低延迟兜底，不再维护标准库 API 表。典型例子包括 Java 的 `HashMap` / `PriorityQueue` / `System.out.`、Go 的 `fmt.` / `sort.` / `strings.`、JavaScript/TypeScript 的 `console.` / `Math.`、Python 的 `heapq.` / `collections` 等。
 - 快捷工具：提供 `Format` 和 `Starter` 按钮，分别执行本地缩进整理和插入当前语言 starter。
 - 判题边界：编辑器只处理本地文本体验，不执行代码；真正提交仍走 Go API 和 coding judge worker。
 
-轻量联想不是完整 LSP：它不会解析第三方包类型、跨文件符号、泛型实例类型或真实编译错误。这个取舍是为了让面试练习页具备接近 LeetCode 的常用补全体验，同时避免在前端工作台里引入长期运行的语言服务和复杂进程管理。
+轻量联想不是完整 LSP：它不会解析第三方包类型、跨文件符号、泛型实例类型或真实编译错误。后端 completion API 是确定性建议服务，不调用模型、不写数据库，只提供可审计的题目感知补全画像。这个 catalog 层只是过渡方案；如果要达到专业 IDE / 牛客企业考试级别，应新增独立 completion gateway，通过 Monaco Language Client 接语言服务器：Java 接 Eclipse JDT LS，C/C++ 接 clangd，Python 接 Pyright/Jedi，Go 接 gopls，TypeScript/JavaScript 使用 Monaco/tsserver 能力。这样才能从语言服务器获得真实类型、import、诊断、hover 和跨文件语义补全。
 
 ## 设置中心
 

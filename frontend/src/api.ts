@@ -96,6 +96,28 @@ export interface CodingSubmission {
   updated_at: string;
 }
 
+export interface CodingCompletionSuggestion {
+  id: string;
+  label: string;
+  detail: string;
+  insert_text: string;
+  kind: string;
+  source: string;
+  rank: number;
+  tags: string[];
+}
+
+export interface CodingCompletionResponse {
+  schema_version: string;
+  question_id?: string;
+  language: string;
+  prefix: string;
+  cursor_offset: number;
+  capabilities: string[];
+  suggestions: CodingCompletionSuggestion[];
+  diagnostics: Array<{ code: string; message: string }>;
+}
+
 export interface EvaluationCase {
   case_id: string;
   suite: string;
@@ -262,6 +284,20 @@ export class ApiClient {
   async listCodingSubmissions(questionId = ""): Promise<CodingSubmission[]> {
     const query = questionId ? `?question_id=${encodeURIComponent(questionId)}&limit=20` : "?limit=20";
     return this.items<CodingSubmission>(`/api/coding/submissions${query}`);
+  }
+
+  async suggestCodingCompletions(payload: {
+    question_id?: string;
+    language: string;
+    source_code: string;
+    cursor_offset: number;
+    prefix?: string;
+    limit?: number;
+  }): Promise<CodingCompletionResponse> {
+    return this.request<CodingCompletionResponse>("/api/coding/completions", {
+      method: "POST",
+      body: payload
+    });
   }
 
   async listMemoryCandidates(status = "pending"): Promise<JsonObject> {

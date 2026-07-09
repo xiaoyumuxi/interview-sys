@@ -86,6 +86,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/coding/question-sets", api.listQuestionSets)
 	group.GET("/coding/questions", api.listQuestions)
 	group.GET("/coding/questions/:question_id", api.getQuestion)
+	group.POST("/coding/completions", api.suggestCodingCompletions)
 	group.POST("/coding/submissions", api.createSubmission)
 	group.GET("/coding/submissions", api.listSubmissions)
 	group.GET("/coding/submissions/:submission_id", api.getSubmission)
@@ -548,6 +549,33 @@ func (h apiHandler) getQuestion(c *gin.Context) {
 	}
 	if !ok {
 		writeGinError(c, http.StatusNotFound, "coding_question_not_found", "question_id is not registered")
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+func (h apiHandler) suggestCodingCompletions(c *gin.Context) {
+	var req coding.CompletionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	var question *coding.Question
+	if req.QuestionID != "" {
+		item, ok, err := h.deps.CodingStore.GetQuestion(c.Request.Context(), req.QuestionID)
+		if err != nil {
+			writeGinError(c, http.StatusInternalServerError, "coding_question_failed", err.Error())
+			return
+		}
+		if !ok || item.Status != "published" {
+			writeGinError(c, http.StatusNotFound, "coding_question_not_found", "question_id is not published or does not exist")
+			return
+		}
+		question = &item
+	}
+	item, err := coding.SuggestCompletions(req, question)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "coding_completion_failed", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, item)

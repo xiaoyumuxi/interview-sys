@@ -1,0 +1,173 @@
+{
+  "languages": {
+    "go": {
+      "globals": [
+        {"id":"go.fmt.println","label":"fmt.Println","detail":"fmt.Println(a ...any)","insert_text":"fmt.Println($0)","kind":"function","source":"standard_library","rank":70,"tags":["print","stdout"]},
+        {"id":"go.fmt.printf","label":"fmt.Printf","detail":"fmt.Printf(format string, a ...any)","insert_text":"fmt.Printf(\"$1\", $0)","kind":"function","source":"standard_library","rank":71,"tags":["format","print"]},
+        {"id":"go.sort.ints","label":"sort.Ints","detail":"sort.Ints(x []int)","insert_text":"sort.Ints($0)","kind":"function","source":"standard_library","rank":72,"tags":["sort","array"]},
+        {"id":"go.sort.slice","label":"sort.Slice","detail":"sort.Slice(x any, less func(i,j int) bool)","insert_text":"sort.Slice($1, func(i, j int) bool {\n\treturn $0\n})","kind":"function","source":"standard_library","rank":73,"tags":["sort","custom"]},
+        {"id":"go.strings.fields","label":"strings.Fields","detail":"strings.Fields(s string) []string","insert_text":"strings.Fields($0)","kind":"function","source":"standard_library","rank":74,"tags":["string","split"]},
+        {"id":"go.strconv.atoi","label":"strconv.Atoi","detail":"strconv.Atoi(s string) (int, error)","insert_text":"strconv.Atoi($0)","kind":"function","source":"standard_library","rank":75,"tags":["parse","int"]},
+        {"id":"go.container.heap","label":"heap.Interface","detail":"container/heap priority queue contract","insert_text":"type hp []int\n\nfunc (h hp) Len() int { return len(h) }\nfunc (h hp) Less(i, j int) bool { return h[i] < h[j] }\nfunc (h hp) Swap(i, j int) { h[i], h[j] = h[j], h[i] }\nfunc (h *hp) Push(x any) { *h = append(*h, x.(int)) }\nfunc (h *hp) Pop() any {\n\told := *h\n\tx := old[len(old)-1]\n\t*h = old[:len(old)-1]\n\treturn x\n}","kind":"snippet","source":"standard_library","rank":76,"tags":["heap","priority","queue"]}
+      ],
+      "members": {
+        "fmt": [
+          {"id":"go.fmt.Println","label":"Println","detail":"fmt.Println(a ...any)","insert_text":"Println($0)","kind":"function","source":"standard_library","rank":5,"tags":["print","stdout"]},
+          {"id":"go.fmt.Printf","label":"Printf","detail":"fmt.Printf(format string, a ...any)","insert_text":"Printf(\"$1\", $0)","kind":"function","source":"standard_library","rank":6,"tags":["format","print"]},
+          {"id":"go.fmt.Scan","label":"Scan","detail":"fmt.Scan(a ...any)","insert_text":"Scan($0)","kind":"function","source":"standard_library","rank":7,"tags":["stdin","scan"]}
+        ],
+        "sort": [
+          {"id":"go.sort.Ints","label":"Ints","detail":"sort.Ints(x []int)","insert_text":"Ints($0)","kind":"function","source":"standard_library","rank":5,"tags":["sort","array"]},
+          {"id":"go.sort.Slice","label":"Slice","detail":"sort.Slice(x any, less func(i,j int) bool)","insert_text":"Slice($1, func(i, j int) bool {\n\treturn $0\n})","kind":"function","source":"standard_library","rank":6,"tags":["custom","sort"]},
+          {"id":"go.sort.Search","label":"Search","detail":"sort.Search(n int, f func(int) bool) int","insert_text":"Search($1, func(i int) bool {\n\treturn $0\n})","kind":"function","source":"standard_library","rank":7,"tags":["binary","search"]}
+        ],
+        "strings": [
+          {"id":"go.strings.Contains","label":"Contains","detail":"strings.Contains(s, substr string) bool","insert_text":"Contains($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["contains","substring"]},
+          {"id":"go.strings.Split","label":"Split","detail":"strings.Split(s, sep string) []string","insert_text":"Split($1, $0)","kind":"function","source":"standard_library","rank":6,"tags":["split"]},
+          {"id":"go.strings.TrimSpace","label":"TrimSpace","detail":"strings.TrimSpace(s string) string","insert_text":"TrimSpace($0)","kind":"function","source":"standard_library","rank":7,"tags":["trim"]}
+        ],
+        "strconv": [
+          {"id":"go.strconv.Atoi","label":"Atoi","detail":"strconv.Atoi(s string) (int, error)","insert_text":"Atoi($0)","kind":"function","source":"standard_library","rank":5,"tags":["string","int"]},
+          {"id":"go.strconv.Itoa","label":"Itoa","detail":"strconv.Itoa(i int) string","insert_text":"Itoa($0)","kind":"function","source":"standard_library","rank":6,"tags":["int","string"]},
+          {"id":"go.strconv.ParseInt","label":"ParseInt","detail":"strconv.ParseInt(s, base, bitSize)","insert_text":"ParseInt($1, $2, $0)","kind":"function","source":"standard_library","rank":7,"tags":["parse"]}
+        ]
+      }
+    },
+    "java": {
+      "globals": [
+        {"id":"java.hashmap","label":"HashMap","detail":"java.util.HashMap<K,V>","insert_text":"HashMap<$1, $2> $3 = new HashMap<>();","kind":"class","source":"standard_library","rank":40,"tags":["hashmap","map","dict","hash"]},
+        {"id":"java.map","label":"Map","detail":"java.util.Map<K,V>","insert_text":"Map<$1, $2> $3 = new HashMap<>();","kind":"interface","source":"standard_library","rank":41,"tags":["map","hash"]},
+        {"id":"java.arraylist","label":"ArrayList","detail":"java.util.ArrayList<E>","insert_text":"ArrayList<$1> $2 = new ArrayList<>();","kind":"class","source":"standard_library","rank":42,"tags":["list","array"]},
+        {"id":"java.list","label":"List","detail":"java.util.List<E>","insert_text":"List<$1> $2 = new ArrayList<>();","kind":"interface","source":"standard_library","rank":43,"tags":["list"]},
+        {"id":"java.hashset","label":"HashSet","detail":"java.util.HashSet<E>","insert_text":"HashSet<$1> $2 = new HashSet<>();","kind":"class","source":"standard_library","rank":44,"tags":["set","hash"]},
+        {"id":"java.priorityqueue","label":"PriorityQueue","detail":"java.util.PriorityQueue<E>","insert_text":"PriorityQueue<$1> $2 = new PriorityQueue<>();","kind":"class","source":"standard_library","rank":45,"tags":["heap","priority","queue"]},
+        {"id":"java.arraydeque","label":"ArrayDeque","detail":"java.util.ArrayDeque<E>","insert_text":"ArrayDeque<$1> $2 = new ArrayDeque<>();","kind":"class","source":"standard_library","rank":46,"tags":["deque","queue","stack"]},
+        {"id":"java.stringbuilder","label":"StringBuilder","detail":"java.lang.StringBuilder","insert_text":"StringBuilder sb = new StringBuilder();","kind":"class","source":"standard_library","rank":47,"tags":["string","builder"]},
+        {"id":"java.arrays.sort","label":"Arrays.sort","detail":"Arrays.sort(array)","insert_text":"Arrays.sort($0)","kind":"function","source":"standard_library","rank":70,"tags":["array","sort"]},
+        {"id":"java.collections.sort","label":"Collections.sort","detail":"Collections.sort(list)","insert_text":"Collections.sort($0)","kind":"function","source":"standard_library","rank":72,"tags":["list","sort"]},
+        {"id":"java.system.out.println","label":"System.out.println","detail":"System.out.println(value)","insert_text":"System.out.println($0)","kind":"method","source":"standard_library","rank":73,"tags":["sout","print","stdout"]},
+        {"id":"java.sout","label":"sout println","detail":"System.out.println(...)","insert_text":"System.out.println($0);","kind":"snippet","source":"standard_library","rank":74,"tags":["sout","println","print","stdout"]}
+      ],
+      "members": {
+        "System": [
+          {"id":"java.System.out","label":"out","detail":"System.out PrintStream","insert_text":"out","kind":"property","source":"standard_library","rank":5,"tags":["stdout","print","println"]},
+          {"id":"java.System.err","label":"err","detail":"System.err PrintStream","insert_text":"err","kind":"property","source":"standard_library","rank":6,"tags":["stderr","print"]},
+          {"id":"java.System.currentTimeMillis","label":"currentTimeMillis","detail":"System.currentTimeMillis() long","insert_text":"currentTimeMillis()","kind":"method","source":"standard_library","rank":7,"tags":["time","millis"]},
+          {"id":"java.System.nanoTime","label":"nanoTime","detail":"System.nanoTime() long","insert_text":"nanoTime()","kind":"method","source":"standard_library","rank":8,"tags":["time","nano"]}
+        ],
+        "System.out": [
+          {"id":"java.System.out.println","label":"println","detail":"System.out.println(value)","insert_text":"println($0)","kind":"method","source":"standard_library","rank":5,"tags":["print","stdout"]},
+          {"id":"java.System.out.print","label":"print","detail":"System.out.print(value)","insert_text":"print($0)","kind":"method","source":"standard_library","rank":6,"tags":["print"]},
+          {"id":"java.System.out.printf","label":"printf","detail":"System.out.printf(format, args)","insert_text":"printf(\"$1\", $0)","kind":"method","source":"standard_library","rank":7,"tags":["format"]}
+        ],
+        "Arrays": [
+          {"id":"java.Arrays.sort","label":"sort","detail":"Arrays.sort(array)","insert_text":"sort($0)","kind":"function","source":"standard_library","rank":5,"tags":["array","sort"]},
+          {"id":"java.Arrays.binarySearch","label":"binarySearch","detail":"Arrays.binarySearch(array, key)","insert_text":"binarySearch($1, $0)","kind":"function","source":"standard_library","rank":6,"tags":["binary","search"]},
+          {"id":"java.Arrays.fill","label":"fill","detail":"Arrays.fill(array, value)","insert_text":"fill($1, $0)","kind":"function","source":"standard_library","rank":7,"tags":["array","fill"]}
+        ],
+        "Collections": [
+          {"id":"java.Collections.sort","label":"sort","detail":"Collections.sort(list)","insert_text":"sort($0)","kind":"function","source":"standard_library","rank":5,"tags":["list","sort"]},
+          {"id":"java.Collections.reverse","label":"reverse","detail":"Collections.reverse(list)","insert_text":"reverse($0)","kind":"function","source":"standard_library","rank":6,"tags":["list"]},
+          {"id":"java.Collections.binarySearch","label":"binarySearch","detail":"Collections.binarySearch(list, key)","insert_text":"binarySearch($1, $0)","kind":"function","source":"standard_library","rank":7,"tags":["binary","search"]}
+        ],
+        "Math": [
+          {"id":"java.Math.max","label":"max","detail":"Math.max(a, b)","insert_text":"max($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["max"]},
+          {"id":"java.Math.min","label":"min","detail":"Math.min(a, b)","insert_text":"min($1, $0)","kind":"function","source":"standard_library","rank":6,"tags":["min"]},
+          {"id":"java.Math.abs","label":"abs","detail":"Math.abs(x)","insert_text":"abs($0)","kind":"function","source":"standard_library","rank":7,"tags":["abs"]}
+        ]
+      }
+    },
+    "python": {
+      "globals": [
+        {"id":"python.counter","label":"Counter","detail":"collections.Counter(iterable)","insert_text":"Counter($0)","kind":"class","source":"standard_library","rank":40,"tags":["counter","frequency","dict"]},
+        {"id":"python.defaultdict","label":"defaultdict","detail":"collections.defaultdict(factory)","insert_text":"defaultdict($0)","kind":"class","source":"standard_library","rank":41,"tags":["dict","map"]},
+        {"id":"python.deque","label":"deque","detail":"collections.deque(iterable)","insert_text":"deque($0)","kind":"class","source":"standard_library","rank":42,"tags":["deque","queue"]},
+        {"id":"python.heapq.heappush","label":"heapq.heappush","detail":"heapq.heappush(heap, item)","insert_text":"heapq.heappush($1, $0)","kind":"function","source":"standard_library","rank":43,"tags":["heap","priority","queue"]},
+        {"id":"python.bisect_left","label":"bisect_left","detail":"bisect.bisect_left(a, x)","insert_text":"bisect_left($1, $0)","kind":"function","source":"standard_library","rank":44,"tags":["binary","search"]},
+        {"id":"python.enumerate","label":"enumerate","detail":"enumerate(iterable)","insert_text":"enumerate($0)","kind":"function","source":"standard_library","rank":45,"tags":["loop","index"]},
+        {"id":"python.stdin","label":"sys.stdin.readline","detail":"sys.stdin.readline()","insert_text":"sys.stdin.readline().strip()","kind":"function","source":"standard_library","rank":46,"tags":["stdin","input"]}
+      ],
+      "members": {
+        "sys": [
+          {"id":"python.sys.stdin","label":"stdin","detail":"sys.stdin","insert_text":"stdin","kind":"property","source":"standard_library","rank":5,"tags":["input"]},
+          {"id":"python.sys.stdout","label":"stdout","detail":"sys.stdout","insert_text":"stdout","kind":"property","source":"standard_library","rank":6,"tags":["output"]}
+        ],
+        "math": [
+          {"id":"python.math.sqrt","label":"sqrt","detail":"math.sqrt(x)","insert_text":"sqrt($0)","kind":"function","source":"standard_library","rank":5,"tags":["math"]},
+          {"id":"python.math.floor","label":"floor","detail":"math.floor(x)","insert_text":"floor($0)","kind":"function","source":"standard_library","rank":6,"tags":["round"]},
+          {"id":"python.math.ceil","label":"ceil","detail":"math.ceil(x)","insert_text":"ceil($0)","kind":"function","source":"standard_library","rank":7,"tags":["round"]}
+        ],
+        "heapq": [
+          {"id":"python.heapq.heappush","label":"heappush","detail":"heapq.heappush(heap, item)","insert_text":"heappush($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["heap"]},
+          {"id":"python.heapq.heappop","label":"heappop","detail":"heapq.heappop(heap)","insert_text":"heappop($0)","kind":"function","source":"standard_library","rank":6,"tags":["heap"]}
+        ]
+      }
+    },
+    "javascript": {
+      "globals": [
+        {"id":"js.map","label":"Map","detail":"new Map()","insert_text":"new Map()","kind":"class","source":"standard_library","rank":40,"tags":["map","hash"]},
+        {"id":"js.set","label":"Set","detail":"new Set()","insert_text":"new Set()","kind":"class","source":"standard_library","rank":41,"tags":["set","hash"]},
+        {"id":"js.array.from","label":"Array.from","detail":"Array.from(iterable)","insert_text":"Array.from($0)","kind":"function","source":"standard_library","rank":42,"tags":["array","iterable"]},
+        {"id":"js.console.log","label":"console.log","detail":"console.log(...data)","insert_text":"console.log($0)","kind":"method","source":"standard_library","rank":43,"tags":["print","debug"]},
+        {"id":"js.math.max","label":"Math.max","detail":"Math.max(...values)","insert_text":"Math.max($0)","kind":"function","source":"standard_library","rank":44,"tags":["max","math"]}
+      ],
+      "members": {
+        "console": [
+          {"id":"js.console.log","label":"log","detail":"console.log(...data)","insert_text":"log($0)","kind":"method","source":"standard_library","rank":5,"tags":["print","debug"]},
+          {"id":"js.console.error","label":"error","detail":"console.error(...data)","insert_text":"error($0)","kind":"method","source":"standard_library","rank":6,"tags":["stderr"]},
+          {"id":"js.console.warn","label":"warn","detail":"console.warn(...data)","insert_text":"warn($0)","kind":"method","source":"standard_library","rank":7,"tags":["warning"]}
+        ],
+        "Math": [
+          {"id":"js.Math.max","label":"max","detail":"Math.max(...values)","insert_text":"max($0)","kind":"function","source":"standard_library","rank":5,"tags":["maximum"]},
+          {"id":"js.Math.min","label":"min","detail":"Math.min(...values)","insert_text":"min($0)","kind":"function","source":"standard_library","rank":6,"tags":["minimum"]},
+          {"id":"js.Math.floor","label":"floor","detail":"Math.floor(x)","insert_text":"floor($0)","kind":"function","source":"standard_library","rank":7,"tags":["round"]}
+        ],
+        "Array": [
+          {"id":"js.Array.from","label":"from","detail":"Array.from(iterable)","insert_text":"from($0)","kind":"function","source":"standard_library","rank":5,"tags":["array","iterable"]},
+          {"id":"js.Array.isArray","label":"isArray","detail":"Array.isArray(value)","insert_text":"isArray($0)","kind":"function","source":"standard_library","rank":6,"tags":["array","check"]}
+        ]
+      }
+    },
+    "typescript": {
+      "globals": [
+        {"id":"ts.map","label":"Map<K,V>","detail":"new Map<K,V>()","insert_text":"new Map<$1, $2>()","kind":"class","source":"standard_library","rank":40,"tags":["map","hash"]},
+        {"id":"ts.set","label":"Set<T>","detail":"new Set<T>()","insert_text":"new Set<$1>()","kind":"class","source":"standard_library","rank":41,"tags":["set","hash"]},
+        {"id":"ts.array.from","label":"Array.from","detail":"Array.from(iterable)","insert_text":"Array.from($0)","kind":"function","source":"standard_library","rank":42,"tags":["array","iterable"]},
+        {"id":"ts.console.log","label":"console.log","detail":"console.log(...data)","insert_text":"console.log($0)","kind":"method","source":"standard_library","rank":43,"tags":["print","debug"]},
+        {"id":"ts.math.max","label":"Math.max","detail":"Math.max(...values)","insert_text":"Math.max($0)","kind":"function","source":"standard_library","rank":44,"tags":["max","math"]}
+      ],
+      "members": {
+        "console": [
+          {"id":"ts.console.log","label":"log","detail":"console.log(...data)","insert_text":"log($0)","kind":"method","source":"standard_library","rank":5,"tags":["print","debug"]},
+          {"id":"ts.console.error","label":"error","detail":"console.error(...data)","insert_text":"error($0)","kind":"method","source":"standard_library","rank":6,"tags":["stderr"]},
+          {"id":"ts.console.warn","label":"warn","detail":"console.warn(...data)","insert_text":"warn($0)","kind":"method","source":"standard_library","rank":7,"tags":["warning"]}
+        ],
+        "Math": [
+          {"id":"ts.Math.max","label":"max","detail":"Math.max(...values)","insert_text":"max($0)","kind":"function","source":"standard_library","rank":5,"tags":["maximum"]},
+          {"id":"ts.Math.min","label":"min","detail":"Math.min(...values)","insert_text":"min($0)","kind":"function","source":"standard_library","rank":6,"tags":["minimum"]},
+          {"id":"ts.Math.floor","label":"floor","detail":"Math.floor(x)","insert_text":"floor($0)","kind":"function","source":"standard_library","rank":7,"tags":["round"]}
+        ]
+      }
+    },
+    "cpp": {
+      "globals": [
+        {"id":"cpp.vector","label":"vector","detail":"std::vector<T>","insert_text":"vector<$1> $2;","kind":"class","source":"standard_library","rank":40,"tags":["array","vector"]},
+        {"id":"cpp.unordered_map","label":"unordered_map","detail":"std::unordered_map<K,V>","insert_text":"unordered_map<$1, $2> $3;","kind":"class","source":"standard_library","rank":41,"tags":["hash","map"]},
+        {"id":"cpp.map","label":"map","detail":"std::map<K,V>","insert_text":"map<$1, $2> $3;","kind":"class","source":"standard_library","rank":42,"tags":["tree","map"]},
+        {"id":"cpp.unordered_set","label":"unordered_set","detail":"std::unordered_set<T>","insert_text":"unordered_set<$1> $2;","kind":"class","source":"standard_library","rank":43,"tags":["hash","set"]},
+        {"id":"cpp.priority_queue","label":"priority_queue","detail":"std::priority_queue<T>","insert_text":"priority_queue<$1> $2;","kind":"class","source":"standard_library","rank":44,"tags":["heap","priority","queue"]},
+        {"id":"cpp.queue","label":"queue","detail":"std::queue<T>","insert_text":"queue<$1> $2;","kind":"class","source":"standard_library","rank":45,"tags":["queue"]},
+        {"id":"cpp.deque","label":"deque","detail":"std::deque<T>","insert_text":"deque<$1> $2;","kind":"class","source":"standard_library","rank":46,"tags":["deque"]},
+        {"id":"cpp.sort","label":"std::sort","detail":"std::sort(first, last)","insert_text":"sort($1, $0)","kind":"function","source":"standard_library","rank":70,"tags":["sort","array"]},
+        {"id":"cpp.lower_bound","label":"std::lower_bound","detail":"std::lower_bound(first, last, value)","insert_text":"lower_bound($1, $2, $0)","kind":"function","source":"standard_library","rank":71,"tags":["binary","search"]}
+      ],
+      "members": {
+        "std": [
+          {"id":"cpp.std.sort","label":"sort","detail":"std::sort(first, last)","insert_text":"sort($1, $0)","kind":"function","source":"standard_library","rank":5,"tags":["sort"]},
+          {"id":"cpp.std.lower_bound","label":"lower_bound","detail":"std::lower_bound(first, last, value)","insert_text":"lower_bound($1, $2, $0)","kind":"function","source":"standard_library","rank":6,"tags":["binary","search"]},
+          {"id":"cpp.std.upper_bound","label":"upper_bound","detail":"std::upper_bound(first, last, value)","insert_text":"upper_bound($1, $2, $0)","kind":"function","source":"standard_library","rank":7,"tags":["binary","search"]}
+        ]
+      }
+    }
+  }
+}
