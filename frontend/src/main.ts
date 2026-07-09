@@ -223,6 +223,9 @@ let completionProvider: monaco.IDisposable | null = null;
 let monacoThemeReady = false;
 let completionRefreshTimer: number | null = null;
 let completionRequestSeq = 0;
+const completionProfileCache = new Map<string, CodingCompletionResponse>();
+const completionProfileRequests = new Map<string, Promise<CodingCompletionResponse>>();
+const maxCompletionProfileCacheEntries = 120;
 
 if (!root) {
   throw new Error("missing #app");
@@ -445,30 +448,45 @@ async function remoteCompletionItems(
   range: monaco.Range
 ): Promise<monaco.languages.CompletionItem[]> {
   if (!state.accessToken) return [];
+  const source = model.getValue();
+  const cursorOffset = model.getOffsetAt(position);
+  const limit = 16;
+  const cacheKey = completionProfileCacheKey(
+    state.coding.selectedQuestion?.question_id ?? "",
+    language,
+    source,
+    cursorOffset,
+    prefix,
+    limit
+  );
   try {
-    const profile = await api.suggestCodingCompletions({
+    const profile = await completionProfileFor(cacheKey, {
       question_id: state.coding.selectedQuestion?.question_id,
       language,
-      source_code: model.getValue(),
-      cursor_offset: model.getOffsetAt(position),
+      source_code: source,
+      cursor_offset: cursorOffset,
       prefix,
-      limit: 16
+      limit
     });
     state.coding.completionProfile = profile;
     state.coding.completionError = "";
     updateCompletionPanel();
-    return profile.suggestions.map((item, index) => ({
-      label: item.label,
-      kind: monacoCompletionKind(item.kind),
-      detail: `${sourceLabel(item.source)} · ${item.detail}`,
-      insertText: item.insert_text,
-      insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-      sortText: `2_${String(item.rank ?? index).padStart(3, "0")}_${item.label}`,
-      range
-    }));
+    return completionItemsFromProfile(profile, range);
   } catch {
     return [];
   }
+}
+
+function completionItemsFromProfile(profile: CodingCompletionResponse, range: monaco.Range): monaco.languages.CompletionItem[] {
+  return profile.suggestions.map((item, index) => ({
+    label: item.label,
+    kind: monacoCompletionKind(item.kind),
+    detail: `${sourceLabel(item.source)} · ${item.detail}`,
+    insertText: item.insert_text,
+    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+    sortText: `2_${String(item.rank ?? index).padStart(3, "0")}_${item.label}`,
+    range
+  }));
 }
 
 function monacoCompletionKind(kind: string): monaco.languages.CompletionItemKind {
@@ -491,6 +509,67 @@ function dedupeMonacoSuggestions(items: monaco.languages.CompletionItem[]): mona
     seen.add(key);
     return true;
   });
+}
+
+function completionProfileCacheKey(
+  questionId: string,
+  language: string,
+  source: string,
+  cursorOffset: number,
+  prefix: string,
+  limit: number
+): string {
+  return [
+    questionId,
+    language.toLowerCase(),
+    cursorOffset,
+    prefix.toLowerCase(),
+    limit,
+    sourceFingerprint(source)
+  ].join("|");
+}
+
+function sourceFingerprint(source: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index++) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${source.length}:${hash >>> 0}`;
+}
+
+function rememberCompletionProfile(key: string, profile: CodingCompletionResponse): void {
+  completionProfileCache.set(key, profile);
+  if (completionProfileCache.size <= maxCompletionProfileCacheEntries) return;
+  const oldest = completionProfileCache.keys().next().value;
+  if (oldest) completionProfileCache.delete(oldest);
+}
+
+function completionProfileFor(
+  key: string,
+  payload: {
+    question_id?: string;
+    language: string;
+    source_code: string;
+    cursor_offset: number;
+    prefix?: string;
+    limit?: number;
+  }
+): Promise<CodingCompletionResponse> {
+  const cached = completionProfileCache.get(key);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = completionProfileRequests.get(key);
+  if (pending) return pending;
+
+  const request = api.suggestCodingCompletions(payload)
+    .then((profile) => {
+      rememberCompletionProfile(key, profile);
+      return profile;
+    })
+    .finally(() => completionProfileRequests.delete(key));
+  completionProfileRequests.set(key, request);
+  return request;
 }
 
 function icon(name: string, className = "ui-icon"): string {
@@ -1899,13 +1978,23 @@ async function loadCompletionProfile(shouldRender = false): Promise<void> {
     const model = codeEditor?.getModel();
     const position = codeEditor?.getPosition();
     const cursorOffset = model && position ? model.getOffsetAt(position) : source.length;
-    const profile = await api.suggestCodingCompletions({
+    const prefix = model && position ? model.getWordUntilPosition(position).word : currentCodePrefix(source);
+    const limit = 16;
+    const cacheKey = completionProfileCacheKey(
+      state.coding.selectedQuestion.question_id,
+      state.coding.language,
+      source,
+      cursorOffset,
+      prefix,
+      limit
+    );
+    const profile = await completionProfileFor(cacheKey, {
       question_id: state.coding.selectedQuestion.question_id,
       language: state.coding.language,
       source_code: source,
       cursor_offset: cursorOffset,
-      prefix: model && position ? model.getWordUntilPosition(position).word : currentCodePrefix(source),
-      limit: 12
+      prefix,
+      limit
     });
     if (requestSeq !== completionRequestSeq) return;
     state.coding.completionProfile = profile;
