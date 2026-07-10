@@ -85,4 +85,16 @@ jobs:
         run: cp .env.example .env
 
       - name: Validate Compose config
-        run: docker compose config >/dev/null
+        run: |
+          docker compose config --quiet
+          docker compose --profile runtime config --quiet
+
+  shell-quality:
+    name: Shell script syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Bash syntax
+        run: bash -n scripts/*.sh

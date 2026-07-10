@@ -4,7 +4,7 @@
 
 构建一个可回放、可审计、可恢复的 AI 面试训练平台。
 
-![阶段](https://img.shields.io/badge/stage-async%20runtime%20%2B%20memory-334155)
+![阶段](https://img.shields.io/badge/stage-workbench%20%2B%20judge-334155)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
 ![API](https://img.shields.io/badge/API-Gin-008ECF)
@@ -26,10 +26,10 @@
 
 | 模块 | 路径 | 职责 |
 |---|---|---|
-| Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话和运维 API |
-| Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim 和 dead-letter |
-| Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、workqueue、store、routing |
-| Web Frontend | `frontend` | Vanilla TypeScript + Monaco 工作台 UI，内置中英文切换，负责训练、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入 |
+| Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话、代码题、评测和运维 API |
+| Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim、dead-letter 和可选 coding judge loop |
+| Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、context/retrieval、coding、evaluation harness、workqueue、store、routing |
+| Web Frontend | `frontend` | Vanilla TypeScript + Monaco 工作台 UI，内置中英文切换，负责训练、会议式面试房间、代码题、memory review、admin、settings 和 evaluation harness 接入 |
 | AI Runtime | `python-runtime` | FastAPI task endpoint、Prompt 边界、结构化输出和 memory API |
 | 数据库 | `migrations` | PostgreSQL schema、pgvector 扩展和默认 seed |
 | Skill Pack | `skills` | 本地技能包，目前包含 `java-backend` |
@@ -47,9 +47,11 @@
 | Reliability | answer idempotency、Redis single-flight、runtime snapshot、dead-letter |
 | Observability | agent traces、dead-letter analysis API、worker summary API |
 | Evaluation Harness | root-only 样例集和 run 记录 API，支持 dry-run、断言评分和 agent trace 关联 |
+| Coding practice | CodeTop100 / 后端工程题库、OJ 题面字段、异步提交、judge worker、verdict 和 `code_evaluation_traces` |
+| Coding completion | `POST /api/coding/completions` 提供确定性题目感知补全画像，覆盖 starter、后端数据化标准库 catalog、局部符号和常见题目模式 |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
 | Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
-| Web Frontend | Vanilla TypeScript + CSS + Monaco 工作台，Vite 代理 `/api`，支持中英文切换、lucide 图标、会议式面试房间、代码题 IDE、语言草稿、轻量联想补全、本地可配置控制条、Companion 面板、状态条、loading/disabled、表单校验、空状态动作和任务导向下一步 |
+| Web Frontend | Vanilla TypeScript + CSS + Monaco 工作台，Vite 代理 `/api`，支持中英文切换、lucide 图标、会议式面试房间、代码题 IDE、OJ 题面规格块、语言草稿、前后端组合轻量联想补全、本地可配置控制条、Companion 面板、状态条、loading/disabled、表单校验、空状态动作和任务导向下一步 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
 | Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
 
@@ -106,6 +108,8 @@ make run-frontend
 
 默认访问 `http://localhost:5173`。如果端口被占用，Vite 会自动尝试下一个可用端口。前端开发服务会把 `/api` 代理到 Go API，因此通常需要同时运行 `make run`；面试异步评估、代码判题、memory review 和 evaluation run 还需要对应的 worker / runtime 服务。
 
+代码判题默认不执行用户代码。需要本地启用时，在 `.env` 中设置 `CODING_JUDGE_ENABLED=true`，并选择 `CODING_JUDGE_MODE=docker`、`docker_warm` 或仅限可信本机代码的 `native_trusted`，然后运行 `make run-worker`。Docker 模式可先用 `make pull-judge-images` 预拉取 Go、Java、Python、JavaScript、TypeScript 和 C++ 镜像。
+
 ## 前端工作台
 
 `frontend` 是给用户使用的训练操作台，不是 API 调试集合。它不引入重型框架，主要依赖 Vanilla TypeScript、CSS、Vite、Monaco Editor 和 `lucide` 图标，把后端能力整理成稳定的训练流程。
@@ -115,7 +119,7 @@ make run-frontend
 - 工作台概览：展示 API、worker、outbox、judge 和 evaluation run 状态，并给出下一步入口。
 - 面试房间：采用会议式布局，包含主舞台、候选人/Runtime 小窗、底部控制条和右侧 Companion 面板。
 - 本地可配置控制：麦克风、摄像头、字幕、共享题面、房间 tab 和笔记会保存到 `localStorage`，方便快速启动和关闭前端会话。
-- 代码题：题库选择、Monaco 代码编辑、语言草稿切换、轻量联想补全、异步提交和 verdict 展示。
+- 代码题：题库选择、OJ 题面规格块、Monaco 代码编辑、语言草稿切换、前端局部符号/快捷片段 + Go completion profile 组合补全、异步提交和 verdict 展示。
 - 记忆审核：pending candidate 加载、approve/reject，保证只有 approved memory 进入 Prompt。
 - 管理与评测：Provider/worker/judge 概览、evaluation case 保存、dry-run 和 run 记录查看。
 
@@ -164,14 +168,19 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | `make build-frontend` | 对前端执行 TypeScript 检查并构建静态产物 |
 | `make test` | 运行全部 Go 测试，即 `go test ./...` |
 | `make test-python` | 运行 Python Runtime 单元测试 |
+| `make test-frontend` | 校验生成索引并运行前端补全测试 |
+| `make test-scripts` | 运行仓库维护脚本单元测试 |
+| `make test-all` | 运行 Go、Python、前端和脚本全部测试 |
+| `make check` | 运行全量测试、前端构建、Shell 语法、gofmt 和 go vet |
 | `make fmt` | 对 `cmd` 和 `internal` 执行 `gofmt` |
 | `make check-middleware` | 检查固定中间件镜像的平台兼容性 |
+| `make pull-judge-images` | 预拉取 Docker coding judge 所需语言镜像 |
 
 ## CI 流水线
 
 | Workflow | 触发 | 目的 |
 |---|---|---|
-| `CI` | PR、`main/master` push、手动触发 | 运行 `go test ./...` 和 Python Runtime 单元测试 |
+| `CI` | PR、`main/master` push、手动触发 | 运行 Go race/覆盖率、Python、前端、生成索引与仓库脚本测试，并构建前端 |
 | `Quality` | PR、`main/master` push、手动触发 | 检查 `gofmt`、`go mod tidy`、`go vet`、Python compile 和 Compose 配置 |
 | `Docker` | Runtime / Compose 相关文件变化、手动触发 | 校验 Docker Compose runtime profile 并构建 Python Runtime 镜像 |
 | `Integration Smoke` | migration / middleware / init 脚本变化、手动触发 | 拉起 PostgreSQL、Redis、MinIO，执行 migration/seed 和基础健康检查 |
@@ -191,7 +200,7 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | Context, Retrieval & Agent | `POST /api/context/preview`, `POST /api/retrieval/search`, `POST /api/agent/tasks` |
 | Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
 | Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
-| Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
+| Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/completions`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
 | Evaluation | `GET/POST /api/evaluation/cases`, `GET /api/evaluation/cases/{case_id}`, `POST /api/evaluation/cases/{case_id}/run`, `GET /api/evaluation/runs` |
 | Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary`, `GET /api/ops/coding-judge/summary` |
 
@@ -218,7 +227,8 @@ Python Runtime:
 | Evaluation harness | root-only `/api/evaluation/*` 管理样例和运行记录；`expected.required_fields`、`expected.contains`、`expected.equals` 用于可配置断言，`POST /run` 支持 `dry_run` |
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 每次创建临时禁网容器；`docker_warm` 复用按语言命名的 stopped container，通过 tmpfs 回到初始状态；镜像可配置且可用 `make pull-judge-images` 预拉取；`native_trusted` 直接调用本机工具链，启动快但不隔离，只适合本地可信代码；默认 disabled evaluator 不执行用户代码 |
-| Frontend workbench | `frontend` 是面向用户的操作台，不直接写内部状态；登录后通过 Go API 使用训练工作台、会议式面试房间、代码题、memory review、admin 和 evaluation harness。交互层负责展示系统状态、下一步动作、表单校验、空状态引导、本地可配置会议控件，以及 Monaco 代码题 IDE 的语言草稿和轻量联想补全 |
+| Coding completion | `POST /api/coding/completions` 是 Go 内的确定性建议服务，不调用模型、不写数据库；根据语言、题目标签、源码和前缀返回 starter、后端数据化标准库 catalog、局部符号和常见题型模式，作为 Monaco 局部符号/快捷片段的补充，不替代完整 LSP |
+| Frontend workbench | `frontend` 是面向用户的操作台，不直接写内部状态；登录后通过 Go API 使用训练工作台、会议式面试房间、代码题、memory review、admin、settings 和 evaluation harness。交互层负责展示系统状态、下一步动作、表单校验、空状态引导、本地可配置会议控件，以及 Monaco 代码题 IDE 的语言草稿和轻量联想补全 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 | Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
 
@@ -268,8 +278,11 @@ make check-middleware
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter 链路和运维 API |
 | [docs/evaluation-harness.md](./docs/evaluation-harness.md) | Evaluation case、断言和 run 记录 |
 | [docs/frontend-workbench.md](./docs/frontend-workbench.md) | 前端工作台页面、交互原则和本地开发说明 |
+| [docs/python-runtime.md](./docs/python-runtime.md) | Python Runtime API、启动和边界说明 |
 | [docs/deployment.md](./docs/deployment.md) | 本地部署和初始化 |
 | [docs/reference-projects.md](./docs/reference-projects.md) | 参考项目索引 |
+| [docs/reference-implementation-notes.md](./docs/reference-implementation-notes.md) | 参考项目设计点的当前吸收状态 |
+| [docs/skill-design-notes.md](./docs/skill-design-notes.md) | Skill Pack 结构、校验和上下文设计原则 |
 
 ## 安全说明
 

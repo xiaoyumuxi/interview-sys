@@ -22,15 +22,29 @@ Windows PowerShell:
 - 应用 `migrations/*.sql`。
 - 执行 `go test ./...`。
 
+`bootstrap` 不会自动启动 Go API、独立 worker、Python Runtime 或前端工作台。常用本地进程按需分别启动：
+
+```bash
+make run
+make run-worker
+make run-runtime
+make run-frontend
+```
+
+前端默认监听 `5173`，并通过 Vite 代理把 `/api` 转发到 Go API。面试异步评估、代码判题、memory review 和 evaluation run 需要对应的 worker / Runtime 服务。
+
 ## Skill 热加载
 
 本地修改 `skills/*/SKILL.md`、`skill.meta.yml` 或 references 后，不需要重启服务，调用：
 
 ```bash
-curl -s -X POST http://localhost:8080/api/skills/reload
+curl -s -X POST http://localhost:8080/api/skills/reload \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 也可以通过 `POST /api/skills` 创建新的 Skill Pack。创建接口会写入本地 `skills/{skill_id}` 目录并重新加载 Registry。
+
+`POST /api/skills/reload` 和 `POST /api/skills` 都需要 root token。
 
 ## SQL 文件
 
@@ -45,6 +59,45 @@ API key 有两种来源：
 - `db_encrypted`：接口提交 `api_key`，Go 使用 `PROVIDER_KEY_ENCRYPTION_SECRET` 做 AES-GCM 加密后写库，适合运行时切换。
 
 未设置 `PROVIDER_KEY_ENCRYPTION_SECRET` 时，接口会拒绝把 API key 写入数据库。
+
+## Coding Judge
+
+代码判题默认关闭，不会执行用户代码：
+
+```text
+CODING_JUDGE_ENABLED=false
+CODING_JUDGE_MODE=disabled
+```
+
+启用本地判题时，先在 `.env` 中设置：
+
+```text
+CODING_JUDGE_ENABLED=true
+CODING_JUDGE_MODE=docker
+```
+
+可选模式：
+
+| Mode | 说明 |
+|---|---|
+| `disabled` | 默认模式，不执行用户代码，提交会进入 system error / sandbox not configured 路径 |
+| `docker` | 每次判题创建临时禁网容器，适合本地隔离验证 |
+| `docker_warm` | 复用按语言命名的 stopped container，并通过 tmpfs 回到初始状态 |
+| `native_trusted` | 直接调用本机 Go、Java、Python、Node、Deno、g++ 工具链，只适合可信本机代码 |
+
+Docker 模式支持 Go、Java、Python、JavaScript、TypeScript 和 C++ 完整程序。可预拉取默认镜像：
+
+```bash
+make pull-judge-images
+```
+
+判题 loop 只在 `cmd/worker` 中启动，因此修改 judge 配置后需要运行或重启：
+
+```bash
+make run-worker
+```
+
+API 进程负责创建提交和查询结果，`cmd/worker` 负责领取 queued submission、执行 evaluator、写入 verdict 和 `code_evaluation_traces`。
 
 ## 中间件版本策略
 

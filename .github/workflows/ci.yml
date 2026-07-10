@@ -29,8 +29,18 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run Go tests
-        run: go test ./...
+      - name: Run Go tests with race detector
+        run: go test -race ./...
+
+      - name: Collect Go coverage
+        run: go test -coverprofile=/tmp/go-coverage.out ./...
+
+      - name: Upload Go coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: /tmp/go-coverage.out
+          if-no-files-found: error
 
   python-runtime-test:
     name: Python runtime tests
@@ -59,3 +69,45 @@ jobs:
 
       - name: Run Python runtime tests
         run: uv run python -m unittest discover -s tests -p 'test_*.py' -v
+
+  frontend-test:
+    name: Frontend tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check generated completion index
+        run: npm run check:oj-index
+
+      - name: Run completion index smoke test
+        run: npm run test:oj-index
+
+      - name: Run frontend unit tests
+        run: npm run test:completion
+
+      - name: Build frontend
+        run: npm run build
+
+  repository-script-test:
+    name: Repository script tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run script unit tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v

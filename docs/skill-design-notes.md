@@ -36,9 +36,9 @@ skills/{skill_id}/
 - 代码题库是独立业务模块，Skill 只负责选择和解释为什么考这道题。
 - 第一批算法题库以 CodeTop100 高频题为主，但后端工程题、SQL 题、调试题、小型设计题要独立分组。
 - Skill Registry 需要支持热加载和新建 Skill Pack，避免每次调整 `SKILL.md` 都重启服务。
-- P1 先做本地扫描和 Context Preview，不急着引入复杂 marketplace。
-- P2 再把 references 入库，建立 full-text、summary、vector 多索引。
-- 后续可以增加 `skill.lint`，检查：缺少分类、引用文件不存在、description 过长、禁用事项缺失、Prompt 注入风险。
+- 已落地本地扫描、热加载、`POST /api/skills` 新建、Context Preview、references 同步入库和基础 lint。
+- 当前 lint 会检查缺少分类、引用文件不存在、description 过长、禁用事项缺失、Prompt 注入风险关键词和 reference 路径穿越。
+- 后续再增强 full-text、summary、vector 多索引、异步导入队列和更细的 Skill 质量评分，不急着引入复杂 marketplace。
 
 ## 参考来源
 

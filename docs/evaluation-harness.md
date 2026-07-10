@@ -4,6 +4,8 @@ Evaluation Harness 是 Go Core API 的质量回归入口，用来保存可复用
 
 这些接口只允许 root 调用。
 
+边界：Go 负责 case/run 存储、Context Preview、Provider resolution、Runtime 调用、断言评分和 trace 关联；Python Runtime 只负责按本次请求执行具体 task 并返回结构化输出。
+
 ## API
 
 | Endpoint | Purpose |

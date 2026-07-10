@@ -4,7 +4,7 @@
 
 ## 当前定位
 
-本项目是个人 AI 面试训练平台后端，当前重点是先完成可解释、可回放、可测试的后端闭环。Go Core API 负责确定性业务事实、状态机、幂等和审计；Python AI Runtime 负责模型调用、Prompt、结构化输出、memory 和后续 RAG/Agent 推理。
+本项目是个人 AI 面试训练平台单体工程，当前已经从后端闭环推进到“可用工作台 + 异步运行时 + 代码判题”的产品闭环雏形。Go Core API 负责确定性业务事实、状态机、幂等和审计；Python AI Runtime 负责模型调用、Prompt、结构化输出、memory 和后续 RAG/Agent 推理；Web Frontend 负责把面试、代码题、记忆审核、设置和评测串成可操作流程。
 
 当前不做招聘 SaaS、组织协作、候选人邀请和反作弊。这些能力只保留接口和设计余量。前端当前采用轻量 Vanilla TypeScript 工作台，先服务个人训练闭环，不引入重型前端框架或复杂组件体系。
 
@@ -25,7 +25,7 @@
 - Python Runtime memory candidates、review、edit、approve/reject、profile、search 和 due reviews API。
 - Go API `/api/memory/*` 编排 Python memory API，统一处理鉴权、用户隔离、写操作 trace/audit 和错误标准化。
 - Memory context admission rules：Go Context Engine 可按 user、task_type、skill、query 和 token budget 引入 approved memory，并返回 evidence/source/reason 级别的 `memory_admission` trace。
-- CodeTop100 / 后端工程题库 schema、seed 和查询 API。
+- CodeTop100 / 后端工程题库 schema、seed、OJ 题面字段和查询 API。
 - Interview Runtime session / flow / turn 三层状态机。
 - Answer 提交异步化：API 返回 `202 Accepted`，worker 消费 Redis Stream 后评估。
 - PostgreSQL local outbox `async_messages`，支持 Redis Stream 补投、重试和 dedup。
@@ -38,8 +38,9 @@
 - Final report generation：Go 聚合 session/turn 确定性事实并持久化 `interview_reports`，Python Runtime `summary` task 生成结构化报告内容。
 - Retrieval Harness MVP：`POST /api/retrieval/search` 返回 Skill reference、summary、recent history、approved memory 的 evidence、score、reason、source 和 debug trace；vector 索引未建立时显式返回 warning。
 - Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`docker` 每次创建临时禁网容器，`docker_warm` 复用按语言命名的 stopped container 并用 tmpfs 回到初始状态，二者都支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序和可配置镜像；`native_trusted` 可直接调用本机工具链加快本地可信开发，默认 disabled evaluator 不执行用户代码。
+- Coding completion profile API：`POST /api/coding/completions` 根据语言、题目标签、源码和前缀返回 starter、后端数据化标准库 catalog、局部符号和常见题型模式；这是确定性建议服务，不调用模型、不写数据库，不替代完整 LSP。
 - Evaluation Harness MVP：root-only `/api/evaluation/*` 支持样例 case 管理、dry-run 或真实 runtime 运行、`required_fields/contains/equals` 可配置断言、质量分数、错误 run 记录和 agent trace 关联。
-- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite + Monaco Editor，支持登录、中文/英文切换、lucide 图标、工作台概览、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入；交互层包含状态条、loading/disabled 状态、表单校验、输入保留、空状态动作、危险操作确认、本地可配置会议控制条和 Companion 面板；代码题 IDE 支持语言草稿切换、当前文件符号扫描、常见标准库/工具类成员表和 snippets 组合的轻量联想补全，不启动完整 LSP。
+- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite + Monaco Editor，支持登录、中文/英文切换、lucide 图标、工作台概览、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入；交互层包含状态条、loading/disabled 状态、表单校验、输入保留、空状态动作、危险操作确认、本地可配置会议控制条和 Companion 面板；代码题 IDE 支持语言草稿切换、OJ 题面规格块、verdict 摘要、当前文件符号扫描、编辑快捷 snippets、completion profile 有界缓存和 Go API `POST /api/coding/completions` 返回的题目感知建议；标准库建议从后端数据化 catalog 读取，不再由前端维护 API 表。完整语义补全仍需后续接 LSP。
 
 ## 下一批任务
 
@@ -55,9 +56,15 @@
 
 2. Coding judge runner 增强。
    - 当前 Docker sandbox MVP 支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序。
-   - 后续扩展统一编译缓存、镜像预拉取检查、更细的资源统计、长驻 runner 服务和函数签名式题目适配。
+   - 当前 completion profile 已能提供题目感知轻量补全，但仍不是完整 LSP。
+   - 后续扩展统一编译缓存、镜像预拉取检查、更细的资源统计、长驻 runner 服务、函数签名式题目适配和更完整的编辑器诊断。
 
-3. Evaluation Harness 增强。
+3. 多语言语义补全增强。
+   - 新增 completion gateway，前端通过 Monaco Language Client 统一连接语言服务器。
+   - Java 接 Eclipse JDT LS，C/C++ 接 clangd，Python 接 Pyright/Jedi，Go 接 gopls，TypeScript/JavaScript 复用 Monaco/tsserver 能力。
+   - 后端 catalog 继续作为无语言服务器时的降级建议，不承担真实类型推断、import 修复和跨文件符号解析。
+
+4. Evaluation Harness 增强。
    - 补齐出题、评分、追问、总结、RAG 命中和 memory 提取的默认样例集。
    - 记录 token/cost 估算、延迟分布和批量回归汇总。
    - 保持质量回归服务后端稳定性，不急于做复杂评测平台。
