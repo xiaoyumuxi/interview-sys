@@ -35,6 +35,8 @@ Go Core API 负责确定性业务事实、状态推进、幂等、审计、Provi
 - Python 不直接写 Go 业务主表，不绕过 Go interview runtime。
 - Provider 配置、密钥来源、task routing 和连通性测试由 Go 管理。
 - Python 只使用请求中传入的 Provider 配置执行模型调用，不自行决定 task routing。
+- Retrieval Harness MVP、Evaluation Harness 记录/断言、Final report 持久化和 coding judge 由 Go 管理；Python 只提供 memory search/scoring、Runtime task 输出和 summary 文本生成。
+- Python 不执行用户代码，不参与代码题判题状态推进。
 - Python trace 不记录 API key；审计事实由 Go 写入，例如 `agent_traces`。
 - Redis single-flight、outbox、worker claim、dead-letter、重试等可靠性逻辑留在 Go。
 

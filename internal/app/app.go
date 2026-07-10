@@ -10,6 +10,7 @@ import (
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
+	"ai-interview-platform/internal/evalharness"
 	"ai-interview-platform/internal/httpapi"
 	"ai-interview-platform/internal/interview"
 	"ai-interview-platform/internal/provider"
@@ -57,6 +58,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	runtimeClient := airuntime.NewClient(cfg.AIRuntimeURL)
 	engine := contextengine.New(cfg.TokenBudget, skillRegistry)
 	engine.SetMemorySource(runtimeClient)
+	evaluationService := evalharness.NewService(evalharness.NewStore(dbStore.DB()), dbStore, engine, runtimeClient)
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:         cfg.RedisAddr,
 		DialTimeout:  500 * time.Millisecond,
@@ -69,6 +71,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	stream := workqueue.NewStreamWithDeadLetter(redisClient, logger, cfg.InterviewEventsStream, cfg.InterviewDeadLetterStream)
 	flights := singleflight.NewRedisFlight(redisClient, 65*time.Second, 10*time.Minute)
 	interviewService := interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream)
+	engine.SetRecentHistorySource(interviewService)
 	if cfg.EnableEmbeddedWorker {
 		logger.Warn("embedded interview worker is enabled; prefer running cmd/worker in normal development and deployment")
 		interviewService.StartWorker(context.Background(), interview.DefaultWorkerOptions("api"))
@@ -85,6 +88,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		AuthService:      authService,
 		RuntimeClient:    runtimeClient,
 		InterviewService: interviewService,
+		Evaluation:       evaluationService,
 	})
 
 	return &App{

@@ -59,9 +59,10 @@ type MemorySource interface {
 }
 
 type Engine struct {
-	tokenBudget int
-	skills      *skill.Registry
-	memory      MemorySource
+	tokenBudget   int
+	skills        *skill.Registry
+	memory        MemorySource
+	recentHistory RecentHistorySource
 }
 
 func New(tokenBudget int, skills *skill.Registry) *Engine {

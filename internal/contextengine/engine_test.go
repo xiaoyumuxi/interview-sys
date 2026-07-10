@@ -130,7 +130,7 @@ func testSkillRegistry(t *testing.T) *skill.Registry {
 		Description:  "Java backend interview skill",
 		Instructions: "Ask focused Java backend interview questions with evidence-based scoring.",
 		Categories: []skill.Category{
-			{Key: "JAVA", Label: "Java", Priority: "HIGH"},
+			{Key: "JAVA", Label: "Java", Priority: "HIGH", Ref: "redis.md"},
 		},
 		References: map[string]string{
 			"redis.md": "Redis Stream, pending reclaim, consumer groups and dead-letter handling.",

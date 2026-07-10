@@ -179,6 +179,40 @@ CREATE TABLE IF NOT EXISTS agent_traces (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_cases (
+    case_id TEXT PRIMARY KEY,
+    suite TEXT NOT NULL DEFAULT 'default',
+    task_type TEXT NOT NULL,
+    skill_id TEXT,
+    input JSONB NOT NULL DEFAULT '{}'::jsonb,
+    expected JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tags TEXT[] NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_evaluation_cases_suite_status ON evaluation_cases (suite, status);
+CREATE INDEX IF NOT EXISTS idx_evaluation_cases_task_type ON evaluation_cases (task_type, status);
+
+CREATE TABLE IF NOT EXISTS evaluation_runs (
+    run_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL REFERENCES evaluation_cases(case_id),
+    task_type TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('passed', 'failed', 'error')),
+    score NUMERIC(6,2) NOT NULL DEFAULT 0,
+    input JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output JSONB NOT NULL DEFAULT '{}'::jsonb,
+    assertions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    trace_id TEXT REFERENCES agent_traces(trace_id) ON DELETE SET NULL,
+    error_text TEXT NOT NULL DEFAULT '',
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_evaluation_runs_case_created ON evaluation_runs (case_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_evaluation_runs_task_status ON evaluation_runs (task_type, status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS interview_sessions (
     session_id TEXT PRIMARY KEY,
     user_id TEXT REFERENCES app_users(user_id) ON DELETE SET NULL,
@@ -240,6 +274,22 @@ CREATE TABLE IF NOT EXISTS interview_runtime_snapshots (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS interview_reports (
+    report_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL UNIQUE REFERENCES interview_sessions(session_id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES app_users(user_id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed')),
+    content JSONB NOT NULL DEFAULT '{}'::jsonb,
+    runtime_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+    trace_id TEXT REFERENCES agent_traces(trace_id) ON DELETE SET NULL,
+    error_text TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_interview_reports_user_status ON interview_reports (user_id, status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS async_messages (
     message_id TEXT PRIMARY KEY,

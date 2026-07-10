@@ -100,14 +100,14 @@ src/services/audioToTextWs.ts
 在新计划中的落点：
 
 ```text
-未来前端接入
+前端工作台产品化
 Interview UI Contract
 Report API Shape
 ASR/TTS Future Extension
 Session Recovery UX
 ```
 
-当前计划中暂不改前端，但 API 设计需要兼容未来接入。
+当前前端已经接入轻量工作台，优先参考其中的面试流程、报告页、问答回放和会话恢复交互；ASR/TTS、摄像头、草图板仍作为远期扩展，不进入当前 MVP。
 
 ---
 

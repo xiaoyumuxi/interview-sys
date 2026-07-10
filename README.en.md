@@ -2,9 +2,9 @@
 
 [中文](./README.md) | English
 
-Build a replayable and auditable AI interview backend.
+Build a replayable and auditable AI interview training platform.
 
-![Stage](https://img.shields.io/badge/stage-async%20runtime%20%2B%20memory-334155)
+![Stage](https://img.shields.io/badge/stage-workbench%20%2B%20judge-334155)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
 ![API](https://img.shields.io/badge/API-Gin-008ECF)
@@ -12,7 +12,7 @@ Build a replayable and auditable AI interview backend.
 ![Queue](https://img.shields.io/badge/Queue-Redis%20Streams-DC382D?logo=redis&logoColor=white)
 ![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
-This repository is a backend rewrite for a personal AI interview training platform. Go Core API owns deterministic business facts, state transitions, idempotency, audit and external APIs. Python AI Runtime owns model calls, prompt safety, structured output, memory and later Agent/RAG reasoning.
+This repository is a rewrite of a personal AI interview training platform. Go Core API owns deterministic business facts, state transitions, idempotency, audit and external APIs. Python AI Runtime owns model calls, prompt safety, structured output, memory and later Agent/RAG reasoning. Web Frontend provides the user-facing workbench that connects interview training, coding practice, memory review, admin operations and evaluation runs.
 
 ## Why This Exists
 
@@ -26,9 +26,10 @@ This repository is a backend rewrite for a personal AI interview training platfo
 
 | Area | Path | Role |
 |---|---|---|
-| Go API | `cmd/api` | HTTP entrypoint, auth, providers, skills, interview sessions and ops APIs |
-| Worker | `cmd/worker` | Redis Stream consumption, outbox dispatch, pending reclaim and dead-letter handling |
-| Go internals | `internal` | auth, provider, skill, interview runtime, memory orchestration, workqueue, store and routing |
+| Go API | `cmd/api` | HTTP entrypoint, auth, providers, skills, interview sessions, coding, evaluation and ops APIs |
+| Worker | `cmd/worker` | Redis Stream consumption, outbox dispatch, pending reclaim, dead-letter handling and optional coding judge loop |
+| Go internals | `internal` | auth, provider, skill, interview runtime, memory orchestration, context/retrieval, coding, evaluation harness, workqueue, store and routing |
+| Web Frontend | `frontend` | Vanilla TypeScript + Monaco workbench UI with Chinese/English switching for training, meeting-style interview rooms, coding, memory review, admin, settings and evaluation harness flows |
 | AI Runtime | `python-runtime` | FastAPI task endpoint, prompt boundaries, structured output and memory APIs |
 | Database | `migrations` | PostgreSQL schema, pgvector extension and default seed data |
 | Skill packs | `skills` | Local skill packs, currently `java-backend` |
@@ -45,8 +46,12 @@ This repository is a backend rewrite for a personal AI interview training platfo
 | Async pipeline | PostgreSQL local outbox, Redis Stream, standalone worker and pending reclaim |
 | Reliability | answer idempotency, Redis single-flight, runtime snapshot and dead-letter handling |
 | Observability | agent traces, dead-letter analysis API and worker summary API |
+| Evaluation Harness | root-only case and run APIs with dry-run, assertion scoring and agent trace linkage |
+| Coding practice | CodeTop100 / backend engineering question bank, OJ-style prompt fields, async submissions, judge worker, verdicts and `code_evaluation_traces` |
+| Coding completion | `POST /api/coding/completions` returns a deterministic question-aware completion profile for starters, a backend data-driven standard library catalog, local symbols and common problem patterns |
 | Memory orchestration | Go `/api/memory/*` entrypoint for auth, user isolation and trace/audit; Python owns memory logic |
 | Memory admission | Context Engine admits only approved memory as `memory_context` and returns a `memory_admission` explanation |
+| Web Frontend | Vanilla TypeScript + CSS + Monaco workbench with Vite `/api` proxy, Chinese/English switching, lucide icons, meeting-style interview room, coding IDE, OJ-style prompt blocks, per-language drafts, combined frontend/backend lightweight completion, local configurable controls, companion panel, interaction status strip, loading/disabled states, form validation, empty-state actions and task-oriented next steps |
 | Python Runtime | task endpoint, prompt safety boundary, structured output and memory APIs |
 | Middleware | PostgreSQL + pgvector, Redis, MinIO and optional Python runtime container |
 
@@ -95,6 +100,31 @@ curl http://localhost:8080/healthz
 curl http://localhost:8090/healthz
 ```
 
+Start the frontend workbench:
+
+```bash
+make run-frontend
+```
+
+The default URL is `http://localhost:5173`. If the port is already in use, Vite will try the next available port. The dev server proxies `/api` to the Go API, so `make run` should usually be running as well. Async interview evaluation, coding judge, memory review and evaluation runs also depend on the corresponding worker / runtime services.
+
+Coding judge does not execute user code by default. To enable it locally, set `CODING_JUDGE_ENABLED=true` in `.env`, choose `CODING_JUDGE_MODE=docker`, `docker_warm` or `native_trusted` for trusted host-only code, then run `make run-worker`. Docker modes can pre-pull the Go, Java, Python, JavaScript, TypeScript and C++ images with `make pull-judge-images`.
+
+## Frontend Workbench
+
+`frontend` is the user-facing training surface, not a collection of API debug buttons. It avoids a heavy framework stack and mainly uses Vanilla TypeScript, CSS, Vite, Monaco Editor and `lucide` icons to turn backend capabilities into stable training flows.
+
+Current interactions:
+
+- Dashboard overview: shows API, worker, outbox, judge and evaluation run status with next-step entry points.
+- Interview room: uses a meeting-style layout with a main stage, candidate/runtime tiles, bottom control bar and right-side companion panel.
+- Local configurable controls: microphone, camera, captions, prompt sharing, room tab and notes are stored in `localStorage` so the frontend session can start and stop quickly.
+- Coding practice: question selection, OJ-style prompt blocks, Monaco code editing, per-language drafts, frontend local symbols/snippets plus Go completion profile, async submission and verdict display.
+- Memory review: loads pending candidates and supports approve/reject so only approved memory reaches prompts.
+- Admin and evaluation: provider/worker/judge summaries, evaluation case saving, dry-run execution and run history.
+
+The interview room control bar is currently an interaction state layer. It does not capture devices or bypass Go; session creation, answer submission, trace polling, report generation and session finalization still go through the Go API.
+
 ## Default Login
 
 The API bootstraps a local root account when missing:
@@ -134,16 +164,23 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 | `make run` | Start Go Core API on `8080` |
 | `make run-worker` | Start the standalone Redis Stream worker |
 | `make run-runtime` | Start FastAPI Runtime on `8090` |
+| `make run-frontend` | Start the TypeScript frontend dev server on `5173` with `/api` proxied to Go API |
+| `make build-frontend` | Type-check and build the frontend static assets |
 | `make test` | Run all Go tests with `go test ./...` |
 | `make test-python` | Run Python runtime unit tests |
+| `make test-frontend` | Validate the generated index and run frontend completion tests |
+| `make test-scripts` | Run repository maintenance script unit tests |
+| `make test-all` | Run all Go, Python, frontend and script tests |
+| `make check` | Run all tests, the frontend build, shell syntax, gofmt and go vet checks |
 | `make fmt` | Run `gofmt` for `cmd` and `internal` |
 | `make check-middleware` | Check pinned middleware image compatibility |
+| `make pull-judge-images` | Pre-pull Docker language images used by the coding judge |
 
 ## CI Pipelines
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `CI` | PRs, `main/master` pushes and manual dispatch | Run `go test ./...` and Python Runtime unit tests |
+| `CI` | PRs, `main/master` pushes and manual dispatch | Run Go race/coverage, Python, frontend, generated-index and repository script tests, then build the frontend |
 | `Quality` | PRs, `main/master` pushes and manual dispatch | Check `gofmt`, `go mod tidy`, `go vet`, Python compile and Compose config |
 | `Docker` | Runtime / Compose related changes and manual dispatch | Validate the runtime Compose profile and build the Python Runtime image |
 | `Integration Smoke` | Migration / middleware / init script changes and manual dispatch | Start PostgreSQL, Redis and MinIO, then apply migrations/seed and run basic health checks |
@@ -160,11 +197,12 @@ The current performance workflow is CI-level smoke load. It does not call real m
 | Providers | `GET/POST /api/providers`, `GET/PUT/DELETE /api/providers/{provider_id}`, `POST /api/providers/test` |
 | Routes | `GET /api/provider-routes`, `PUT /api/provider-routes/{task_type}` |
 | Skills | `GET/POST /api/skills`, `POST /api/skills/reload`, `GET /api/skills/{skill_id}` |
-| Context & Agent | `POST /api/context/preview`, `POST /api/agent/tasks` |
+| Context, Retrieval & Agent | `POST /api/context/preview`, `POST /api/retrieval/search`, `POST /api/agent/tasks` |
 | Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
-| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace` |
-| Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
-| Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary` |
+| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
+| Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/completions`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
+| Evaluation | `GET/POST /api/evaluation/cases`, `GET /api/evaluation/cases/{case_id}`, `POST /api/evaluation/cases/{case_id}/run`, `GET /api/evaluation/runs` |
+| Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary`, `GET /api/ops/coding-judge/summary` |
 
 Python Runtime:
 
@@ -184,7 +222,13 @@ Python Runtime:
 | Turn state | `interview_turns.turn_status` uses `queued -> running -> completed/failed`; stale running turns may return to `queued` |
 | Locks | No persistent business lock columns; concurrency relies on idempotency, `FOR UPDATE SKIP LOCKED`, turn state updates and short TTL Redis coordination |
 | Recovery | PostgreSQL runtime snapshots preserve business facts after Redis loss |
+| Final report | `interview_reports` stores report status and content; Go aggregates deterministic facts and Python Runtime only generates structured summary text |
+| Retrieval harness | `POST /api/retrieval/search` returns evidence, score, reason, source and debug trace across skill references, summaries, recent history and approved memory |
+| Evaluation harness | root-only `/api/evaluation/*` manages cases and run records; `expected.required_fields`, `expected.contains` and `expected.equals` define configurable assertions, and `POST /run` supports `dry_run` |
 | Worker | The API process enqueues and queries; `cmd/worker` consumes Redis Stream events |
+| Coding judge | `CODING_JUDGE_ENABLED=true` starts the coding judge loop in `cmd/worker`; `docker`, `docker_warm`, and `native_trusted` modes are configurable |
+| Coding completion | `POST /api/coding/completions` is a deterministic Go suggestion service. It does not call models or write the database; it uses language, question tags, source and prefix to return starter templates, a backend data-driven standard library catalog, local symbols and common problem patterns as a complement to Monaco local symbols/snippets, not a full LSP |
+| Frontend workbench | `frontend` is the user-facing operating surface and does not mutate internal state directly; after login it uses Go API flows for the training dashboard, meeting-style interview room, coding practice, memory review, admin, settings and evaluation harness. The interaction layer owns visible system status, next actions, validation, empty-state guidance, local configurable meeting controls, and the Monaco coding IDE's per-language drafts plus lightweight predictive completion |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` is only for local compatibility mode |
 | Memory context | Context Preview and answer evaluation admit approved memory by user, task_type, skill, query and token budget; `memory_extraction` does not admit long-term memory |
 
@@ -226,5 +270,18 @@ If `PROVIDER_KEY_ENCRYPTION_SECRET` is not set, API keys must not be written int
 | [docs/go-python-responsibilities.md](./docs/go-python-responsibilities.md) | Go / Python responsibility split |
 | [docs/language-boundaries.md](./docs/language-boundaries.md) | Business, Provider and runtime boundaries |
 | [docs/dead-letter-analysis.md](./docs/dead-letter-analysis.md) | Dead-letter pipeline and ops API |
+| [docs/evaluation-harness.md](./docs/evaluation-harness.md) | Evaluation cases, assertions and run records |
+| [docs/frontend-workbench.md](./docs/frontend-workbench.md) | Frontend workbench pages, interaction principles and local development notes |
+| [docs/python-runtime.md](./docs/python-runtime.md) | Python Runtime APIs, startup and boundary notes |
 | [docs/deployment.md](./docs/deployment.md) | Local deployment and initialization |
 | [docs/reference-projects.md](./docs/reference-projects.md) | Reference project index |
+| [docs/reference-implementation-notes.md](./docs/reference-implementation-notes.md) | Current implementation status for absorbed reference ideas |
+| [docs/skill-design-notes.md](./docs/skill-design-notes.md) | Skill Pack structure, validation and context design principles |
+
+## Security Notes
+
+- Do not commit real API keys.
+- Copy `.env.example` to `.env` for local configuration.
+- Provider and Skill write operations require the `root` role.
+- `AUTH_DISABLED=true` is only for local debugging and should not be used as a normal development, test or deployment dependency.
+- Python Runtime uses the Provider config passed by Go for the current task, does not persist API keys and does not bypass Go state transitions.

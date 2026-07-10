@@ -1,0 +1,3289 @@
+import "./styles.css";
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import "monaco-editor/min/vs/editor/editor.main.css";
+import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution";
+import "monaco-editor/esm/vs/basic-languages/go/go.contribution";
+import "monaco-editor/esm/vs/basic-languages/java/java.contribution";
+import "monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution";
+import "monaco-editor/esm/vs/basic-languages/python/python.contribution";
+import "monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution";
+import {
+  ApiClient,
+  ApiError,
+  type CodingCompletionResponse,
+  type CodingCompletionSuggestion,
+  type ApiState,
+  type CodingQuestion,
+  type CodingSubmission,
+  type EvaluationCase,
+  type EvaluationRun,
+  type InterviewSession,
+  type JsonObject,
+  type Skill,
+  type User
+} from "./api";
+import { locales, normalizeLocale, translate, translateHtml, type Locale } from "./i18n";
+import { suggestOJCompletions } from "./completion/oj-completion-client";
+import type { OJCompletionSuggestion } from "./completion/types";
+import {
+  Bot,
+  BrainCircuit,
+  Captions,
+  Check,
+  ClipboardCheck,
+  Clock3,
+  Code2,
+  Database,
+  FileSearch,
+  FileText,
+  Flag,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  Mic,
+  MicOff,
+  MessagesSquare,
+  MonitorUp,
+  PanelRightOpen,
+  PhoneOff,
+  Play,
+  Plus,
+  Radio,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Send,
+  Settings2,
+  Terminal,
+  UserRound,
+  Users,
+  Video,
+  VideoOff,
+  X,
+  createIcons
+} from "lucide";
+
+type View = "dashboard" | "interview" | "coding" | "memory" | "evaluation";
+type LoadState<T> = { loading: boolean; error: string; data: T };
+type RoomPanel = "briefing" | "participants" | "notes";
+type RunbookState = "done" | "active" | "pending";
+type SettingsPanel = "general" | "providers" | "workers" | "judge" | "quality";
+
+interface EmptyAction {
+  label: string;
+  iconName: string;
+  action?: string;
+  view?: View;
+}
+
+interface AppState {
+  view: View;
+  locale: Locale;
+  user: User | null;
+  accessToken: string;
+  refreshToken: string;
+  toast: string;
+  skills: Skill[];
+  settings: {
+    open: boolean;
+    panel: SettingsPanel;
+  };
+  dashboard: LoadState<DashboardData>;
+  interview: {
+    session: InterviewSession | null;
+    trace: JsonObject[];
+    report: JsonObject | null;
+    answer: string;
+    dryRun: boolean;
+    error: string;
+    loading: boolean;
+  };
+  meeting: {
+    micOn: boolean;
+    cameraOn: boolean;
+    captionsOn: boolean;
+    promptShared: boolean;
+    panel: RoomPanel;
+    notes: string;
+  };
+  coding: {
+    questions: CodingQuestion[];
+    selectedQuestion: CodingQuestion | null;
+    submissions: CodingSubmission[];
+    language: string;
+    languageDrafts: Record<string, string>;
+    sourceCode: string;
+    completionPrefix: string;
+    completionProfile: CodingCompletionResponse | null;
+    completionLoading: boolean;
+    completionError: string;
+    loading: boolean;
+    error: string;
+  };
+  memory: LoadState<JsonObject>;
+  admin: LoadState<AdminData>;
+  evaluation: {
+    cases: EvaluationCase[];
+    runs: EvaluationRun[];
+    selectedCaseId: string;
+    lastRun: JsonObject | null;
+    loading: boolean;
+    error: string;
+  };
+}
+
+interface DashboardData {
+  health: JsonObject | null;
+  worker: JsonObject | null;
+  judge: JsonObject | null;
+  evalRuns: EvaluationRun[];
+  submissions: CodingSubmission[];
+}
+
+interface AdminData {
+  providers: JsonObject[];
+  routes: JsonObject[];
+  worker: JsonObject | null;
+  judge: JsonObject | null;
+}
+
+interface CodeCompletion {
+  id: string;
+  label: string;
+  detail: string;
+  insertText: string;
+  keywords: string[];
+  kind?: string;
+  source?: string;
+}
+
+interface MemberCompletion {
+  id: string;
+  label: string;
+  detail: string;
+  insertText: string;
+  kind: monaco.languages.CompletionItemKind;
+  keywords: string[];
+}
+
+interface SymbolCompletion {
+  label: string;
+  detail: string;
+  insertText: string;
+  kind: monaco.languages.CompletionItemKind;
+  keywords: string[];
+}
+
+const api = new ApiClient();
+const monacoEnvironment = self as unknown as {
+  MonacoEnvironment?: { getWorker: (_workerId: string, _label: string) => Worker };
+};
+monacoEnvironment.MonacoEnvironment = {
+  getWorker: () => new EditorWorker()
+};
+const iconSet = {
+  Bot,
+  BrainCircuit,
+  Captions,
+  Check,
+  ClipboardCheck,
+  Clock3,
+  Code2,
+  Database,
+  FileSearch,
+  FileText,
+  Flag,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  Mic,
+  MicOff,
+  MessagesSquare,
+  MonitorUp,
+  PanelRightOpen,
+  PhoneOff,
+  Play,
+  Plus,
+  Radio,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Send,
+  Settings2,
+  Terminal,
+  UserRound,
+  Users,
+  Video,
+  VideoOff,
+  X
+};
+const root = document.querySelector<HTMLDivElement>("#app");
+let codeEditor: monaco.editor.IStandaloneCodeEditor | null = null;
+let codeEditorModel: monaco.editor.ITextModel | null = null;
+let completionProvider: monaco.IDisposable | null = null;
+let monacoThemeReady = false;
+let completionRequestSeq = 0;
+const completionProfileCache = new Map<string, CodingCompletionResponse>();
+const completionProfileRequests = new Map<string, Promise<CodingCompletionResponse>>();
+const maxCompletionProfileCacheEntries = 120;
+
+if (!root) {
+  throw new Error("missing #app");
+}
+const appRoot = root;
+
+const state: AppState = {
+  view: normalizeView(localStorage.getItem("frontend:view")),
+  locale: normalizeLocale(localStorage.getItem("frontend:locale") ?? navigator.language),
+  user: null,
+  accessToken: localStorage.getItem("frontend:access_token") ?? "",
+  refreshToken: localStorage.getItem("frontend:refresh_token") ?? "",
+  toast: "",
+  skills: [],
+  settings: {
+    open: false,
+    panel: "general"
+  },
+  dashboard: { loading: false, error: "", data: { health: null, worker: null, judge: null, evalRuns: [], submissions: [] } },
+  interview: { session: null, trace: [], report: null, answer: "", dryRun: true, error: "", loading: false },
+  meeting: {
+    micOn: localStorage.getItem("frontend:meeting:mic") === "on",
+    cameraOn: localStorage.getItem("frontend:meeting:camera") === "on",
+    captionsOn: localStorage.getItem("frontend:meeting:captions") !== "off",
+    promptShared: localStorage.getItem("frontend:meeting:prompt_shared") === "on",
+    panel: normalizeRoomPanel(localStorage.getItem("frontend:meeting:panel")),
+    notes: localStorage.getItem("frontend:meeting:notes") ?? ""
+  },
+  coding: {
+    questions: [],
+    selectedQuestion: null,
+    submissions: [],
+    language: "go",
+    languageDrafts: {},
+    sourceCode: defaultGoSolution(),
+    completionPrefix: "",
+    completionProfile: null,
+    completionLoading: false,
+    completionError: "",
+    loading: false,
+    error: ""
+  },
+  memory: { loading: false, error: "", data: {} },
+  admin: { loading: false, error: "", data: { providers: [], routes: [], worker: null, judge: null } },
+  evaluation: { cases: [], runs: [], selectedCaseId: "", lastRun: null, loading: false, error: "" }
+};
+
+api.setTokens(state.accessToken, state.refreshToken);
+
+void boot();
+
+async function boot(): Promise<void> {
+  if (state.accessToken) {
+    try {
+      state.user = await api.me();
+      await loadInitialData();
+    } catch {
+      clearAuth();
+    }
+  }
+  render();
+}
+
+async function loadInitialData(): Promise<void> {
+  await loadSkills();
+  if (state.view === "dashboard") await loadDashboard();
+  if (state.view === "coding") await loadCoding();
+  if (state.view === "memory") await loadMemory();
+  if (state.view === "evaluation") await loadEvaluation();
+}
+
+function render(): void {
+  disposeCodeEditor();
+  appRoot.innerHTML = localize(state.user ? renderShell() : renderLogin());
+  mountIcons();
+  bindEvents();
+  mountCodeEditor();
+}
+
+function mountIcons(): void {
+  createIcons({
+    icons: iconSet,
+    attrs: {
+      width: "18",
+      height: "18",
+      "stroke-width": "2.2"
+    } as Record<string, string>
+  });
+}
+
+function mountCodeEditor(): void {
+  const container = document.querySelector<HTMLDivElement>("[data-role='code-editor']");
+  if (!container) return;
+  ensureMonacoTheme();
+  registerCodeCompletionProvider(state.coding.language);
+  codeEditorModel = monaco.editor.createModel(state.coding.sourceCode, monacoLanguage(state.coding.language));
+  codeEditor = monaco.editor.create(container, {
+    model: codeEditorModel,
+    theme: "interview-dark",
+    automaticLayout: true,
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: 13,
+    lineHeight: 22,
+    tabSize: 2,
+    insertSpaces: true,
+    detectIndentation: false,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderWhitespace: "selection",
+    wordBasedSuggestions: "currentDocument",
+    quickSuggestions: { other: true, comments: false, strings: false },
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: "on",
+    tabCompletion: "on",
+    snippetSuggestions: "top",
+    formatOnPaste: true,
+    formatOnType: true,
+    bracketPairColorization: { enabled: true },
+    guides: { bracketPairs: true, indentation: true }
+  });
+  codeEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, () => {
+    codeEditor?.trigger("keyboard", "editor.action.triggerSuggest", {});
+  });
+  codeEditor.onDidChangeModelContent(syncCodeEditorState);
+  codeEditor.onDidChangeCursorPosition(syncCodeEditorState);
+  syncCodeEditorState();
+}
+
+function disposeCodeEditor(): void {
+  completionProvider?.dispose();
+  completionProvider = null;
+  codeEditor?.dispose();
+  codeEditor = null;
+  codeEditorModel?.dispose();
+  codeEditorModel = null;
+}
+
+function ensureMonacoTheme(): void {
+  if (monacoThemeReady) return;
+  monaco.editor.defineTheme("interview-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "keyword", foreground: "c084fc" },
+      { token: "string", foreground: "86efac" },
+      { token: "number", foreground: "fbbf24" },
+      { token: "comment", foreground: "64748b" }
+    ],
+    colors: {
+      "editor.background": "#0b1220",
+      "editor.foreground": "#d1d5db",
+      "editorLineNumber.foreground": "#64748b",
+      "editorLineNumber.activeForeground": "#cbd5e1",
+      "editorCursor.foreground": "#f8fafc",
+      "editor.selectionBackground": "#2563eb66",
+      "editor.inactiveSelectionBackground": "#33415566",
+      "editorIndentGuide.background1": "#1e293b",
+      "editorIndentGuide.activeBackground1": "#475569",
+      "editorSuggestWidget.background": "#111827",
+      "editorSuggestWidget.border": "#334155",
+      "editorSuggestWidget.selectedBackground": "#1e293b"
+    }
+  });
+  monacoThemeReady = true;
+}
+
+function registerCodeCompletionProvider(language: string): void {
+  completionProvider?.dispose();
+  const monacoLang = monacoLanguage(language);
+  completionProvider = monaco.languages.registerCompletionItemProvider(monacoLang, {
+    triggerCharacters: [".", ":", "_"],
+    provideCompletionItems: async (model, position) => {
+      const word = model.getWordUntilPosition(position);
+      const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+      const symbolSuggestions = symbolCompletions(language, model, word.word).map((item, index) => ({
+        label: item.label,
+        kind: item.kind,
+        detail: item.detail,
+        insertText: item.insertText,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: `1_${String(index).padStart(3, "0")}_${item.label}`,
+        range
+      }));
+      const snippetSuggestions = codeCompletions(language, word.word).map((item, index) => ({
+        label: item.label,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        detail: item.detail,
+        insertText: item.insertText,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        sortText: `3_${String(index).padStart(3, "0")}_${item.label}`,
+        range
+      }));
+      const astSuggestions = await astCompletionItems(model, position, language, word.word, range);
+      const remoteSuggestions = astSuggestions.length
+        ? []
+        : await remoteCompletionItems(model, position, language, word.word, range);
+      return {
+        suggestions: dedupeMonacoSuggestions([
+          ...astSuggestions,
+          ...remoteSuggestions,
+          ...symbolSuggestions,
+          ...snippetSuggestions
+        ])
+      };
+    }
+  });
+}
+
+async function astCompletionItems(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  language: string,
+  prefix: string,
+  range: monaco.Range
+): Promise<monaco.languages.CompletionItem[]> {
+  const source = model.getValue();
+  const suggestions = await suggestOJCompletions({
+    language,
+    source,
+    cursorOffset: model.getOffsetAt(position),
+    prefix
+  });
+  return suggestions.map((item, index) => ojSuggestionToMonaco(item, index, range));
+}
+
+function ojSuggestionToMonaco(
+  item: OJCompletionSuggestion,
+  index: number,
+  range: monaco.Range
+): monaco.languages.CompletionItem {
+  return {
+    label: item.label,
+    kind: monacoCompletionKind(item.kind),
+    detail: `${sourceLabel(item.source)} · ${item.detail}`,
+    insertText: item.insert_text,
+    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+    sortText: `0_${String(item.rank ?? index).padStart(3, "0")}_${item.label}`,
+    range
+  };
+}
+
+function monacoLanguage(language: string): string {
+  const languages: Record<string, string> = {
+    go: "go",
+    java: "java",
+    python: "python",
+    javascript: "javascript",
+    typescript: "typescript",
+    cpp: "cpp"
+  };
+  return languages[language.toLowerCase()] ?? "go";
+}
+
+async function remoteCompletionItems(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  language: string,
+  prefix: string,
+  range: monaco.Range
+): Promise<monaco.languages.CompletionItem[]> {
+  if (!state.accessToken) return [];
+  const source = model.getValue();
+  const cursorOffset = model.getOffsetAt(position);
+  const limit = 16;
+  const cacheKey = completionProfileCacheKey(
+    state.coding.selectedQuestion?.question_id ?? "",
+    language,
+    source,
+    cursorOffset,
+    prefix,
+    limit
+  );
+  try {
+    const profile = await completionProfileFor(cacheKey, {
+      question_id: state.coding.selectedQuestion?.question_id,
+      language,
+      source_code: source,
+      cursor_offset: cursorOffset,
+      prefix,
+      limit
+    });
+    state.coding.completionProfile = profile;
+    state.coding.completionError = "";
+    updateCompletionPanel();
+    return completionItemsFromProfile(profile, range);
+  } catch {
+    return [];
+  }
+}
+
+function completionItemsFromProfile(profile: CodingCompletionResponse, range: monaco.Range): monaco.languages.CompletionItem[] {
+  return profile.suggestions.map((item, index) => ({
+    label: item.label,
+    kind: monacoCompletionKind(item.kind),
+    detail: `${sourceLabel(item.source)} · ${item.detail}`,
+    insertText: item.insert_text,
+    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+    sortText: `2_${String(item.rank ?? index).padStart(3, "0")}_${item.label}`,
+    range
+  }));
+}
+
+function monacoCompletionKind(kind: string): monaco.languages.CompletionItemKind {
+  const normalized = kind.toLowerCase();
+  if (normalized === "function") return monaco.languages.CompletionItemKind.Function;
+  if (normalized === "method") return monaco.languages.CompletionItemKind.Method;
+  if (normalized === "variable") return monaco.languages.CompletionItemKind.Variable;
+  if (normalized === "class") return monaco.languages.CompletionItemKind.Class;
+  if (normalized === "property") return monaco.languages.CompletionItemKind.Property;
+  if (normalized === "keyword") return monaco.languages.CompletionItemKind.Keyword;
+  return monaco.languages.CompletionItemKind.Snippet;
+}
+
+function dedupeMonacoSuggestions(items: monaco.languages.CompletionItem[]): monaco.languages.CompletionItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const label = typeof item.label === "string" ? item.label : item.label.label;
+    const key = `${label}:${item.detail ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function completionProfileCacheKey(
+  questionId: string,
+  language: string,
+  source: string,
+  cursorOffset: number,
+  prefix: string,
+  limit: number
+): string {
+  return [
+    questionId,
+    language.toLowerCase(),
+    cursorOffset,
+    prefix.toLowerCase(),
+    limit,
+    sourceFingerprint(source)
+  ].join("|");
+}
+
+function sourceFingerprint(source: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index++) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${source.length}:${hash >>> 0}`;
+}
+
+function rememberCompletionProfile(key: string, profile: CodingCompletionResponse): void {
+  completionProfileCache.set(key, profile);
+  if (completionProfileCache.size <= maxCompletionProfileCacheEntries) return;
+  const oldest = completionProfileCache.keys().next().value;
+  if (oldest) completionProfileCache.delete(oldest);
+}
+
+function completionProfileFor(
+  key: string,
+  payload: {
+    question_id?: string;
+    language: string;
+    source_code: string;
+    cursor_offset: number;
+    prefix?: string;
+    limit?: number;
+  }
+): Promise<CodingCompletionResponse> {
+  const cached = completionProfileCache.get(key);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = completionProfileRequests.get(key);
+  if (pending) return pending;
+
+  const request = api.suggestCodingCompletions(payload)
+    .then((profile) => {
+      rememberCompletionProfile(key, profile);
+      return profile;
+    })
+    .finally(() => completionProfileRequests.delete(key));
+  completionProfileRequests.set(key, request);
+  return request;
+}
+
+function icon(name: string, className = "ui-icon"): string {
+  return `<i class="${className}" data-lucide="${name}" aria-hidden="true"></i>`;
+}
+
+function renderLogin(): string {
+  return `
+    <main class="login-screen">
+      <section class="login-panel">
+        <div class="brand-row">
+          <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
+          <div>
+            <h1>InterviewOS</h1>
+            <p>AI training runtime control surface</p>
+          </div>
+        </div>
+        ${languageSwitcher("login-language")}
+        <form id="login-form" class="login-form">
+          <label>
+            Email
+            <input name="email" type="email" autocomplete="email" value="root@example.local" required />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" required />
+          </label>
+          <button class="button primary" type="submit">${icon("log-in")}<span>Sign in</span></button>
+        </form>
+        <p class="muted">Use the local root account from the backend bootstrap, or any user created through the API.</p>
+      </section>
+    </main>
+  `;
+}
+
+function renderShell(): string {
+  const busy = isCurrentViewLoading();
+  return `
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-row sidebar-brand">
+          <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
+          <div>
+            <strong>InterviewOS</strong>
+            <span>AI training runtime</span>
+          </div>
+        </div>
+        <nav class="nav-list">
+          ${navItem("dashboard", "Dashboard", "Overview", "layout-dashboard")}
+          ${navItem("interview", "Interview", "Session", "messages-square")}
+          ${navItem("coding", "Coding", "Practice", "code-2")}
+          ${navItem("memory", "Memory", "Review", "database")}
+          ${navItem("evaluation", "Evaluation", "Quality", "clipboard-check")}
+        </nav>
+        <div class="sidebar-health">
+          <strong>Runtime health</strong>
+          <div class="chip-row">
+            <span class="chip ok">Go API</span>
+            <span class="chip info">Worker</span>
+          </div>
+          <small>Poll with the dashboard refresh action.</small>
+        </div>
+      </aside>
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>${pageTitle(state.view)}</h1>
+            <p>${pageSubtitle(state.view)}</p>
+          </div>
+          <div class="topbar-actions">
+            <button class="button ghost" data-action="refresh" ${busy ? "disabled" : ""}>${icon("refresh-cw")}<span>${busy ? "Updating" : "Refresh"}</span></button>
+            ${languageSwitcher("topbar-language")}
+            <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
+            <button class="icon-button" data-action="open-settings" aria-label="Settings">${icon("settings-2")}</button>
+            <button class="icon-button" data-action="logout" aria-label="Sign out">${icon("log-out")}</button>
+          </div>
+        </header>
+        ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
+        ${renderInteractionStrip()}
+        <main class="page-body" aria-busy="${busy ? "true" : "false"}">${renderPage()}</main>
+      </section>
+      ${state.settings.open ? renderSettingsModal() : ""}
+    </div>
+  `;
+}
+
+function navItem(view: View, label: string, sub: string, iconName: string): string {
+  const active = state.view === view ? " active" : "";
+  return `
+    <button class="nav-item${active}" data-view="${view}">
+      <span class="nav-mark">${icon(iconName)}</span>
+      <span><strong>${label}</strong><small>${sub}</small></span>
+    </button>
+  `;
+}
+
+function renderPage(): string {
+  switch (state.view) {
+    case "dashboard":
+      return renderDashboard();
+    case "interview":
+      return renderInterview();
+    case "coding":
+      return renderCoding();
+    case "memory":
+      return renderMemory();
+    case "evaluation":
+      return renderEvaluation();
+  }
+}
+
+function renderDashboard(): string {
+  const data = state.dashboard.data;
+  const worker = data.worker;
+  const queue = record(worker?.queue);
+  const outbox = record(worker?.outbox);
+  const judge = data.judge;
+  return `
+    ${state.dashboard.error ? banner(state.dashboard.error, "error") : ""}
+    <section class="console-hero">
+      <div class="console-copy">
+        <span class="eyebrow">Control plane</span>
+        <h2>Keep the training loop visible</h2>
+        <p>Start from the work that changes state: create an interview, submit code, review memory, then use evaluation runs to catch regressions before the loop drifts.</p>
+        <div class="hero-actions">
+          <button class="button primary" data-view="interview">${icon("messages-square")}<span>Start interview</span></button>
+          <button class="button secondary" data-view="coding">${icon("code-2")}<span>Practice coding</span></button>
+          <button class="button secondary" data-view="memory">${icon("database")}<span>Review memory</span></button>
+        </div>
+      </div>
+      <div class="console-panel">
+        ${operationRow("API boundary", stringValue(data.health?.status, "unknown"), "healthz")}
+        ${operationRow("Async worker", stringValue(queue.pending, "0"), "pending stream items")}
+        ${operationRow("Judge lane", stringValue(record(judge).queued, "0"), "queued submissions")}
+      </div>
+    </section>
+    <section class="metric-grid">
+      ${metricCard("API status", stringValue(data.health?.status, "unknown"), "healthz", "teal", "terminal")}
+      ${metricCard("Queue pending", stringValue(queue.pending, "0"), "Redis Stream", "blue", "messages-square")}
+      ${metricCard("Outbox pending", stringValue(outbox.pending, "0"), "PostgreSQL outbox", "amber", "database")}
+      ${metricCard("Judge queued", stringValue(record(judge).queued, "0"), "coding submissions", "cyan", "code-2")}
+    </section>
+    <section class="content-grid two">
+      <article class="card">
+        <div class="section-head">
+          <div><h2>Recent coding submissions</h2><p>Latest judge-facing records for the signed-in user.</p></div>
+        </div>
+        ${table(
+          ["Question", "Language", "Status", "Score"],
+          data.submissions.map((item) => [item.question_id, item.language, statusBadge(item.status), String(item.score)])
+        )}
+      </article>
+      <article class="card">
+        <div class="section-head">
+          <div><h2>Evaluation runs</h2><p>Quality gates from the backend evaluation harness.</p></div>
+        </div>
+        ${table(
+          ["Case", "Task", "Status", "Score"],
+          data.evalRuns.map((item) => [item.case_id, item.task_type, statusBadge(item.status), String(Math.round(item.score))])
+        )}
+      </article>
+    </section>
+    <section class="card">
+      <div class="section-head">
+        <div><h2>Runtime timeline</h2><p>The front end should make asynchronous state visible instead of hiding backend work.</p></div>
+      </div>
+      <div class="timeline">
+        ${["Answer queued", "Worker claimed", "Runtime scored", "Report generated", "Memory review"].map((label, index) => `
+          <div class="timeline-step ${index < 3 ? "done" : ""}"><span></span><strong>${label}</strong></div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderInterview(): string {
+  const session = state.interview.session;
+  return `
+    ${state.interview.error ? banner(state.interview.error, "error") : ""}
+    <section class="live-room">
+      <div class="live-room-head">
+        <div>
+          <span class="eyebrow">Live practice room</span>
+          <h2>Run the interview like a focused call</h2>
+          <p>The layout follows meeting products: a main stage, participant tiles, a stable control bar and a right rail for session state.</p>
+        </div>
+        <div class="room-clock">
+          ${icon("clock-3")}
+          <span>${escapeHtml(formatTime(session?.updated_at))}</span>
+        </div>
+      </div>
+      <div class="meeting-layout">
+        <div class="meeting-main">
+          ${renderLiveStage(session)}
+          ${session ? renderSessionPanel(session) : emptyState("No active session", "Create a session to open the live interview room.")}
+        </div>
+        <aside class="meeting-sidebar">
+          ${renderRoomCompanion(session)}
+          ${renderRoomRunbook(session)}
+          ${renderSessionSetup(session)}
+          ${renderEvaluationPanel(session)}
+        </aside>
+      </div>
+    </section>
+  `;
+}
+
+function renderLiveStage(session: InterviewSession | null): string {
+  const question = session?.current_question;
+  return `
+    <div class="live-stage">
+      ${renderStageStatusBar(session)}
+      <div class="speaker-tile interviewer-tile">
+        <div class="tile-bar">
+          <span>${icon("bot")}<strong>AI Interviewer</strong></span>
+          <b class="live-dot">${session ? "Live" : "Standby"}</b>
+        </div>
+        <div class="interviewer-avatar">${icon("brain-circuit", "avatar-icon")}</div>
+        <div class="question-card">
+          <div class="question-topline">
+            <span class="eyebrow">Question ${session?.current_question_number || question?.number || 1}</span>
+            ${statusBadge(session?.flow_status ?? "waiting")}
+          </div>
+          <h3>${escapeHtml(question?.title ?? "Backend interview question")}</h3>
+          <p>${escapeHtml(question?.prompt ?? "Create a session to receive the first backend-generated question.")}</p>
+          <div class="question-meta">
+            <span>${icon("flag")}<strong>${escapeHtml(session?.phase ?? "Waiting")}</strong></span>
+            <span>${icon("messages-square")}<strong>${escapeHtml(`${session?.turns?.length ?? 0} turns`)}</strong></span>
+            <span>${icon("refresh-cw")}<strong>${escapeHtml(`${session?.follow_up_count ?? 0}/${session?.max_follow_ups ?? 0} follow-ups`)}</strong></span>
+          </div>
+          <div class="chip-row">${(question?.tags ?? ["runtime", "trace", "mock"]).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
+        </div>
+      </div>
+      <div class="participant-grid">
+        ${participantTile("Candidate", state.user?.display_name ?? "You", "user-round", state.meeting.cameraOn ? "Camera on" : "Camera off", state.meeting.micOn ? "Mic on" : "Muted")}
+        ${participantTile("Runtime", session ? session.skill_id : "Waiting", "radio", session ? session.flow_status : "No session", "AI channel")}
+      </div>
+      ${renderLiveCaption(session)}
+      <div class="meeting-control-bar" role="toolbar" aria-label="Meeting controls">
+        ${meetingToggle("mic", state.meeting.micOn, state.meeting.micOn ? "mic" : "mic-off", state.meeting.micOn ? "Mic on" : "Muted")}
+        ${meetingToggle("camera", state.meeting.cameraOn, state.meeting.cameraOn ? "video" : "video-off", state.meeting.cameraOn ? "Camera on" : "Camera off")}
+        ${meetingToggle("captions", state.meeting.captionsOn, "captions", state.meeting.captionsOn ? "Captions on" : "Captions off")}
+        ${meetingToggle("prompt", state.meeting.promptShared, "monitor-up", state.meeting.promptShared ? "Prompt shared" : "Share prompt")}
+        <button class="call-end" data-action="finalize-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("phone-off")}<span>End</span></button>
+      </div>
+    </div>
+  `;
+}
+
+function renderStageStatusBar(session: InterviewSession | null): string {
+  return `
+    <div class="stage-status-bar">
+      ${stageSignal("Room", session ? "Connected" : "Standby", "radio", session ? "ok" : "idle")}
+      ${stageSignal("Flow", session?.flow_status ?? "Waiting", "flag", session ? "info" : "idle")}
+      ${stageSignal("Mode", state.interview.dryRun ? "Dry run" : "Real runtime", "settings-2", state.interview.dryRun ? "warn" : "ok")}
+      ${stageSignal("Trace", `${state.interview.trace.length} records`, "file-search", state.interview.trace.length ? "info" : "idle")}
+    </div>
+  `;
+}
+
+function stageSignal(label: string, value: string, iconName: string, tone: "ok" | "info" | "warn" | "idle"): string {
+  return `
+    <div class="stage-signal ${tone}">
+      <span>${icon(iconName)}</span>
+      <div>
+        <small>${escapeHtml(label)}</small>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderLiveCaption(session: InterviewSession | null): string {
+  const caption = state.meeting.captionsOn
+    ? session?.current_question?.prompt ?? "Create a session to start the interviewer channel."
+    : "Captions are hidden. Turn them on from the control bar.";
+  return `
+    <div class="live-caption ${state.meeting.captionsOn ? "" : "is-muted"}">
+      <span>${icon("captions")}</span>
+      <div>
+        <small>${state.meeting.captionsOn ? "Live captions" : "Captions hidden"}</small>
+        <p>${escapeHtml(caption)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function meetingToggle(control: string, active: boolean, iconName: string, label: string): string {
+  return `
+    <button
+      class="call-control ${active ? "active" : "muted"}"
+      type="button"
+      data-action="toggle-meeting-control"
+      data-control="${control}"
+      aria-pressed="${active ? "true" : "false"}"
+    >${icon(iconName)}<b>${label}</b></button>
+  `;
+}
+
+function participantTile(role: string, name: string, iconName: string, stateText: string, caption: string): string {
+  return `
+    <div class="participant-tile">
+      <div class="participant-avatar">${icon(iconName)}</div>
+      <div>
+        <small>${escapeHtml(role)}</small>
+        <strong>${escapeHtml(name)}</strong>
+        <span>${escapeHtml(caption)} · ${escapeHtml(stateText)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderRoomCompanion(session: InterviewSession | null): string {
+  return `
+    <article class="room-card companion-card">
+      <div class="companion-tabs" role="tablist" aria-label="Room companion">
+        ${roomTab("briefing", "Briefing", "panel-right-open")}
+        ${roomTab("participants", "People", "users")}
+        ${roomTab("notes", "Notes", "captions")}
+      </div>
+      ${state.meeting.panel === "briefing" ? renderBriefingPanel(session) : ""}
+      ${state.meeting.panel === "participants" ? renderParticipantsPanel(session) : ""}
+      ${state.meeting.panel === "notes" ? renderNotesPanel(session) : ""}
+    </article>
+  `;
+}
+
+function roomTab(panel: RoomPanel, label: string, iconName: string): string {
+  const active = state.meeting.panel === panel;
+  return `
+    <button
+      class="companion-tab ${active ? "active" : ""}"
+      type="button"
+      data-action="set-room-panel"
+      data-panel="${panel}"
+      aria-selected="${active ? "true" : "false"}"
+    >${icon(iconName)}<span>${label}</span></button>
+  `;
+}
+
+function renderBriefingPanel(session: InterviewSession | null): string {
+  return `
+    <div class="companion-panel">
+      <div class="briefing-card primary">
+        <small>Current focus</small>
+        <strong>${escapeHtml(session?.current_question?.title ?? "Prepare the first question")}</strong>
+        <p>${escapeHtml(session ? "Answer clearly, then poll for the runtime evaluation." : "Create a session to start the live practice room.")}</p>
+      </div>
+      <div class="briefing-grid">
+        ${briefingItem("Mic", state.meeting.micOn ? "On" : "Muted", state.meeting.micOn ? "mic" : "mic-off")}
+        ${briefingItem("Camera", state.meeting.cameraOn ? "On" : "Off", state.meeting.cameraOn ? "video" : "video-off")}
+        ${briefingItem("Captions", state.meeting.captionsOn ? "On" : "Off", "captions")}
+        ${briefingItem("Prompt", state.meeting.promptShared ? "Shared" : "Private", "monitor-up")}
+      </div>
+    </div>
+  `;
+}
+
+function briefingItem(label: string, value: string, iconName: string): string {
+  return `
+    <div class="briefing-item">
+      <span>${icon(iconName)}</span>
+      <small>${escapeHtml(label)}</small>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderParticipantsPanel(session: InterviewSession | null): string {
+  return `
+    <div class="companion-panel participant-list">
+      ${participantLine("AI Interviewer", "Host", "bot", session ? "Ready" : "Waiting")}
+      ${participantLine(state.user?.display_name ?? "Candidate", "You", "user-round", state.meeting.micOn ? "Speaking ready" : "Muted")}
+      ${participantLine(session?.skill_id ?? "Runtime", "Evaluator", "radio", session?.flow_status ?? "No session")}
+    </div>
+  `;
+}
+
+function participantLine(name: string, role: string, iconName: string, status: string): string {
+  return `
+    <div class="participant-line">
+      <span>${icon(iconName)}</span>
+      <div>
+        <strong>${escapeHtml(name)}</strong>
+        <small>${escapeHtml(role)} · ${escapeHtml(status)}</small>
+      </div>
+    </div>
+  `;
+}
+
+function renderNotesPanel(session: InterviewSession | null): string {
+  return `
+    <div class="companion-panel">
+      <div class="caption-line">
+        <span>${icon("captions")}</span>
+        <p>${escapeHtml(state.meeting.captionsOn ? "Captions are ready for ASR/TTS integration." : "Captions are hidden. Turn them on from the control bar.")}</p>
+      </div>
+      <textarea class="room-notes" data-role="meeting-notes" rows="6" placeholder="Write notes for follow-up, evidence, or weak points.">${escapeHtml(state.meeting.notes)}</textarea>
+      <small class="note-hint">${escapeHtml(session ? `Session ${session.session_id}` : "Notes are local until a backend notes API is added.")}</small>
+    </div>
+  `;
+}
+
+function renderRoomRunbook(session: InterviewSession | null): string {
+  const hasSession = Boolean(session);
+  const hasQuestion = Boolean(session?.current_question || session?.current_question_id);
+  const hasTurns = (session?.turns?.length ?? 0) > 0;
+  const hasReport = Boolean(state.interview.report);
+  const terminal = isTerminalSession(session);
+  return `
+    <article class="room-card runbook-card">
+      <div class="runbook-head">
+        <span>${icon("clipboard-check")}</span>
+        <div>
+          <h2>Room runbook</h2>
+          <p>Keep the live practice loop visible while the backend works asynchronously.</p>
+        </div>
+      </div>
+      <div class="runbook-list">
+        ${runbookStep("Configure room", "Skill, question type and follow-up depth.", "settings-2", hasSession ? "done" : "active")}
+        ${runbookStep("Open question", "Generate the first interviewer prompt.", "bot", hasQuestion ? "done" : hasSession ? "active" : "pending")}
+        ${runbookStep("Send answer", "Submit the candidate response into the async lane.", "send", hasTurns ? "done" : hasQuestion ? "active" : "pending")}
+        ${runbookStep("Runtime review", "Poll until scoring and trace evidence appear.", "radio", hasTurns ? (hasReport ? "done" : "active") : "pending")}
+        ${runbookStep("Report", "Generate the final replayable summary.", "file-text", hasReport ? "done" : terminal ? "active" : "pending")}
+      </div>
+    </article>
+  `;
+}
+
+function runbookStep(label: string, copy: string, iconName: string, stateValue: RunbookState): string {
+  return `
+    <div class="runbook-step ${stateValue}">
+      <span>${icon(iconName)}</span>
+      <div>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(copy)}</small>
+      </div>
+      <b>${escapeHtml(stateValue === "done" ? "Done" : stateValue === "active" ? "Now" : "Next")}</b>
+    </div>
+  `;
+}
+
+function renderSessionSetup(session: InterviewSession | null): string {
+  return `
+    <article class="room-card setup-card">
+      <div class="setup-head">
+        <span>${icon(session ? "radio" : "settings-2")}</span>
+        <div>
+          <h2>${session ? "Live room controls" : "Pre-call setup"}</h2>
+          <p>${session ? "Refresh room state or start a new practice context when needed." : "Choose the room context before the first question is generated."}</p>
+        </div>
+        <button class="button secondary" data-action="poll-session" ${session && !state.interview.loading ? "" : "disabled"}>${icon("rotate-cw")}<span>${state.interview.loading ? "Updating" : "Poll"}</span></button>
+      </div>
+      <form id="session-form" class="setup-form" aria-busy="${state.interview.loading ? "true" : "false"}">
+        <label>Skill
+          <select name="skill_id">${skillOptions(session?.skill_id)}</select>
+        </label>
+        <label>Question type
+          <select name="question_type">
+            <option value="backend">backend</option>
+            <option value="algorithm">algorithm</option>
+            <option value="system_design">system_design</option>
+          </select>
+        </label>
+        <label>Follow-ups
+          <input name="max_follow_ups" type="number" min="0" max="5" value="${session?.max_follow_ups ?? 1}" />
+        </label>
+        <button class="button primary join-room-button" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("plus")}<span>${state.interview.loading ? "Creating" : session ? "Start new room" : "Create session"}</span></button>
+      </form>
+    </article>
+  `;
+}
+
+function renderEvaluationPanel(session: InterviewSession | null): string {
+  return `
+    <article class="room-card state-card">
+      <div class="section-head compact">
+        <div><h2>Room state</h2><p>Track the backend-owned state machine while the call is in progress.</p></div>
+      </div>
+      ${session ? `
+        <div class="state-stack">
+          ${statePill("Flow", session.flow_status, "messages-square")}
+          ${statePill("Status", session.session_status, "terminal")}
+          ${statePill("Phase", session.phase, "clipboard-check")}
+          ${statePill("Total score", String(session.total_score), "file-text")}
+        </div>
+        <dl class="detail-list compact">
+          <div><dt>Session</dt><dd>${escapeHtml(session.session_id)}</dd></div>
+          <div><dt>Updated</dt><dd>${escapeHtml(formatTime(session.updated_at))}</dd></div>
+        </dl>
+      ` : emptyState("Waiting for session", "Trace and report controls appear after creation.")}
+      <div class="button-row">
+        <button class="button secondary" data-action="load-trace" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-search")}<span>Load trace</span></button>
+        <button class="button secondary" data-action="generate-report" ${session && !state.interview.loading ? "" : "disabled"}>${icon("file-text")}<span>Generate report</span></button>
+      </div>
+      ${state.interview.trace.length ? renderTracePreview(state.interview.trace) : ""}
+      ${state.interview.report ? renderReportPreview(state.interview.report) : ""}
+    </article>
+  `;
+}
+
+function renderSessionPanel(session: InterviewSession): string {
+  const answerLength = state.interview.answer.trim().length;
+  return `
+    <article class="answer-dock speaking-dock">
+      <div class="speaker-composer-head">
+        <div class="speaker-identity">
+          <span>${icon("user-round")}</span>
+          <div>
+            <h2>Candidate response</h2>
+            <p>Write the answer as if you are speaking in the live room. Submit when ready, then poll for the evaluation.</p>
+          </div>
+        </div>
+        <div class="speaker-state ${state.meeting.micOn ? "active" : "muted"}">
+          ${icon(state.meeting.micOn ? "mic" : "mic-off")}
+          <div>
+            <strong>${state.meeting.micOn ? "Speaking channel open" : "Muted locally"}</strong>
+            <small>${state.meeting.cameraOn ? "Camera on" : "Camera off"}</small>
+          </div>
+        </div>
+      </div>
+      <form id="answer-form" class="answer-form" aria-busy="${state.interview.loading ? "true" : "false"}">
+        <div class="answer-editor-shell">
+          <label class="answer-label">Your answer
+            <textarea name="answer" rows="8" placeholder="Answer with concrete tradeoffs, examples, and follow-up hooks.">${escapeHtml(state.interview.answer)}</textarea>
+          </label>
+          <div class="answer-cue-strip" aria-live="polite">
+            <span>${icon("messages-square")}<strong data-role="answer-length">${answerLength} characters</strong></span>
+            <span>${icon("flag")}<strong>Round ${session.current_question_number}.${session.answer_round}</strong></span>
+            <span>${icon("settings-2")}<strong>${state.interview.dryRun ? "Dry run protected" : "Real runtime enabled"}</strong></span>
+          </div>
+        </div>
+        <div class="answer-actions speaker-actions">
+          <label class="runtime-toggle"><input name="dry_run" type="checkbox" ${state.interview.dryRun ? "checked" : ""} /><span>${icon("settings-2")} Dry run runtime calls</span></label>
+          <button class="button primary submit-response" type="submit" ${state.interview.loading ? "disabled" : ""}>${icon("send")}<span>${state.interview.loading ? "Sending" : "Submit answer"}</span></button>
+        </div>
+      </form>
+      ${session.turns?.length ? renderTurns(session.turns) : ""}
+    </article>
+  `;
+}
+
+function renderTurns(turns: InterviewSession["turns"]): string {
+  if (!turns?.length) return "";
+  return `
+    <section class="turn-list transcript-list" aria-label="Interview transcript">
+      <div class="transcript-head">
+        <div>
+          <h3>Conversation replay</h3>
+          <p>Review each answer, runtime score, follow-up signal and trace handle.</p>
+        </div>
+        <span>${turns.length} turns</span>
+      </div>
+      ${turns.map(renderTurnCard).join("")}
+    </section>
+  `;
+}
+
+function renderTurnCard(turn: NonNullable<InterviewSession["turns"]>[number]): string {
+  const scoreTone = turn.score >= 80 ? "good" : turn.score >= 60 ? "warn" : "risk";
+  const followUp = turn.follow_up_needed
+    ? turn.follow_up_question || "Follow-up requested by runtime."
+    : "No follow-up requested.";
+  return `
+    <article class="transcript-turn">
+      <div class="transcript-marker">
+        <span>${icon("user-round")}</span>
+        <i></i>
+      </div>
+      <div class="transcript-body">
+        <div class="transcript-row-head">
+          <div>
+            <strong>Turn ${turn.question_number}.${turn.answer_round}</strong>
+            <small>${escapeHtml(formatTime(turn.updated_at))}</small>
+          </div>
+          ${statusBadge(turn.turn_status)}
+        </div>
+        <div class="answer-bubble">
+          <small>Candidate answer</small>
+          <p>${escapeHtml(compactText(turn.user_answer, "No answer text recorded.", 360))}</p>
+        </div>
+        <div class="runtime-verdict">
+          <div class="score-ring ${scoreTone}">
+            <b>${Math.round(turn.score)}</b>
+            <small>score</small>
+          </div>
+          <div class="verdict-copy">
+            <strong>${turn.follow_up_needed ? "Follow-up needed" : "Answer accepted"}</strong>
+            <p>${escapeHtml(compactText(followUp, "No follow-up requested.", 220))}</p>
+          </div>
+          <div class="trace-chip">
+            ${icon("file-search")}
+            <span>${escapeHtml(turn.trace_id || turn.request_id || "trace pending")}</span>
+          </div>
+        </div>
+        ${turn.error_text ? `<div class="turn-error">${icon("x")}<span>${escapeHtml(turn.error_text)}</span></div>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderCoding(): string {
+  const selected = state.coding.selectedQuestion;
+  return `
+    ${state.coding.error ? banner(state.coding.error, "error") : ""}
+    <section class="content-grid coding-layout">
+      <article class="card question-browser">
+        <div class="section-head">
+          <div><h2>Question set</h2><p>OJ-style questions with hidden-case judging and async verdicts.</p></div>
+          <button class="button secondary" data-action="load-coding" ${state.coding.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.coding.loading ? "Updating" : "Reload"}</span></button>
+        </div>
+        <div class="question-browser-metrics">
+          <span><strong>${state.coding.questions.length}</strong><small>published</small></span>
+          <span><strong>${state.coding.submissions.length}</strong><small>recent runs</small></span>
+        </div>
+        <div class="list-panel">
+          ${state.coding.questions.map((question) => `
+            <button class="list-item ${selected?.question_id === question.question_id ? "active" : ""}" data-question-id="${escapeAttr(question.question_id)}">
+              <strong>${escapeHtml(question.title)}</strong>
+              <span>${escapeHtml(question.difficulty)} · ${escapeHtml(question.question_type)}</span>
+              <small>${(question.topic_tags ?? []).slice(0, 3).map(escapeHtml).join(" / ")}</small>
+            </button>
+          `).join("") || emptyState("No questions", "Run migrations and seed data before using coding practice.", { label: "Reload", action: "load-coding", iconName: "refresh-cw" })}
+        </div>
+      </article>
+      <article class="card editor-card code-studio">
+        <div class="section-head">
+          <div><h2>${escapeHtml(selected?.title ?? "Select a question")}</h2><p>${escapeHtml(selected ? `${selected.difficulty} · ${selected.question_type}` : "Prompt and constraints appear here.")}</p></div>
+        </div>
+        ${renderProblemPanel(selected)}
+        <form id="coding-form" class="coding-form" aria-busy="${state.coding.loading ? "true" : "false"}">
+          <label>Language
+            <select name="language">
+              ${["go", "java", "python", "javascript", "typescript", "cpp"].map((lang) => `<option value="${lang}" ${state.coding.language === lang ? "selected" : ""}>${lang}</option>`).join("")}
+            </select>
+          </label>
+          <div class="ide-toolbar">
+            <div>
+              <strong>Practice IDE</strong>
+              <small>Monaco editor with local symbols, member hints, snippets and formatting.</small>
+            </div>
+            <div class="ide-actions">
+              <button class="button secondary" type="button" data-action="format-code">${icon("clipboard-check")}<span>Format</span></button>
+              <button class="button secondary" type="button" data-action="insert-starter">${icon("file-text")}<span>Starter</span></button>
+            </div>
+          </div>
+          <div class="code-editor-shell" data-role="code-editor-shell">
+            <div class="code-monaco" data-role="code-editor" aria-label="Source code editor"></div>
+          </div>
+          <input type="hidden" name="source_code" data-role="code-source-field" value="${escapeAttr(state.coding.sourceCode)}" />
+          <div class="editor-statusbar">
+            <span>${icon("code-2")}<strong data-role="editor-lines">${lineCount(state.coding.sourceCode)} lines</strong></span>
+            <span>${icon("file-text")}<strong data-role="editor-chars">${state.coding.sourceCode.length} chars</strong></span>
+            <span>${icon("settings-2")}<strong>${escapeHtml(state.coding.language)}</strong></span>
+            <span><strong>Monaco</strong></span>
+          </div>
+          ${renderCodeAssistPanel(state.coding.language, state.coding.sourceCode)}
+          <button class="button primary" type="submit" ${selected && !state.coding.loading ? "" : "disabled"}>${icon("terminal")}<span>${state.coding.loading ? "Submitting" : "Submit to judge"}</span></button>
+        </form>
+      </article>
+      <aside class="card results-card">
+        <div class="section-head compact">
+          <div><h2>Judge results</h2><p>Latest asynchronous verdicts for this question.</p></div>
+        </div>
+        ${renderJudgeSummary()}
+        <div class="submission-list">
+          ${state.coding.submissions.map(renderSubmissionCard).join("") || emptyState("No records", "Nothing has been returned by the API yet.")}
+        </div>
+      </aside>
+    </section>
+  `;
+}
+
+function renderProblemPanel(selected: CodingQuestion | null): string {
+  const tags = selected?.topic_tags?.length ? selected.topic_tags : ["backend", "practice"];
+  return `
+    <div class="prompt-panel oj-spec">
+      <div>
+        <span class="eyebrow">Problem brief</span>
+        <p class="prompt-text">${escapeHtml(selected?.prompt ?? "Choose a question to load the problem statement.")}</p>
+      </div>
+      <div class="spec-grid">
+        ${specBlock("Input", selected?.input_format || "Read from standard input or follow the question contract.")}
+        ${specBlock("Output", selected?.output_format || "Write the answer to standard output.")}
+        ${specBlock("Limits", selected?.constraints_text || "Use the configured judge time and memory limits.")}
+      </div>
+      <div class="chip-row">${tags.slice(0, 6).map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`).join("")}</div>
+    </div>
+  `;
+}
+
+function specBlock(label: string, value: string): string {
+  return `<div class="spec-block"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value)}</p></div>`;
+}
+
+function renderJudgeSummary(): string {
+  const accepted = state.coding.submissions.filter((item) => item.status === "accepted").length;
+  const running = state.coding.submissions.filter((item) => item.status === "queued" || item.status === "running").length;
+  const bestScore = state.coding.submissions.reduce((max, item) => Math.max(max, Number(item.score) || 0), 0);
+  return `
+    <div class="judge-summary">
+      <span><strong>${accepted}</strong><small>AC</small></span>
+      <span><strong>${running}</strong><small>pending</small></span>
+      <span><strong>${bestScore.toFixed(0)}</strong><small>best score</small></span>
+    </div>
+  `;
+}
+
+function renderCodeAssistPanel(language: string, source: string): string {
+  const prefix = currentCodePrefix(source);
+  const completions = completionPanelItems(language, source);
+  const status = state.coding.completionLoading
+    ? "Syncing backend profile"
+    : state.coding.completionError
+      ? "Local fallback"
+      : state.coding.completionProfile
+        ? `${state.coding.completionProfile.suggestions.length} backend suggestions`
+        : "Local suggestions";
+  return `
+    <div class="code-assist-panel" data-role="code-assist-panel">
+      <div class="assist-head">
+        <span>${icon("brain-circuit")}</span>
+        <div>
+          <strong>Completion profile</strong>
+          <small data-role="completion-status">${escapeHtml(status)}${prefix ? ` · ${escapeHtml(prefix)}` : ""}</small>
+        </div>
+        <button class="icon-button light" type="button" data-action="refresh-completions" aria-label="Refresh completions">${icon("refresh-cw")}</button>
+      </div>
+      <div class="completion-list" data-role="completion-list">
+        ${completions.map(renderCompletionButton).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderCompletionButton(item: CodeCompletion): string {
+  return `
+    <button class="completion-item" type="button" data-action="insert-completion" data-completion-id="${escapeAttr(item.id)}">
+      <span>${escapeHtml(sourceLabel(item.source ?? "local"))}</span>
+      <strong>${escapeHtml(item.label)}</strong>
+      <small>${escapeHtml(item.detail)}</small>
+    </button>
+  `;
+}
+
+function completionPanelItems(language: string, source: string): CodeCompletion[] {
+  const prefix = currentCodePrefix(source);
+  const remote = (state.coding.completionProfile?.suggestions ?? [])
+    .map(remoteToCodeCompletion)
+    .filter((item) => codeCompletionMatches(item, prefix));
+  const local = codeCompletions(language, prefix);
+  return dedupeCodeCompletions([...remote, ...local]).slice(0, 6);
+}
+
+function remoteToCodeCompletion(item: CodingCompletionSuggestion): CodeCompletion {
+  return {
+    id: item.id,
+    label: item.label,
+    detail: item.detail,
+    insertText: item.insert_text,
+    keywords: item.tags ?? [],
+    kind: item.kind,
+    source: item.source
+  };
+}
+
+function dedupeCodeCompletions(items: CodeCompletion[]): CodeCompletion[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.label}:${item.insertText}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function codeCompletionMatches(item: CodeCompletion, prefix: string): boolean {
+  const query = prefix.toLowerCase();
+  if (!query) return true;
+  return [item.label, item.detail, item.kind ?? "", item.source ?? "", ...item.keywords]
+    .some((value) => value.toLowerCase().includes(query));
+}
+
+function sourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    question_pattern: "Question",
+    starter_template: "Starter",
+    standard_library: "Library",
+    inferred_type: "Type inference",
+    oj_sdk_index: "OJ SDK",
+    local_symbol: "Local",
+    local: "Local"
+  };
+  return labels[source] ?? source.replaceAll("_", " ");
+}
+
+function renderMemory(): string {
+  const runtime = record(state.memory.data.runtime_response);
+  const candidates = extractItems(runtime);
+  return `
+    ${state.memory.error ? banner(state.memory.error, "error") : ""}
+    <section class="content-grid two-wide">
+      <article class="card">
+        <div class="section-head">
+          <div><h2>Pending memory candidates</h2><p>Human review stays between runtime extraction and long-term profile admission.</p></div>
+          <button class="button secondary" data-action="load-memory" ${state.memory.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.memory.loading ? "Updating" : "Reload"}</span></button>
+        </div>
+        ${candidates.length ? candidates.map(renderMemoryCandidate).join("") : emptyState("No runtime candidates", "Start Python Runtime and load pending candidates to review memory.", { label: "Reload", action: "load-memory", iconName: "refresh-cw" })}
+      </article>
+      <aside class="card">
+        <h2>Review rule</h2>
+        <p class="muted">Only approved memory can enter prompt context. Reject weak, private, or hallucinated candidates and keep Go as the audit boundary.</p>
+        <pre class="json-box">${escapeHtml(JSON.stringify(state.memory.data, null, 2))}</pre>
+      </aside>
+    </section>
+  `;
+}
+
+function renderMemoryCandidate(item: JsonObject): string {
+  const id = stringValue(item.candidate_id ?? item.id, "");
+  return `
+    <div class="candidate-row">
+      <div>
+        <strong>${escapeHtml(stringValue(item.topic, "Untitled candidate"))}</strong>
+        <p>${escapeHtml(stringValue(item.content, "No content returned by runtime."))}</p>
+        <small>confidence ${escapeHtml(stringValue(item.confidence, "n/a"))}</small>
+      </div>
+      <div class="button-row">
+        <button class="button secondary" data-action="approve-memory" data-candidate-id="${escapeAttr(id)}" ${id && !state.memory.loading ? "" : "disabled"}>${icon("check")}<span>Approve</span></button>
+        <button class="button danger" data-action="reject-memory" data-candidate-id="${escapeAttr(id)}" ${id && !state.memory.loading ? "" : "disabled"}>${icon("x")}<span>Reject</span></button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettingsModal(): string {
+  return `
+    <div class="settings-backdrop" role="presentation">
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" data-role="settings-modal">
+        <header class="settings-header">
+          <div>
+            <span class="settings-kicker">${icon("settings-2")} Configuration center</span>
+            <h2 id="settings-dialog-title">Settings</h2>
+            <p>Runtime, judge and provider configuration.</p>
+          </div>
+          <div class="settings-header-actions">
+            ${statusBadge(state.admin.loading ? "Updating" : "Ready")}
+            <button class="settings-close" data-action="close-settings" aria-label="Close settings">${icon("x")}</button>
+          </div>
+        </header>
+        <div class="settings-layout">
+          <aside class="settings-nav" aria-label="Settings sections">
+            ${settingsNavItem("general", "General", "Account and language", "settings-2")}
+            ${settingsNavItem("providers", "Providers", "Model routes", "radio")}
+            ${settingsNavItem("workers", "Workers", "Async lanes", "terminal")}
+            ${settingsNavItem("judge", "Coding judge", "Runner state", "code-2")}
+            ${settingsNavItem("quality", "Quality gates", "Eval signals", "clipboard-check")}
+          </aside>
+          <div class="settings-content">
+            ${renderSettingsPanel()}
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function settingsNavItem(panel: SettingsPanel, label: string, hint: string, iconName: string): string {
+  const active = state.settings.panel === panel ? " active" : "";
+  return `
+    <button class="settings-nav-item${active}" data-action="set-settings-panel" data-panel="${panel}" aria-pressed="${active ? "true" : "false"}">
+      ${icon(iconName)}
+      <span><strong>${label}</strong><small>${hint}</small></span>
+    </button>
+  `;
+}
+
+function renderSettingsPanel(): string {
+  const data = state.admin.data;
+  if (state.settings.panel === "providers") {
+    return settingsSection(
+      "Providers",
+      "Provider registry and task routes stay in the configuration center, away from training flow.",
+      "load-admin",
+      `
+        <div class="settings-block">
+          <div class="settings-block-head"><h3>Task routing</h3><span>${data.routes.length} records</span></div>
+          ${data.routes.length ? table(
+            ["Task", "Provider", "Fallback"],
+            data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
+          ) : emptyState("No records", "Nothing has been returned by the API yet.")}
+        </div>
+        <div class="settings-block">
+          <div class="settings-block-head"><h3>Provider registry</h3><span>${data.providers.length} records</span></div>
+          ${data.providers.length ? table(
+            ["Provider", "Type", "Enabled"],
+            data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
+          ) : emptyState("No records", "Nothing has been returned by the API yet.")}
+        </div>
+      `
+    );
+  }
+  if (state.settings.panel === "workers") {
+    return settingsSection(
+      "Workers",
+      "Redis stream, outbox and dead-letter state for the backend runtime.",
+      "load-admin",
+      settingsWorkerSummary(data.worker)
+    );
+  }
+  if (state.settings.panel === "judge") {
+    return settingsSection(
+      "Coding judge",
+      "Judge queue, runner mode and sandbox status for coding practice.",
+      "load-admin",
+      settingsJudgeSummary(data.judge)
+    );
+  }
+  if (state.settings.panel === "quality") {
+    return settingsSection(
+      "Quality gates",
+      "Evaluation remains a user-facing quality workflow; configure backend signals here.",
+      "load-admin",
+      `
+        <div class="settings-row"><span>Evaluation harness</span><strong>Active page</strong></div>
+        <div class="settings-row"><span>Runtime traces</span><strong>${state.interview.trace.length} records</strong></div>
+        <div class="settings-row"><span>Recent runs</span><strong>${state.dashboard.data.evalRuns.length} records</strong></div>
+        ${settingsHealthSummary(state.dashboard.data.health)}
+      `
+    );
+  }
+  return settingsSection(
+    "General",
+    "Keep product preferences separate from training tasks.",
+    "load-admin",
+    `
+      <div class="settings-row"><span>Language</span><strong>${state.locale === "zh-CN" ? "中文" : "English"}</strong></div>
+      <div class="settings-row"><span>Signed in</span><strong>${escapeHtml(state.user?.display_name ?? "User")}</strong></div>
+      <div class="settings-row"><span>API status</span><strong>${escapeHtml(stringValue(state.dashboard.data.health?.status, "unknown"))}</strong></div>
+      <div class="settings-row"><span>Configuration source</span><strong>Go Core API</strong></div>
+      <div class="settings-note">${icon("panel-right-open")} Clicking outside will not close this window.</div>
+    `
+  );
+}
+
+function settingsSection(title: string, copy: string, refreshAction: string, content: string): string {
+  return `
+    <div class="settings-section">
+      ${state.admin.error ? banner(state.admin.error, "error") : ""}
+      <div class="settings-section-head">
+        <div>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(copy)}</p>
+        </div>
+        <button class="button secondary" data-action="${refreshAction}" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Refresh"}</span></button>
+      </div>
+      <div class="settings-section-body">
+        ${content}
+      </div>
+    </div>
+  `;
+}
+
+function settingsWorkerSummary(value: JsonObject | null): string {
+  if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const queue = record(value.queue);
+  const outbox = record(value.outbox);
+  const deadLetters = record(value.dead_letters);
+  const queuePending = sumMetric(arrayRecords(queue.groups), "pending");
+  const deadLetterPending = sumMetric(arrayRecords(queue.dead_letter_groups), "pending");
+  const outboxBlocked = sumStatuses(record(outbox.by_status), ["pending", "failed", "dispatching"]);
+  const deadLetterTotal = numericValue(deadLetters.total);
+  return `
+    <div class="settings-summary-grid">
+      ${settingsSummaryCard("Stream backlog", numberLabel(queue.stream_length), "Redis stream items waiting in the interview lane.", queuePending > 0 ? "warn" : "ok", "radio")}
+      ${settingsSummaryCard("Pending claims", numberLabel(queuePending), "Messages claimed by workers but not completed yet.", queuePending > 0 ? "warn" : "ok", "clock-3")}
+      ${settingsSummaryCard("Outbox waiting", numberLabel(outboxBlocked), "Database messages still waiting for dispatch or retry.", outboxBlocked > 0 ? "warn" : "ok", "send")}
+      ${settingsSummaryCard("Dead letters", numberLabel(deadLetterTotal + deadLetterPending), "Items that exceeded retry limits and need operator review.", deadLetterTotal + deadLetterPending > 0 ? "danger" : "ok", "flag")}
+    </div>
+    ${settingsDeveloperDetails("Developer details", value, ["schema_version", "queue.stream_name", "queue.dead_letter_name", "outbox.newest_at", "dead_letters.newest_at"])}
+  `;
+}
+
+function settingsJudgeSummary(value: JsonObject | null): string {
+  if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const queued = numericValue(value.queued);
+  const running = numericValue(value.running);
+  const terminal = numericValue(value.terminal);
+  const total = numericValue(value.total);
+  return `
+    <div class="settings-summary-grid">
+      ${settingsSummaryCard("Queued", numberLabel(queued), "Submissions waiting for a judge worker.", queued > 0 ? "warn" : "ok", "clock-3")}
+      ${settingsSummaryCard("Running", numberLabel(running), "Submissions currently being evaluated.", running > 0 ? "info" : "ok", "play")}
+      ${settingsSummaryCard("Finished", numberLabel(terminal), "Submissions with a final verdict.", "ok", "check")}
+      ${settingsSummaryCard("Total submissions", numberLabel(total), "All submissions visible to the judge summary.", "info", "code-2")}
+    </div>
+    ${settingsStatusDistribution(record(value.by_status))}
+    ${settingsDeveloperDetails("Developer details", value, ["schema_version"])}
+  `;
+}
+
+function settingsHealthSummary(value: JsonObject | null): string {
+  if (!value) return emptyState("No records", "Nothing has been returned by the API yet.");
+  const status = stringValue(value.status, "unknown");
+  const tone = status.toLowerCase() === "ok" ? "ok" : "warn";
+  return `
+    <div class="settings-summary-grid compact">
+      ${settingsSummaryCard("Go API", statusBadge(status), "Current health endpoint status.", tone, "monitor-up")}
+      ${settingsSummaryCard("Configuration source", "Go Core API", "Settings stay behind the backend authorization boundary.", "info", "settings-2")}
+    </div>
+    ${settingsDeveloperDetails("Developer details", value, ["status", "schema_version", "version"])}
+  `;
+}
+
+function settingsSummaryCard(label: string, value: string, hint: string, tone: "ok" | "warn" | "danger" | "info", iconName: string): string {
+  return `
+    <article class="settings-summary-card ${tone}">
+      <span>${icon(iconName)}</span>
+      <div>
+        <small>${escapeHtml(label)}</small>
+        <strong>${value}</strong>
+        <p>${escapeHtml(hint)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function settingsStatusDistribution(byStatus: JsonObject): string {
+  const entries = Object.entries(byStatus);
+  if (!entries.length) return "";
+  return `
+    <div class="settings-block">
+      <div class="settings-block-head"><h3>Status distribution</h3><span>${entries.length} states</span></div>
+      <div class="settings-chip-list">
+        ${entries.map(([status, count]) => `<span>${statusBadge(status)} <strong>${numberLabel(count)}</strong></span>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function settingsDeveloperDetails(title: string, value: JsonObject, paths: string[]): string {
+  const rows = paths
+    .map((path) => ({ path, value: valueAtPath(value, path) }))
+    .filter((row) => row.value !== undefined && row.value !== null && row.value !== "");
+  if (!rows.length) return "";
+  return `
+    <details class="settings-details">
+      <summary>${escapeHtml(title)}</summary>
+      <div class="settings-detail-list">
+        ${rows.map((row) => `
+          <div class="settings-detail-row">
+            <span>${escapeHtml(row.path)}</span>
+            <strong>${formatSettingValue(row.value)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function valueAtPath(value: JsonObject, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
+}
+
+function arrayRecords(value: unknown): JsonObject[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function sumMetric(items: JsonObject[], key: string): number {
+  return items.reduce((total, item) => total + numericValue(item[key]), 0);
+}
+
+function sumStatuses(byStatus: JsonObject, statuses: string[]): number {
+  return statuses.reduce((total, status) => total + numericValue(byStatus[status]), 0);
+}
+
+function numericValue(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function numberLabel(value: unknown): string {
+  return numericValue(value).toLocaleString(state.locale === "zh-CN" ? "zh-CN" : "en-US");
+}
+
+function formatSettingValue(value: unknown): string {
+  if (typeof value === "boolean") return statusBadge(String(value));
+  if (typeof value === "number") return escapeHtml(numberLabel(value));
+  if (typeof value === "string") return escapeHtml(value);
+  if (Array.isArray(value)) return escapeHtml(`${value.length} records`);
+  if (isRecord(value)) return escapeHtml("available");
+  return escapeHtml(String(value));
+}
+
+function renderAdmin(): string {
+  const data = state.admin.data;
+  return `
+    ${state.admin.error ? banner(state.admin.error, "error") : ""}
+    <section class="content-grid two">
+      <article class="card">
+        <div class="section-head">
+          <div><h2>Provider routes</h2><p>Root-only provider and task routing state.</p></div>
+          <button class="button secondary" data-action="load-admin" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Reload"}</span></button>
+        </div>
+        ${table(
+          ["Task", "Provider", "Fallback"],
+          data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
+        )}
+      </article>
+      <article class="card">
+        <h2>Providers</h2>
+        ${table(
+          ["Provider", "Type", "Enabled"],
+          data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
+        )}
+      </article>
+    </section>
+    <section class="content-grid two">
+      <article class="card"><h2>Worker summary</h2><pre class="json-box">${escapeHtml(JSON.stringify(data.worker, null, 2))}</pre></article>
+      <article class="card"><h2>Coding judge</h2><pre class="json-box">${escapeHtml(JSON.stringify(data.judge, null, 2))}</pre></article>
+    </section>
+  `;
+}
+
+function renderEvaluation(): string {
+  return `
+    ${state.evaluation.error ? banner(state.evaluation.error, "error") : ""}
+    <section class="content-grid two-wide">
+      <article class="card">
+        <div class="section-head">
+          <div><h2>Evaluation cases</h2><p>Store quality samples and run them through the runtime task path.</p></div>
+          <button class="button secondary" data-action="load-evaluation" ${state.evaluation.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.evaluation.loading ? "Updating" : "Reload"}</span></button>
+        </div>
+        <form id="evaluation-form" class="evaluation-form" aria-busy="${state.evaluation.loading ? "true" : "false"}">
+          <input name="case_id" placeholder="case_id, optional" />
+          <input name="suite" placeholder="suite" value="runtime-smoke" />
+          <select name="task_type">
+            <option value="question_generation">question_generation</option>
+            <option value="answer_evaluation">answer_evaluation</option>
+            <option value="summary">summary</option>
+            <option value="memory_extraction">memory_extraction</option>
+          </select>
+          <select name="skill_id">${skillOptions("java-backend")}</select>
+          <textarea name="user_input" rows="3">Generate one Redis recovery interview question.</textarea>
+          <button class="button primary" type="submit" ${state.evaluation.loading ? "disabled" : ""}>${icon("save")}<span>${state.evaluation.loading ? "Saving" : "Save case"}</span></button>
+        </form>
+        ${state.evaluation.cases.map((item) => `
+          <div class="case-row">
+            <button class="list-item ${state.evaluation.selectedCaseId === item.case_id ? "active" : ""}" data-eval-case-id="${escapeAttr(item.case_id)}">
+              <strong>${escapeHtml(item.case_id)}</strong>
+              <span>${escapeHtml(item.suite)} · ${escapeHtml(item.task_type)}</span>
+            </button>
+            <button class="button secondary" data-action="run-evaluation" data-case-id="${escapeAttr(item.case_id)}" ${state.evaluation.loading ? "disabled" : ""}>${icon("play")}<span>Run dry</span></button>
+          </div>
+        `).join("") || emptyState("No cases", "Create a small smoke case first.")}
+      </article>
+      <aside class="card">
+        <h2>Runs</h2>
+        ${table(
+          ["Case", "Status", "Score", "Duration"],
+          state.evaluation.runs.map((item) => [item.case_id, statusBadge(item.status), String(Math.round(item.score)), `${item.duration_ms}ms`])
+        )}
+        ${state.evaluation.lastRun ? `<pre class="json-box">${escapeHtml(JSON.stringify(state.evaluation.lastRun, null, 2))}</pre>` : ""}
+      </aside>
+    </section>
+  `;
+}
+
+function bindEvents(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.view as View;
+      void navigate(view);
+    });
+  });
+
+  document.querySelector<HTMLFormElement>("#login-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    void handleLogin(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-locale']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setLocale(normalizeLocale(button.dataset.locale));
+    });
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='open-settings']")?.addEventListener("click", () => void openSettings());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='close-settings']").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeSettings();
+    });
+  });
+  document.onkeydown = (event) => {
+    if (event.key === "Escape" && state.settings.open) closeSettings();
+  };
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-settings-panel']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setSettingsPanel((button.dataset.panel as SettingsPanel | undefined) ?? "general");
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='toggle-meeting-control']").forEach((button) => {
+    button.addEventListener("click", () => {
+      toggleMeetingControl(button.dataset.control ?? "");
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-room-panel']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setRoomPanel((button.dataset.panel as RoomPanel | undefined) ?? "briefing");
+    });
+  });
+  document.querySelector<HTMLTextAreaElement>("[data-role='meeting-notes']")?.addEventListener("input", (event) => {
+    state.meeting.notes = (event.currentTarget as HTMLTextAreaElement).value;
+    localStorage.setItem("frontend:meeting:notes", state.meeting.notes);
+  });
+
+  document.querySelector<HTMLButtonElement>("[data-action='logout']")?.addEventListener("click", () => void handleLogout());
+  document.querySelectorAll<HTMLButtonElement>("[data-action='refresh']").forEach((button) => {
+    button.addEventListener("click", () => void refreshCurrentView());
+  });
+  document.querySelector<HTMLFormElement>("#session-form")?.addEventListener("submit", onSessionSubmit);
+  document.querySelector<HTMLFormElement>("#answer-form")?.addEventListener("submit", onAnswerSubmit);
+  document.querySelector<HTMLTextAreaElement>("textarea[name='answer']")?.addEventListener("input", (event) => {
+    state.interview.answer = (event.currentTarget as HTMLTextAreaElement).value;
+    const answerLength = document.querySelector<HTMLElement>("[data-role='answer-length']");
+    if (answerLength) {
+      answerLength.textContent = `${state.interview.answer.trim().length} ${ui("characters")}`;
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='poll-session']").forEach((button) => {
+    button.addEventListener("click", () => void pollSession());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-trace']").forEach((button) => {
+    button.addEventListener("click", () => void loadTrace());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='generate-report']").forEach((button) => {
+    button.addEventListener("click", () => void generateReport());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='finalize-session']").forEach((button) => {
+    button.addEventListener("click", () => void finalizeSession());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-coding']").forEach((button) => {
+    button.addEventListener("click", () => void loadCoding());
+  });
+  document.querySelector<HTMLFormElement>("#coding-form")?.addEventListener("submit", onCodingSubmit);
+  document.querySelector<HTMLSelectElement>("select[name='language']")?.addEventListener("change", (event) => {
+    switchCodingLanguage((event.currentTarget as HTMLSelectElement).value);
+    render();
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='format-code']")?.addEventListener("click", () => {
+    formatCurrentCode();
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='insert-starter']")?.addEventListener("click", () => {
+    insertStarterCode();
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='refresh-completions']")?.addEventListener("click", () => {
+    void loadCompletionProfile(false);
+  });
+  document.querySelector<HTMLDivElement>("[data-role='code-assist-panel']")?.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-action='insert-completion']");
+    if (button) {
+      insertCompletion(button.dataset.completionId ?? "");
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-question-id]").forEach((button) => {
+    button.addEventListener("click", () => void selectQuestion(button.dataset.questionId ?? ""));
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-memory']").forEach((button) => {
+    button.addEventListener("click", () => void loadMemory());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='approve-memory']").forEach((button) => {
+    button.addEventListener("click", () => void reviewMemory(button.dataset.candidateId ?? "", "approve"));
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='reject-memory']").forEach((button) => {
+    button.addEventListener("click", () => void reviewMemory(button.dataset.candidateId ?? "", "reject"));
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-admin']").forEach((button) => {
+    button.addEventListener("click", () => void loadAdmin());
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='load-evaluation']").forEach((button) => {
+    button.addEventListener("click", () => void loadEvaluation());
+  });
+  document.querySelector<HTMLFormElement>("#evaluation-form")?.addEventListener("submit", onEvaluationSubmit);
+  document.querySelectorAll<HTMLButtonElement>("[data-eval-case-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.evaluation.selectedCaseId = button.dataset.evalCaseId ?? "";
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='run-evaluation']").forEach((button) => {
+    button.addEventListener("click", () => void runEvaluation(button.dataset.caseId ?? ""));
+  });
+}
+
+async function navigate(view: View): Promise<void> {
+  state.view = view;
+  localStorage.setItem("frontend:view", view);
+  render();
+  await refreshCurrentView();
+}
+
+async function openSettings(): Promise<void> {
+  state.settings.open = true;
+  render();
+  await loadAdmin();
+}
+
+function closeSettings(): void {
+  state.settings.open = false;
+  render();
+}
+
+function setSettingsPanel(panel: SettingsPanel): void {
+  state.settings.panel = normalizeSettingsPanel(panel);
+  render();
+}
+
+async function refreshCurrentView(): Promise<void> {
+  if (state.view === "dashboard") await loadDashboard();
+  if (state.view === "coding") await loadCoding();
+  if (state.view === "memory") await loadMemory();
+  if (state.view === "evaluation") await loadEvaluation();
+  if (state.view === "interview" && state.interview.session) await pollSession();
+}
+
+async function handleLogin(email: string, password: string): Promise<void> {
+  if (!email.trim() || !password.trim()) {
+    toast(ui("Enter email and password"));
+    return;
+  }
+  try {
+    const auth = await api.login(email, password);
+    saveAuth(auth);
+    await loadInitialData();
+    toast(ui("Signed in"));
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+  render();
+}
+
+async function handleLogout(): Promise<void> {
+  try {
+    await api.logout();
+  } catch {
+    // local logout still succeeds
+  }
+  clearAuth();
+  render();
+}
+
+async function loadSkills(): Promise<void> {
+  try {
+    state.skills = await api.listSkills();
+  } catch {
+    state.skills = [];
+  }
+}
+
+async function loadDashboard(): Promise<void> {
+  state.dashboard.loading = true;
+  state.dashboard.error = "";
+  render();
+  const [health, worker, judge, evalRuns, submissions] = await Promise.allSettled([
+    api.health(),
+    api.workerSummary(),
+    api.codingJudgeSummary(),
+    api.listEvaluationRuns(),
+    api.listCodingSubmissions()
+  ]);
+  state.dashboard.data = {
+    health: settledValue(health, null),
+    worker: settledValue(worker, null),
+    judge: settledValue(judge, null),
+    evalRuns: settledValue(evalRuns, []),
+    submissions: settledValue(submissions, [])
+  };
+  state.dashboard.error = firstError([health, worker, judge, evalRuns, submissions]);
+  state.dashboard.loading = false;
+  render();
+}
+
+async function loadCoding(): Promise<void> {
+  state.coding.loading = true;
+  state.coding.error = "";
+  render();
+  try {
+    state.coding.questions = await api.listCodingQuestions();
+    if (!state.coding.selectedQuestion && state.coding.questions[0]) {
+      await selectQuestion(state.coding.questions[0].question_id, false);
+    }
+    state.coding.submissions = await api.listCodingSubmissions(state.coding.selectedQuestion?.question_id ?? "");
+  } catch (error) {
+    state.coding.error = errorMessage(error);
+  }
+  state.coding.loading = false;
+  render();
+}
+
+async function loadCompletionProfile(shouldRender = false): Promise<void> {
+  if (!state.accessToken || !state.coding.selectedQuestion) return;
+  const requestSeq = ++completionRequestSeq;
+  state.coding.completionLoading = true;
+  state.coding.completionError = "";
+  if (shouldRender) render();
+  updateCompletionPanel();
+  try {
+    const source = codeEditor?.getValue() ?? state.coding.sourceCode;
+    const model = codeEditor?.getModel();
+    const position = codeEditor?.getPosition();
+    const cursorOffset = model && position ? model.getOffsetAt(position) : source.length;
+    const prefix = model && position ? model.getWordUntilPosition(position).word : currentCodePrefix(source);
+    const limit = 16;
+    const cacheKey = completionProfileCacheKey(
+      state.coding.selectedQuestion.question_id,
+      state.coding.language,
+      source,
+      cursorOffset,
+      prefix,
+      limit
+    );
+    const profile = await completionProfileFor(cacheKey, {
+      question_id: state.coding.selectedQuestion.question_id,
+      language: state.coding.language,
+      source_code: source,
+      cursor_offset: cursorOffset,
+      prefix,
+      limit
+    });
+    if (requestSeq !== completionRequestSeq) return;
+    state.coding.completionProfile = profile;
+  } catch (error) {
+    if (requestSeq !== completionRequestSeq) return;
+    state.coding.completionError = errorMessage(error);
+  } finally {
+    if (requestSeq === completionRequestSeq) {
+      state.coding.completionLoading = false;
+      updateCompletionPanel();
+      if (shouldRender) render();
+    }
+  }
+}
+
+async function selectQuestion(questionId: string, shouldRender = true): Promise<void> {
+  const fallback = state.coding.questions.find((item) => item.question_id === questionId) ?? null;
+  state.coding.selectedQuestion = fallback;
+  state.coding.completionProfile = null;
+  state.coding.completionError = "";
+  let loaded = false;
+  try {
+    state.coding.selectedQuestion = await api.getCodingQuestion(questionId);
+    state.coding.submissions = await api.listCodingSubmissions(questionId);
+    loaded = true;
+  } catch (error) {
+    state.coding.error = errorMessage(error);
+  }
+  if (shouldRender) render();
+  if (loaded) void loadCompletionProfile(false);
+}
+
+async function loadMemory(): Promise<void> {
+  state.memory.loading = true;
+  state.memory.error = "";
+  render();
+  try {
+    state.memory.data = await api.listMemoryCandidates("pending");
+  } catch (error) {
+    state.memory.error = errorMessage(error);
+    state.memory.data = {};
+  }
+  state.memory.loading = false;
+  render();
+}
+
+async function loadAdmin(): Promise<void> {
+  state.admin.loading = true;
+  state.admin.error = "";
+  render();
+  const [providers, routes, worker, judge] = await Promise.allSettled([
+    api.listProviders(),
+    api.listProviderRoutes(),
+    api.workerSummary(),
+    api.codingJudgeSummary()
+  ]);
+  state.admin.data = {
+    providers: settledValue(providers, []),
+    routes: settledValue(routes, []),
+    worker: settledValue(worker, null),
+    judge: settledValue(judge, null)
+  };
+  state.admin.error = firstError([providers, routes, worker, judge]);
+  state.admin.loading = false;
+  render();
+}
+
+async function loadEvaluation(): Promise<void> {
+  state.evaluation.loading = true;
+  state.evaluation.error = "";
+  render();
+  const [cases, runs] = await Promise.allSettled([api.listEvaluationCases(), api.listEvaluationRuns()]);
+  state.evaluation.cases = settledValue(cases, []);
+  state.evaluation.runs = settledValue(runs, []);
+  state.evaluation.error = firstError([cases, runs]);
+  state.evaluation.loading = false;
+  render();
+}
+
+async function onSessionSubmit(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (state.interview.loading) return;
+  const form = new FormData(event.currentTarget as HTMLFormElement);
+  const maxFollowUps = Number(form.get("max_follow_ups") ?? 1);
+  if (!Number.isFinite(maxFollowUps) || maxFollowUps < 0 || maxFollowUps > 5) {
+    toast(ui("Follow-ups must be between 0 and 5"));
+    return;
+  }
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    state.interview.session = await api.createInterviewSession(
+      String(form.get("skill_id") ?? "java-backend"),
+      String(form.get("question_type") ?? "backend"),
+      maxFollowUps
+    );
+    toast(ui("Session created"));
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
+  render();
+}
+
+async function onAnswerSubmit(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  const form = new FormData(event.currentTarget as HTMLFormElement);
+  state.interview.answer = String(form.get("answer") ?? "");
+  state.interview.dryRun = form.get("dry_run") === "on";
+  if (!state.interview.answer.trim()) {
+    state.interview.error = "Write an answer before sending it.";
+    toast(ui("Write an answer before sending it."));
+    render();
+    return;
+  }
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    await api.submitInterviewAnswer(state.interview.session, state.interview.answer, state.interview.dryRun);
+    toast(ui("Answer accepted by API"));
+    state.interview.session = await api.getInterviewSession(state.interview.session.session_id);
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
+  render();
+}
+
+async function pollSession(): Promise<void> {
+  if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    state.interview.session = await api.getInterviewSession(state.interview.session.session_id);
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
+  render();
+}
+
+async function loadTrace(): Promise<void> {
+  if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    state.interview.trace = await api.getInterviewTrace(state.interview.session.session_id);
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
+  render();
+}
+
+async function generateReport(): Promise<void> {
+  if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    state.interview.report = await api.generateInterviewReport(state.interview.session.session_id, true);
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
+  render();
+}
+
+async function finalizeSession(): Promise<void> {
+  if (!state.interview.session) return;
+  if (state.interview.loading) return;
+  const confirmed = window.confirm(ui("Finalize this interview session?"));
+  if (!confirmed) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    state.interview.session = await api.finalizeInterviewSession(state.interview.session.session_id);
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
+  render();
+}
+
+async function onCodingSubmit(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (!state.coding.selectedQuestion) return;
+  if (state.coding.loading) return;
+  const form = new FormData(event.currentTarget as HTMLFormElement);
+  state.coding.language = String(form.get("language") ?? "go");
+  state.coding.sourceCode = String(form.get("source_code") ?? "");
+  if (!state.coding.sourceCode.trim()) {
+    state.coding.error = "Write code before sending it to the judge.";
+    toast(ui("Write code before sending it to the judge."));
+    render();
+    return;
+  }
+  state.coding.loading = true;
+  state.coding.error = "";
+  render();
+  try {
+    await api.createCodingSubmission(state.coding.selectedQuestion.question_id, state.coding.language, state.coding.sourceCode);
+    toast(ui("Submission queued"));
+    state.coding.submissions = await api.listCodingSubmissions(state.coding.selectedQuestion.question_id);
+  } catch (error) {
+    state.coding.error = errorMessage(error);
+  } finally {
+    state.coding.loading = false;
+  }
+  render();
+}
+
+function formatCurrentCode(): void {
+  if (!codeEditor) return;
+  state.coding.sourceCode = formatSource(state.coding.language, codeEditor.getValue());
+  codeEditor.setValue(state.coding.sourceCode);
+  syncCodeEditorState();
+  toast(ui("Code formatted"));
+}
+
+function insertStarterCode(): void {
+  if (!codeEditor) return;
+  insertIntoCodeEditor(defaultSourceForLanguage(state.coding.language), false);
+  toast(ui("Starter inserted"));
+}
+
+function insertCompletion(completionId: string): void {
+  const completion = completionPanelItems(state.coding.language, codeEditor?.getValue() ?? state.coding.sourceCode)
+    .find((item) => item.id === completionId)
+    ?? completionById(state.coding.language, completionId);
+  if (!codeEditor || !completion) return;
+  insertIntoCodeEditor(completion.insertText, true);
+  toast(ui("Completion inserted"));
+}
+
+function switchCodingLanguage(nextLanguage: string): void {
+  const previousLanguage = state.coding.language;
+  const currentSource = codeEditor?.getValue() ?? state.coding.sourceCode;
+  state.coding.languageDrafts[previousLanguage] = currentSource;
+  state.coding.language = nextLanguage;
+  state.coding.sourceCode = state.coding.languageDrafts[nextLanguage] ?? defaultSourceForLanguage(nextLanguage);
+  state.coding.completionPrefix = currentCodePrefix(state.coding.sourceCode);
+  state.coding.completionProfile = null;
+  state.coding.completionError = "";
+}
+
+function insertIntoCodeEditor(text: string, replaceSelection: boolean): void {
+  if (!codeEditor) return;
+  const selection = codeEditor.getSelection();
+  const model = codeEditor.getModel();
+  if (!selection || !model) return;
+  const normalizedText = stripSnippetMarkers(text);
+  const range = replaceSelection ? selection : new monaco.Range(selection.endLineNumber, selection.endColumn, selection.endLineNumber, selection.endColumn);
+  const prefix = replaceSelection ? codePrefixAtCursor(model, selection.getStartPosition()) : "";
+  const insertRange = prefix && selection.isEmpty()
+    ? new monaco.Range(selection.startLineNumber, Math.max(1, selection.startColumn - prefix.length), selection.endLineNumber, selection.endColumn)
+    : range;
+  const previousText = model.getValueInRange(insertRange);
+  const needsLeadingLine = previousText === "" && insertRange.startColumn > 1 && !normalizedText.startsWith("\n");
+  const insertText = `${needsLeadingLine ? "\n" : ""}${normalizedText}`;
+  codeEditor.executeEdits("coding-snippet", [{ range: insertRange, text: insertText, forceMoveMarkers: true }]);
+  const end = model.getPositionAt(model.getOffsetAt(insertRange.getStartPosition()) + insertText.length);
+  codeEditor.setPosition(end);
+  codeEditor.focus();
+  syncCodeEditorState();
+}
+
+function stripSnippetMarkers(text: string): string {
+  return text
+    .replace(/\$\{\d+:([^}]+)\}/g, "$1")
+    .replace(/\$\d+/g, "");
+}
+
+function syncCodeEditorState(): void {
+  if (!codeEditor) return;
+  const value = codeEditor.getValue();
+  state.coding.sourceCode = value;
+  state.coding.languageDrafts[state.coding.language] = value;
+  state.coding.completionPrefix = currentEditorPrefix();
+  const hiddenField = document.querySelector<HTMLInputElement>("[data-role='code-source-field']");
+  if (hiddenField) hiddenField.value = value;
+  const lineMetric = document.querySelector<HTMLElement>("[data-role='editor-lines']");
+  const charMetric = document.querySelector<HTMLElement>("[data-role='editor-chars']");
+  const list = document.querySelector<HTMLElement>("[data-role='completion-list']");
+  if (lineMetric) lineMetric.textContent = `${lineCount(value)} ${ui("lines")}`;
+  if (charMetric) charMetric.textContent = `${value.length} ${ui("chars")}`;
+  if (list) list.innerHTML = completionPanelItems(state.coding.language, value).map(renderCompletionButton).join("");
+}
+
+function updateCompletionPanel(): void {
+  const source = codeEditor?.getValue() ?? state.coding.sourceCode;
+  const list = document.querySelector<HTMLElement>("[data-role='completion-list']");
+  const status = document.querySelector<HTMLElement>("[data-role='completion-status']");
+  if (list) {
+    list.innerHTML = completionPanelItems(state.coding.language, source).map(renderCompletionButton).join("");
+  }
+  if (status) {
+    const prefix = currentEditorPrefix();
+    const text = state.coding.completionLoading
+      ? "Syncing backend profile"
+      : state.coding.completionError
+        ? "Local fallback"
+        : state.coding.completionProfile
+          ? `${state.coding.completionProfile.suggestions.length} backend suggestions`
+          : "Local suggestions";
+    status.textContent = prefix ? `${ui(text)} · ${prefix}` : ui(text);
+  }
+}
+
+function currentEditorPrefix(): string {
+  const model = codeEditor?.getModel();
+  const position = codeEditor?.getPosition();
+  if (!model || !position) return currentCodePrefix(state.coding.sourceCode);
+  return codePrefixAtCursor(model, position);
+}
+
+function codePrefixAtCursor(model: monaco.editor.ITextModel, position: monaco.Position): string {
+  return model.getWordUntilPosition(position).word;
+}
+
+async function reviewMemory(candidateId: string, action: "approve" | "reject"): Promise<void> {
+  if (!candidateId) return;
+  if (state.memory.loading) return;
+  state.memory.loading = true;
+  state.memory.error = "";
+  render();
+  try {
+    if (action === "approve") await api.approveMemoryCandidate(candidateId, "Approved from frontend review");
+    else await api.rejectMemoryCandidate(candidateId, "Rejected from frontend review");
+    toast(ui(action === "approve" ? "Memory approved" : "Memory rejected"));
+    await loadMemory();
+  } catch (error) {
+    state.memory.error = errorMessage(error);
+  } finally {
+    state.memory.loading = false;
+    render();
+  }
+}
+
+async function onEvaluationSubmit(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (state.evaluation.loading) return;
+  const form = new FormData(event.currentTarget as HTMLFormElement);
+  const userInput = String(form.get("user_input") ?? "");
+  if (!userInput.trim()) {
+    state.evaluation.error = "Write an evaluation input before saving the case.";
+    toast(ui("Write an evaluation input before saving the case."));
+    render();
+    return;
+  }
+  state.evaluation.loading = true;
+  state.evaluation.error = "";
+  render();
+  try {
+    await api.saveEvaluationCase({
+      case_id: String(form.get("case_id") ?? ""),
+      suite: String(form.get("suite") ?? "runtime-smoke"),
+      task_type: String(form.get("task_type") ?? "question_generation"),
+      skill_id: String(form.get("skill_id") ?? "java-backend"),
+      input: { user_input: userInput },
+      expected: {
+        required_fields: ["question"],
+        contains: { question: "Redis" }
+      },
+      tags: ["frontend", "smoke"],
+      status: "active"
+    });
+    toast(ui("Evaluation case saved"));
+    await loadEvaluation();
+  } catch (error) {
+    state.evaluation.error = errorMessage(error);
+  } finally {
+    state.evaluation.loading = false;
+    render();
+  }
+}
+
+async function runEvaluation(caseId: string): Promise<void> {
+  if (!caseId) {
+    toast(ui("Choose a case to run."));
+    return;
+  }
+  if (state.evaluation.loading) return;
+  state.evaluation.loading = true;
+  state.evaluation.error = "";
+  render();
+  try {
+    state.evaluation.lastRun = await api.runEvaluationCase(caseId, true);
+    toast(ui("Evaluation run recorded"));
+    await loadEvaluation();
+  } catch (error) {
+    state.evaluation.error = errorMessage(error);
+  } finally {
+    state.evaluation.loading = false;
+    render();
+  }
+}
+
+function saveAuth(auth: ApiState): void {
+  state.user = auth.user;
+  state.accessToken = auth.accessToken;
+  state.refreshToken = auth.refreshToken;
+  localStorage.setItem("frontend:access_token", auth.accessToken);
+  localStorage.setItem("frontend:refresh_token", auth.refreshToken);
+  api.setTokens(auth.accessToken, auth.refreshToken);
+}
+
+function clearAuth(): void {
+  state.user = null;
+  state.accessToken = "";
+  state.refreshToken = "";
+  localStorage.removeItem("frontend:access_token");
+  localStorage.removeItem("frontend:refresh_token");
+  api.clearTokens();
+}
+
+function toast(message: string): void {
+  state.toast = message;
+  window.setTimeout(() => {
+    state.toast = "";
+    render();
+  }, 2600);
+}
+
+function setLocale(locale: Locale): void {
+  state.locale = locale;
+  localStorage.setItem("frontend:locale", locale);
+  render();
+}
+
+function toggleMeetingControl(control: string): void {
+  if (control === "mic") {
+    state.meeting.micOn = !state.meeting.micOn;
+    localStorage.setItem("frontend:meeting:mic", state.meeting.micOn ? "on" : "off");
+    toast(ui(state.meeting.micOn ? "Microphone enabled" : "Microphone muted"));
+  } else if (control === "camera") {
+    state.meeting.cameraOn = !state.meeting.cameraOn;
+    localStorage.setItem("frontend:meeting:camera", state.meeting.cameraOn ? "on" : "off");
+    toast(ui(state.meeting.cameraOn ? "Camera enabled" : "Camera disabled"));
+  } else if (control === "captions") {
+    state.meeting.captionsOn = !state.meeting.captionsOn;
+    localStorage.setItem("frontend:meeting:captions", state.meeting.captionsOn ? "on" : "off");
+    toast(ui(state.meeting.captionsOn ? "Captions enabled" : "Captions hidden"));
+  } else if (control === "prompt") {
+    state.meeting.promptShared = !state.meeting.promptShared;
+    localStorage.setItem("frontend:meeting:prompt_shared", state.meeting.promptShared ? "on" : "off");
+    toast(ui(state.meeting.promptShared ? "Prompt shared" : "Prompt private"));
+  }
+  render();
+}
+
+function setRoomPanel(panel: RoomPanel): void {
+  state.meeting.panel = normalizeRoomPanel(panel);
+  localStorage.setItem("frontend:meeting:panel", state.meeting.panel);
+  render();
+}
+
+function normalizeRoomPanel(panel: string | null | undefined): RoomPanel {
+  if (panel === "briefing" || panel === "participants" || panel === "notes") {
+    return panel;
+  }
+  return "briefing";
+}
+
+function localize(html: string): string {
+  return translateHtml(state.locale, html);
+}
+
+function ui(value: string): string {
+  return translate(state.locale, value);
+}
+
+function languageSwitcher(id: string): string {
+  return `
+    <div class="language-field" id="${id}" aria-label="Language preference">
+      <span>Language preference</span>
+      <div class="language-buttons" role="group" aria-label="Language preference">
+        ${locales.map((locale) => `
+          <button
+            class="language-button ${locale.value === state.locale ? "active" : ""}"
+            type="button"
+            data-action="set-locale"
+            data-locale="${locale.value}"
+            aria-pressed="${locale.value === state.locale ? "true" : "false"}"
+          >${locale.label}</button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function skillOptions(selected = ""): string {
+  const items = state.skills.length ? state.skills : [{ id: "java-backend", display_name: "Java backend" }];
+  return items.map((skill) => {
+    const id = skill.id ?? skill.skill_id ?? "java-backend";
+    const label = skill.display_name ?? id;
+    return `<option value="${escapeAttr(id)}" ${id === selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+}
+
+function isCurrentViewLoading(): boolean {
+  if (state.view === "dashboard") return state.dashboard.loading;
+  if (state.view === "interview") return state.interview.loading;
+  if (state.view === "coding") return state.coding.loading;
+  if (state.view === "memory") return state.memory.loading;
+  return state.evaluation.loading;
+}
+
+function currentViewError(): string {
+  if (state.view === "dashboard") return state.dashboard.error;
+  if (state.view === "interview") return state.interview.error;
+  if (state.view === "coding") return state.coding.error;
+  if (state.view === "memory") return state.memory.error;
+  return state.evaluation.error;
+}
+
+function renderInteractionStrip(): string {
+  const busy = isCurrentViewLoading();
+  const error = currentViewError();
+  const tone = error ? "danger" : busy ? "info" : "ok";
+  const title = error ? "Needs attention" : busy ? "Working" : "Ready";
+  return `
+    <section class="interaction-strip ${tone}" aria-live="polite">
+      <div>
+        <span>${icon(error ? "x" : busy ? "refresh-cw" : "check")}</span>
+        <div>
+          <strong>${title}</strong>
+          <p>${escapeHtml(error || interactionHint())}</p>
+        </div>
+      </div>
+      ${renderNextAction()}
+    </section>
+  `;
+}
+
+function interactionHint(): string {
+  if (state.view === "dashboard") return "Choose the next training task or refresh the operational snapshot.";
+  if (state.view === "interview") {
+    if (!state.interview.session) return "Create a session, then answer the active question.";
+    return "Answer, poll the session, then generate the report when the flow is complete.";
+  }
+  if (state.view === "coding") {
+    if (!state.coding.selectedQuestion) return "Choose a question before sending code to the judge.";
+    return "Edit code, submit it, then watch the asynchronous verdict.";
+  }
+  if (state.view === "memory") return "Review candidates one by one so only trusted memory reaches prompts.";
+  return "Save a sample case, run it, then inspect assertions and score changes.";
+}
+
+function renderNextAction(): string {
+  if (isCurrentViewLoading()) return `<span class="mini-status">${icon("refresh-cw")}<b>Syncing</b></span>`;
+  if (state.view === "dashboard") return `<button class="button secondary" data-view="interview">${icon("messages-square")}<span>Start interview</span></button>`;
+  if (state.view === "interview" && state.interview.session) {
+    return `<button class="button secondary" data-action="poll-session">${icon("rotate-cw")}<span>Poll session</span></button>`;
+  }
+  if (state.view === "coding") return `<button class="button secondary" data-action="load-coding">${icon("refresh-cw")}<span>Reload</span></button>`;
+  if (state.view === "memory") return `<button class="button secondary" data-action="load-memory">${icon("refresh-cw")}<span>Reload</span></button>`;
+  if (state.view === "evaluation") return `<button class="button secondary" data-action="load-evaluation">${icon("refresh-cw")}<span>Reload</span></button>`;
+  return `<button class="button secondary" data-action="refresh">${icon("refresh-cw")}<span>Refresh</span></button>`;
+}
+
+function operationRow(label: string, value: string, hint: string): string {
+  return `
+    <div class="operation-row">
+      <span>${icon("check")}</span>
+      <div>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(hint)}</small>
+      </div>
+      <b>${escapeHtml(value)}</b>
+    </div>
+  `;
+}
+
+function statePill(label: string, value: string, iconName: string): string {
+  return `
+    <div class="state-pill">
+      <span>${icon(iconName)}</span>
+      <div>
+        <small>${escapeHtml(label)}</small>
+        <strong>${escapeHtml(value || "unknown")}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderTracePreview(trace: JsonObject[]): string {
+  return `
+    <div class="preview-block">
+      <div class="preview-head"><strong>Trace preview</strong><small>${trace.length} records</small></div>
+      ${trace.slice(0, 4).map((item) => `
+        <div class="preview-row">
+          <span>${icon("file-search")}</span>
+          <div>
+            <strong>${escapeHtml(stringValue(item.event_type ?? item.phase ?? item.trace_type, "runtime trace"))}</strong>
+            <small>${escapeHtml(stringValue(item.created_at ?? item.updated_at ?? item.trace_id, "trace evidence"))}</small>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderReportPreview(report: JsonObject): string {
+  const content = record(report.content ?? report.output ?? report.runtime_response ?? report);
+  const summary = stringValue(content.summary ?? content.overall_summary ?? content.feedback, "Report generated. Open the raw payload below if you need exact fields.");
+  return `
+    <div class="report-preview">
+      <div class="preview-head"><strong>Report preview</strong>${statusBadge(stringValue(report.status, "report"))}</div>
+      <p>${escapeHtml(summary)}</p>
+      <pre class="json-box compact">${escapeHtml(JSON.stringify(report, null, 2))}</pre>
+    </div>
+  `;
+}
+
+function renderSubmissionCard(item: CodingSubmission): string {
+  const result = record(item.result);
+  const message = stringValue(result.message ?? result.error ?? result.verdict, "Awaiting judge details");
+  const testResults = Array.isArray(result.test_results) ? result.test_results.filter(isRecord) : [];
+  const passed = testResults.filter((test) => test.passed === true).length;
+  const failed = testResults.find((test) => test.passed === false);
+  return `
+    <div class="submission-card">
+      <div class="submission-head">
+        <div>
+          <strong>${escapeHtml(verdictLabel(item.status))}</strong>
+          <small>${escapeHtml(item.language)} · ${escapeHtml(formatTime(item.updated_at || item.created_at))}</small>
+        </div>
+        ${statusBadge(item.status)}
+      </div>
+      <div class="submission-score">
+        <b>${Number(item.score).toFixed(0)}</b>
+        <span>score</span>
+      </div>
+      <p>${escapeHtml(message)}</p>
+      ${testResults.length ? `<div class="case-strip"><span>${passed}/${testResults.length} cases</span>${failed ? `<span>first failed: ${escapeHtml(stringValue(failed.test_case_id, "case"))}</span>` : "<span>all visible cases passed</span>"}</div>` : ""}
+    </div>
+  `;
+}
+
+function verdictLabel(status: string): string {
+  const labels: Record<string, string> = {
+    queued: "Pending judge",
+    running: "Running",
+    accepted: "Accepted",
+    wrong_answer: "Wrong answer",
+    runtime_error: "Runtime error",
+    time_limit_exceeded: "Time limit exceeded",
+    compile_error: "Compile error",
+    system_error: "System error"
+  };
+  return labels[status] ?? status;
+}
+
+function metricCard(label: string, value: string, hint: string, tone: string, iconName: string): string {
+  return `
+    <article class="metric-card ${tone}">
+      <div class="metric-icon">${icon(iconName)}</div>
+      <div>
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+        <small>${escapeHtml(hint)}</small>
+      </div>
+    </article>
+  `;
+}
+
+function table(headers: string[], rows: string[][]): string {
+  if (!rows.length) return emptyState("No records", "Nothing has been returned by the API yet.");
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function statusBadge(status: string): string {
+  const normalized = status.toLowerCase();
+  const tone = ["passed", "completed", "accepted", "ready", "true", "ok", "enabled", "report"].includes(normalized)
+    ? "ok"
+    : ["failed", "error", "wrong_answer", "runtime_error", "time_limit_exceeded", "compile_error", "system_error", "false", "disabled"].includes(normalized)
+      ? "danger"
+      : "info";
+  return `<span class="status ${tone}">${escapeHtml(status)}</span>`;
+}
+
+function isTerminalSession(session: InterviewSession | null): boolean {
+  const values = [session?.session_status, session?.flow_status, session?.phase]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  return values.some((value) => ["completed", "finished", "finalized", "failed", "cancelled", "report_ready"].includes(value));
+}
+
+function banner(message: string, type: "error" | "info"): string {
+  return `<div class="banner ${type}">${escapeHtml(message)}</div>`;
+}
+
+function emptyState(title: string, copy: string, action?: EmptyAction): string {
+  const button = action
+    ? `<button class="button secondary" ${action.view ? `data-view="${action.view}"` : ""} ${action.action ? `data-action="${escapeAttr(action.action)}"` : ""}>${icon(action.iconName)}<span>${escapeHtml(action.label)}</span></button>`
+    : "";
+  return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p>${button}</div>`;
+}
+
+function extractItems(value: JsonObject): JsonObject[] {
+  const candidates = value.candidates ?? value.items ?? value.data;
+  return Array.isArray(candidates) ? candidates.filter(isRecord) : [];
+}
+
+function record(value: unknown): JsonObject {
+  return isRecord(value) ? value : {};
+}
+
+function stringValue(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value);
+}
+
+function compactText(value: unknown, fallback: string, maxLength: number): string {
+  const normalized = stringValue(value, fallback).replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
+function formatTime(value: string | undefined): string {
+  if (!value) return "not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(state.locale === "zh-CN" ? "zh-CN" : "en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
+  return result.status === "fulfilled" ? result.value : fallback;
+}
+
+function firstError(results: PromiseSettledResult<unknown>[]): string {
+  const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
+  return rejected ? errorMessage(rejected.reason) : "";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) return `${error.code}: ${error.message}`;
+  if (error instanceof Error) return error.message;
+  return "Unknown error";
+}
+
+function pageTitle(view: View): string {
+  return {
+    dashboard: "Training dashboard",
+    interview: "Interview session",
+    coding: "Coding practice",
+    memory: "Memory review",
+    evaluation: "Evaluation harness"
+  }[view];
+}
+
+function pageSubtitle(view: View): string {
+  return {
+    dashboard: "Operational snapshot of sessions, queues, runtime health and quality gates.",
+    interview: "Focused answer workflow with async evaluation, follow-up and trace evidence.",
+    coding: "Question list, editor, sample tests and asynchronous judge results.",
+    memory: "Human-in-the-loop approval for durable candidate memory.",
+    evaluation: "Quality samples, dry-run checks and regression records."
+  }[view];
+}
+
+function normalizeView(value: string | null | undefined): View {
+  if (value === "interview" || value === "coding" || value === "memory" || value === "evaluation") {
+    return value;
+  }
+  return "dashboard";
+}
+
+function normalizeSettingsPanel(value: string | null | undefined): SettingsPanel {
+  if (value === "providers" || value === "workers" || value === "judge" || value === "quality") {
+    return value;
+  }
+  return "general";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value).replaceAll("`", "&#096;");
+}
+
+function symbolCompletions(language: string, model: monaco.editor.ITextModel, prefix = ""): SymbolCompletion[] {
+  const normalized = language.toLowerCase();
+  const source = model.getValue();
+  const items = dedupeSymbols([
+    ...declaredSymbolCompletions(normalized, source),
+    ...wordSymbolCompletions(source)
+  ]);
+  const query = prefix.toLowerCase();
+  if (!query) return items.slice(0, 40);
+  return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query))).slice(0, 40);
+}
+
+function declaredSymbolCompletions(language: string, source: string): SymbolCompletion[] {
+  const fn = monaco.languages.CompletionItemKind.Function;
+  const variable = monaco.languages.CompletionItemKind.Variable;
+  const classKind = monaco.languages.CompletionItemKind.Class;
+  const items: SymbolCompletion[] = [];
+  const pushMatches = (pattern: RegExp, kind: monaco.languages.CompletionItemKind, detail: string, call = false) => {
+    for (const match of source.matchAll(pattern)) {
+      const label = match[1];
+      if (!label) continue;
+      items.push(symbol(label, detail, call ? `${label}($0)` : label, kind, [label]));
+    }
+  };
+  if (language === "go") {
+    pushMatches(/\bfunc\s+([A-Za-z_]\w*)\s*\(/g, fn, "local Go function", true);
+    pushMatches(/\b(?:var|const)\s+([A-Za-z_]\w*)\b/g, variable, "local Go binding");
+    pushMatches(/\b([A-Za-z_]\w*)\s*:=/g, variable, "local Go binding");
+    pushMatches(/\btype\s+([A-Za-z_]\w*)\s+(?:struct|interface)\b/g, classKind, "local Go type");
+  } else if (language === "java") {
+    pushMatches(/\b(?:class|interface|enum)\s+([A-Za-z_]\w*)\b/g, classKind, "local Java type");
+    pushMatches(/\b(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\], ?]+\s+([A-Za-z_]\w*)\s*\(/g, fn, "local Java method", true);
+    pushMatches(/\b(?:int|long|double|float|boolean|char|String|var|List<[^>]+>|Map<[^>]+>)\s+([A-Za-z_]\w*)\b/g, variable, "local Java variable");
+  } else if (language === "python") {
+    pushMatches(/\bdef\s+([A-Za-z_]\w*)\s*\(/g, fn, "local Python function", true);
+    pushMatches(/\bclass\s+([A-Za-z_]\w*)\s*[:(]/g, classKind, "local Python class");
+    pushMatches(/^\s*([A-Za-z_]\w*)\s*=/gm, variable, "local Python variable");
+  } else if (language === "javascript" || language === "typescript") {
+    pushMatches(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g, fn, "local function", true);
+    pushMatches(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(?[^=;]*\)?\s*=>/g, fn, "local function", true);
+    pushMatches(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\b/g, variable, "local binding");
+    pushMatches(/\bclass\s+([A-Za-z_$][\w$]*)\b/g, classKind, "local class");
+  } else if (language === "cpp") {
+    pushMatches(/\b(?:int|long|double|float|bool|void|string|auto|vector<[^>]+>)\s+([A-Za-z_]\w*)\s*\(/g, fn, "local C++ function", true);
+    pushMatches(/\b(?:int|long|double|float|bool|string|auto|vector<[^>]+>|unordered_map<[^>]+>)\s+([A-Za-z_]\w*)\b/g, variable, "local C++ variable");
+    pushMatches(/\b(?:class|struct)\s+([A-Za-z_]\w*)\b/g, classKind, "local C++ type");
+  }
+  return items;
+}
+
+function wordSymbolCompletions(source: string): SymbolCompletion[] {
+  const reserved = new Set([
+    "package", "import", "func", "return", "if", "else", "for", "while", "class", "public", "private",
+    "const", "let", "var", "function", "def", "from", "include", "using", "namespace", "true", "false"
+  ]);
+  const words = source.match(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g) ?? [];
+  return words
+    .filter((word) => !reserved.has(word))
+    .map((word) => symbol(word, "current file word", word, monaco.languages.CompletionItemKind.Text, [word]));
+}
+
+function dedupeSymbols(items: SymbolCompletion[]): SymbolCompletion[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.kind}:${item.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function symbol(label: string, detail: string, insertText: string, kind: monaco.languages.CompletionItemKind, keywords: string[]): SymbolCompletion {
+  return { label, detail, insertText, kind, keywords };
+}
+
+function memberCompletions(language: string, model: monaco.editor.ITextModel, position: monaco.Position): MemberCompletion[] {
+  const context = memberAccessContext(model, position);
+  if (!context) return [];
+  const normalized = language.toLowerCase();
+  const qualifier = normalized === "go" ? resolveGoQualifier(model.getValue(), context.qualifier) : context.qualifier;
+  const table = memberCompletionTable(normalized);
+  const items = table[qualifier] ?? [];
+  const query = context.prefix.toLowerCase();
+  if (!query) return items;
+  return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query)));
+}
+
+function memberCompletionRange(model: monaco.editor.ITextModel, position: monaco.Position): monaco.Range {
+  const context = memberAccessContext(model, position);
+  const startColumn = context ? Math.max(1, position.column - context.prefix.length) : position.column;
+  return new monaco.Range(position.lineNumber, startColumn, position.lineNumber, position.column);
+}
+
+function memberAccessContext(model: monaco.editor.ITextModel, position: monaco.Position): { qualifier: string; prefix: string } | null {
+  const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+  const match = linePrefix.match(/((?:[A-Za-z_$][\w$]*(?:\.|::))*[A-Za-z_$][\w$]*)(?:\.|::)([A-Za-z_$][\w$]*)?$/);
+  if (!match?.[1]) return null;
+  return { qualifier: match[1], prefix: match[2] ?? "" };
+}
+
+function resolveGoQualifier(source: string, qualifier: string): string {
+  const imports = goImportAliases(source);
+  return imports[qualifier] ?? qualifier;
+}
+
+function goImportAliases(source: string): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  for (const match of source.matchAll(/import\s+(?:(\w+)\s+)?["`]([^"`]+)["`]/g)) {
+    const alias = match[1];
+    const path = match[2] ?? "";
+    const packageName = path.split("/").at(-1) ?? path;
+    aliases[alias || packageName] = packageName;
+  }
+  const blockMatch = source.match(/import\s*\(([\s\S]*?)\)/);
+  const block = blockMatch?.[1] ?? "";
+  for (const match of block.matchAll(/^\s*(?:(\w+)\s+)?["`]([^"`]+)["`]/gm)) {
+    const alias = match[1];
+    const path = match[2] ?? "";
+    const packageName = path.split("/").at(-1) ?? path;
+    aliases[alias || packageName] = packageName;
+  }
+  return aliases;
+}
+
+function memberCompletionTable(language: string): Record<string, MemberCompletion[]> {
+  const fn = monaco.languages.CompletionItemKind.Function;
+  const method = monaco.languages.CompletionItemKind.Method;
+  const property = monaco.languages.CompletionItemKind.Property;
+  const value = monaco.languages.CompletionItemKind.Value;
+  const go: Record<string, MemberCompletion[]> = {
+    fmt: [
+      member("fmt.Println", "Println", "fmt.Println(a ...any) (n int, err error)", "Println($0)", fn, ["print", "stdout", "line"]),
+      member("fmt.Printf", "Printf", "fmt.Printf(format string, a ...any) (n int, err error)", "Printf(\"$1\", $0)", fn, ["format", "print"]),
+      member("fmt.Print", "Print", "fmt.Print(a ...any) (n int, err error)", "Print($0)", fn, ["print"]),
+      member("fmt.Sprintf", "Sprintf", "fmt.Sprintf(format string, a ...any) string", "Sprintf(\"$1\", $0)", fn, ["format", "string"]),
+      member("fmt.Sprint", "Sprint", "fmt.Sprint(a ...any) string", "Sprint($0)", fn, ["string"]),
+      member("fmt.Errorf", "Errorf", "fmt.Errorf(format string, a ...any) error", "Errorf(\"$1\", $0)", fn, ["error", "format"]),
+      member("fmt.Fprintln", "Fprintln", "fmt.Fprintln(w io.Writer, a ...any) (n int, err error)", "Fprintln($1, $0)", fn, ["writer", "print"]),
+      member("fmt.Fprintf", "Fprintf", "fmt.Fprintf(w io.Writer, format string, a ...any) (n int, err error)", "Fprintf($1, \"$2\", $0)", fn, ["writer", "format"]),
+      member("fmt.Scan", "Scan", "fmt.Scan(a ...any) (n int, err error)", "Scan($0)", fn, ["stdin", "scan"]),
+      member("fmt.Scanf", "Scanf", "fmt.Scanf(format string, a ...any) (n int, err error)", "Scanf(\"$1\", $0)", fn, ["stdin", "format"])
+    ],
+    sort: [
+      member("sort.Ints", "Ints", "sort.Ints(x []int)", "Ints($0)", fn, ["array", "slice"]),
+      member("sort.Strings", "Strings", "sort.Strings(x []string)", "Strings($0)", fn, ["array", "slice"]),
+      member("sort.Slice", "Slice", "sort.Slice(x any, less func(i, j int) bool)", "Slice($1, func(i, j int) bool {\n\treturn $0\n})", fn, ["custom", "less"]),
+      member("sort.Search", "Search", "sort.Search(n int, f func(int) bool) int", "Search($1, func(i int) bool {\n\treturn $0\n})", fn, ["binary", "search"])
+    ],
+    strings: [
+      member("strings.Contains", "Contains", "strings.Contains(s, substr string) bool", "Contains($1, $0)", fn, ["substring"]),
+      member("strings.HasPrefix", "HasPrefix", "strings.HasPrefix(s, prefix string) bool", "HasPrefix($1, $0)", fn, ["prefix"]),
+      member("strings.HasSuffix", "HasSuffix", "strings.HasSuffix(s, suffix string) bool", "HasSuffix($1, $0)", fn, ["suffix"]),
+      member("strings.Split", "Split", "strings.Split(s, sep string) []string", "Split($1, $0)", fn, ["split"]),
+      member("strings.Join", "Join", "strings.Join(elems []string, sep string) string", "Join($1, $0)", fn, ["join"]),
+      member("strings.TrimSpace", "TrimSpace", "strings.TrimSpace(s string) string", "TrimSpace($0)", fn, ["trim"]),
+      member("strings.ToLower", "ToLower", "strings.ToLower(s string) string", "ToLower($0)", fn, ["lower"]),
+      member("strings.ToUpper", "ToUpper", "strings.ToUpper(s string) string", "ToUpper($0)", fn, ["upper"]),
+      member("strings.Index", "Index", "strings.Index(s, substr string) int", "Index($1, $0)", fn, ["index"]),
+      member("strings.Fields", "Fields", "strings.Fields(s string) []string", "Fields($0)", fn, ["split", "space"])
+    ],
+    strconv: [
+      member("strconv.Atoi", "Atoi", "strconv.Atoi(s string) (int, error)", "Atoi($0)", fn, ["string", "int"]),
+      member("strconv.Itoa", "Itoa", "strconv.Itoa(i int) string", "Itoa($0)", fn, ["int", "string"]),
+      member("strconv.ParseInt", "ParseInt", "strconv.ParseInt(s string, base int, bitSize int) (int64, error)", "ParseInt($1, $2, $0)", fn, ["parse"]),
+      member("strconv.FormatInt", "FormatInt", "strconv.FormatInt(i int64, base int) string", "FormatInt($1, $0)", fn, ["format"])
+    ],
+    math: [
+      member("math.Abs", "Abs", "math.Abs(x float64) float64", "Abs($0)", fn, ["absolute"]),
+      member("math.Max", "Max", "math.Max(x, y float64) float64", "Max($1, $0)", fn, ["maximum"]),
+      member("math.Min", "Min", "math.Min(x, y float64) float64", "Min($1, $0)", fn, ["minimum"]),
+      member("math.Sqrt", "Sqrt", "math.Sqrt(x float64) float64", "Sqrt($0)", fn, ["square", "root"]),
+      member("math.Pow", "Pow", "math.Pow(x, y float64) float64", "Pow($1, $0)", fn, ["power"])
+    ]
+  };
+  const js: Record<string, MemberCompletion[]> = {
+    console: [
+      member("console.log", "log", "console.log(...data)", "log($0)", method, ["print", "debug"]),
+      member("console.error", "error", "console.error(...data)", "error($0)", method, ["stderr"]),
+      member("console.warn", "warn", "console.warn(...data)", "warn($0)", method, ["warning"])
+    ],
+    Math: [
+      member("Math.max", "max", "Math.max(...values)", "max($0)", fn, ["maximum"]),
+      member("Math.min", "min", "Math.min(...values)", "min($0)", fn, ["minimum"]),
+      member("Math.floor", "floor", "Math.floor(x)", "floor($0)", fn, ["round"]),
+      member("Math.ceil", "ceil", "Math.ceil(x)", "ceil($0)", fn, ["round"])
+    ],
+    Array: [
+      member("Array.from", "from", "Array.from(iterable)", "from($0)", fn, ["array", "iterable"]),
+      member("Array.isArray", "isArray", "Array.isArray(value)", "isArray($0)", fn, ["array", "check"])
+    ]
+  };
+  const py: Record<string, MemberCompletion[]> = {
+    sys: [member("sys.stdin", "stdin", "sys.stdin", "stdin", property, ["input"]), member("sys.stdout", "stdout", "sys.stdout", "stdout", property, ["output"])],
+    math: [
+      member("math.sqrt", "sqrt", "math.sqrt(x)", "sqrt($0)", fn, ["square", "root"]),
+      member("math.ceil", "ceil", "math.ceil(x)", "ceil($0)", fn, ["round"]),
+      member("math.floor", "floor", "math.floor(x)", "floor($0)", fn, ["round"])
+    ],
+    collections: [member("collections.Counter", "Counter", "collections.Counter(iterable)", "Counter($0)", value, ["count", "frequency"])]
+  };
+  const cpp: Record<string, MemberCompletion[]> = {
+    std: [
+      member("std.sort", "sort", "std::sort(first, last)", "sort($1, $0)", fn, ["array", "vector"]),
+      member("std.lower_bound", "lower_bound", "std::lower_bound(first, last, value)", "lower_bound($1, $2, $0)", fn, ["binary", "search"]),
+      member("std.upper_bound", "upper_bound", "std::upper_bound(first, last, value)", "upper_bound($1, $2, $0)", fn, ["binary", "search"])
+    ]
+  };
+  const java: Record<string, MemberCompletion[]> = {
+    System: [
+      member("System.out", "out", "System.out PrintStream", "out", property, ["stdout", "print", "println"]),
+      member("System.err", "err", "System.err PrintStream", "err", property, ["stderr", "print"]),
+      member("System.currentTimeMillis", "currentTimeMillis", "System.currentTimeMillis() long", "currentTimeMillis()", method, ["time", "millis"]),
+      member("System.nanoTime", "nanoTime", "System.nanoTime() long", "nanoTime()", method, ["time", "nano"])
+    ],
+    "System.out": [
+      member("System.out.println", "println", "System.out.println(value)", "println($0)", method, ["print", "stdout", "line"]),
+      member("System.out.print", "print", "System.out.print(value)", "print($0)", method, ["print", "stdout"]),
+      member("System.out.printf", "printf", "System.out.printf(format, args)", "printf(\"$1\", $0)", method, ["format", "print"])
+    ],
+    "System.err": [
+      member("System.err.println", "println", "System.err.println(value)", "println($0)", method, ["print", "stderr", "line"]),
+      member("System.err.print", "print", "System.err.print(value)", "print($0)", method, ["print", "stderr"])
+    ],
+    Arrays: [
+      member("Arrays.sort", "sort", "Arrays.sort(array)", "sort($0)", fn, ["array"]),
+      member("Arrays.binarySearch", "binarySearch", "Arrays.binarySearch(array, key)", "binarySearch($1, $0)", fn, ["search"]),
+      member("Arrays.fill", "fill", "Arrays.fill(array, value)", "fill($1, $0)", fn, ["array"])
+    ],
+    Collections: [
+      member("Collections.sort", "sort", "Collections.sort(list)", "sort($0)", fn, ["list"]),
+      member("Collections.reverse", "reverse", "Collections.reverse(list)", "reverse($0)", fn, ["list"]),
+      member("Collections.binarySearch", "binarySearch", "Collections.binarySearch(list, key)", "binarySearch($1, $0)", fn, ["search"])
+    ]
+  };
+  if (language === "go") return go;
+  if (language === "javascript" || language === "typescript") return js;
+  if (language === "python") return py;
+  if (language === "cpp") return cpp;
+  if (language === "java") return java;
+  return {};
+}
+
+function member(id: string, label: string, detail: string, insertText: string, kind: monaco.languages.CompletionItemKind, keywords: string[]): MemberCompletion {
+  return { id, label, detail, insertText, kind, keywords };
+}
+
+function codeCompletions(language: string, prefix = ""): CodeCompletion[] {
+  const normalized = language.toLowerCase();
+  const byLanguage: Record<string, CodeCompletion[]> = {
+    go: [
+      { id: "go-main", label: "main package", detail: "Go executable starter", insertText: defaultGoSolution(), keywords: ["main", "package", "go"] }
+    ],
+    java: [
+      { id: "java-class", label: "Main class", detail: "Java stdin/stdout starter", insertText: defaultJavaProgram(), keywords: ["class", "main", "java", "stdin"] },
+      { id: "java-sout", label: "sout println", detail: "System.out.println(...)", insertText: "System.out.println($0);", keywords: ["sout", "println", "print", "stdout"] }
+    ],
+    python: [
+      { id: "py-solution", label: "Python main", detail: "Python stdin/stdout starter", insertText: defaultPythonProgram(), keywords: ["main", "python", "stdin"] }
+    ],
+    javascript: [
+      { id: "js-function", label: "Node main", detail: "Node.js stdin/stdout starter", insertText: defaultJavaScriptProgram(), keywords: ["function", "main", "javascript", "stdin"] }
+    ],
+    typescript: [
+      { id: "ts-function", label: "Deno main", detail: "TypeScript stdin/stdout starter", insertText: defaultTypeScriptProgram(), keywords: ["function", "main", "typescript", "stdin"] }
+    ],
+    cpp: [
+      { id: "cpp-main", label: "C++ main", detail: "C++ stdin/stdout starter", insertText: defaultCppProgram(), keywords: ["main", "cpp", "include", "stdin"] }
+    ]
+  };
+  const commonByLanguage: Record<string, CodeCompletion[]> = {
+    go: [
+      { id: "go-for", label: "for loop", detail: "Go index loop", insertText: "for i := 0; i < n; i++ {\n\t$0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "go-guard", label: "guard clause", detail: "Go early return", insertText: "if condition {\n\treturn $0\n}", keywords: ["if", "guard", "return"] },
+      { id: "go-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "left, right := 0, len(nums)-1\nfor left < right {\n\t$0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    java: [
+      { id: "java-for", label: "for loop", detail: "Java index loop", insertText: "for (int i = 0; i < n; i++) {\n    $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "java-guard", label: "guard clause", detail: "Java early return", insertText: "if (condition) {\n    return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "java-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "int left = 0, right = nums.length - 1;\nwhile (left < right) {\n    $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    python: [
+      { id: "py-for", label: "for loop", detail: "Python range loop", insertText: "for i in range(n):\n    $0", keywords: ["for", "loop", "iteration"] },
+      { id: "py-guard", label: "guard clause", detail: "Python early return", insertText: "if condition:\n    return $0", keywords: ["if", "guard", "return"] },
+      { id: "py-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "left, right = 0, len(nums) - 1\nwhile left < right:\n    $0", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    javascript: [
+      { id: "js-for", label: "for loop", detail: "JavaScript index loop", insertText: "for (let i = 0; i < n; i++) {\n  $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "js-guard", label: "guard clause", detail: "JavaScript early return", insertText: "if (!condition) {\n  return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "js-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "let left = 0;\nlet right = nums.length - 1;\nwhile (left < right) {\n  $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    typescript: [
+      { id: "ts-for", label: "for loop", detail: "TypeScript index loop", insertText: "for (let i = 0; i < n; i++) {\n  $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "ts-guard", label: "guard clause", detail: "TypeScript early return", insertText: "if (!condition) {\n  return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "ts-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "let left = 0;\nlet right = nums.length - 1;\nwhile (left < right) {\n  $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ],
+    cpp: [
+      { id: "cpp-for", label: "for loop", detail: "C++ index loop", insertText: "for (int i = 0; i < n; i++) {\n    $0\n}", keywords: ["for", "loop", "iteration"] },
+      { id: "cpp-guard", label: "guard clause", detail: "C++ early return", insertText: "if (condition) {\n    return $0;\n}", keywords: ["if", "guard", "return"] },
+      { id: "cpp-two-pointers", label: "two pointers", detail: "left/right scan", insertText: "int left = 0, right = nums.size() - 1;\nwhile (left < right) {\n    $0\n}", keywords: ["two", "pointer", "left", "right"] }
+    ]
+  };
+  const items = [...(byLanguage[normalized] ?? []), ...(commonByLanguage[normalized] ?? [])];
+  const query = prefix.toLowerCase();
+  if (!query) return items;
+  return items.filter((item) => [item.label, item.detail, ...item.keywords].some((value) => value.toLowerCase().includes(query)));
+}
+
+function completionById(language: string, id: string): CodeCompletion | undefined {
+  return codeCompletions(language, "").find((item) => item.id === id);
+}
+
+function currentCodePrefix(source: string, cursor = source.length): string {
+  const before = source.slice(0, cursor);
+  return before.match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0] ?? "";
+}
+
+function lineCount(source: string): number {
+  return source ? source.split("\n").length : 1;
+}
+
+function defaultSourceForLanguage(language: string): string {
+  const starterIds: Record<string, string> = {
+    go: "go-main",
+    java: "java-class",
+    python: "py-solution",
+    javascript: "js-function",
+    typescript: "ts-function",
+    cpp: "cpp-main"
+  };
+  return completionById(language, starterIds[language.toLowerCase()] ?? "go-main")?.insertText ?? defaultGoSolution();
+}
+
+function formatSource(language: string, source: string): string {
+  const trimmed = source.replace(/\s+$/gm, "").trim();
+  if (!trimmed) return "";
+  if (language === "python") {
+    return trimmed.split("\n").map((line) => line.replace(/\t/g, "    ")).join("\n") + "\n";
+  }
+  const prepared = trimmed
+    .replace(/\{\s*/g, "{\n")
+    .replace(/\s*\}/g, "\n}")
+    .replace(/;\s*/g, ";\n")
+    .replace(/\n{2,}/g, "\n");
+  let depth = 0;
+  const lines = prepared.split("\n").map((line) => line.trim()).filter(Boolean);
+  return lines.map((line) => {
+    if (line.startsWith("}")) depth = Math.max(0, depth - 1);
+    const output = `${"  ".repeat(depth)}${line}`;
+    if (line.endsWith("{")) depth += 1;
+    return output;
+  }).join("\n") + "\n";
+}
+
+function isRecord(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null;
+}
+
+function defaultGoSolution(): string {
+  return `package main
+
+import "fmt"
+
+func main() {
+  fmt.Println("ready")
+}
+`;
+}
+
+function defaultJavaProgram(): string {
+  return `import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("ready");
+    }
+}
+`;
+}
+
+function defaultPythonProgram(): string {
+  return `import sys
+
+
+def main():
+    data = sys.stdin.read().strip().split()
+    print("ready")
+
+
+if __name__ == "__main__":
+    main()
+`;
+}
+
+function defaultJavaScriptProgram(): string {
+  return `const fs = require("fs");
+const input = fs.readFileSync(0, "utf8").trim();
+
+function main() {
+  console.log("ready");
+}
+
+main();
+`;
+}
+
+function defaultTypeScriptProgram(): string {
+  return `const decoder = new TextDecoder();
+let input = "";
+for await (const chunk of Deno.stdin.readable) {
+  input += decoder.decode(chunk);
+}
+
+function main(): void {
+  console.log("ready");
+}
+
+main();
+`;
+}
+
+function defaultCppProgram(): string {
+  return `#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+    cout << "ready" << '\\n';
+    return 0;
+}
+`;
+}

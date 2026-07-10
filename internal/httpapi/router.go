@@ -10,6 +10,7 @@ import (
 	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
+	"ai-interview-platform/internal/evalharness"
 	"ai-interview-platform/internal/interview"
 	"ai-interview-platform/internal/provider"
 	airuntime "ai-interview-platform/internal/runtime"
@@ -30,6 +31,7 @@ type Dependencies struct {
 	AuthService      *auth.Service
 	RuntimeClient    *airuntime.Client
 	InterviewService *interview.Service
+	Evaluation       *evalharness.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -64,6 +66,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.POST("/skills/reload", api.requireRoot(), api.reloadSkills)
 	group.GET("/skills/:skill_id", api.getSkill)
 	group.POST("/context/preview", api.contextPreview)
+	group.POST("/retrieval/search", api.retrievalSearch)
 	group.POST("/agent/tasks", api.runAgentTask)
 	group.GET("/memory/candidates", api.listMemoryCandidates)
 	group.POST("/memory/candidates", api.createMemoryCandidate)
@@ -78,16 +81,25 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.POST("/interview-sessions/:session_id/answers", api.submitInterviewAnswer)
 	group.POST("/interview-sessions/:session_id/finalize", api.finalizeInterviewSession)
 	group.GET("/interview-sessions/:session_id/trace", api.getInterviewTrace)
+	group.GET("/interview-sessions/:session_id/report", api.getInterviewReport)
+	group.POST("/interview-sessions/:session_id/report", api.generateInterviewReport)
 	group.GET("/coding/question-sets", api.listQuestionSets)
 	group.GET("/coding/questions", api.listQuestions)
 	group.GET("/coding/questions/:question_id", api.getQuestion)
+	group.POST("/coding/completions", api.suggestCodingCompletions)
 	group.POST("/coding/submissions", api.createSubmission)
 	group.GET("/coding/submissions", api.listSubmissions)
 	group.GET("/coding/submissions/:submission_id", api.getSubmission)
+	group.GET("/evaluation/cases", api.requireRoot(), api.listEvaluationCases)
+	group.POST("/evaluation/cases", api.requireRoot(), api.createEvaluationCase)
+	group.GET("/evaluation/cases/:case_id", api.requireRoot(), api.getEvaluationCase)
+	group.POST("/evaluation/cases/:case_id/run", api.requireRoot(), api.runEvaluationCase)
+	group.GET("/evaluation/runs", api.requireRoot(), api.listEvaluationRuns)
 	group.GET("/ops/dead-letters/summary", api.requireRoot(), api.deadLetterSummary)
 	group.GET("/ops/dead-letters", api.requireRoot(), api.listDeadLetters)
 	group.GET("/ops/dead-letters/:dead_letter_id", api.requireRoot(), api.getDeadLetter)
 	group.GET("/ops/workers/summary", api.requireRoot(), api.workerSummary)
+	group.GET("/ops/coding-judge/summary", api.requireRoot(), api.codingJudgeSummary)
 
 	return router
 }
@@ -285,6 +297,32 @@ func (h apiHandler) contextPreview(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (h apiHandler) retrievalSearch(c *gin.Context) {
+	var req contextengine.RetrievalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	req.UserID = memoryTargetUserID(c, req.UserID)
+	if req.SessionID != "" {
+		current, err := h.deps.InterviewService.GetSession(c.Request.Context(), req.SessionID)
+		if err != nil {
+			writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+			return
+		}
+		if !canAccessUser(c, current.UserID) {
+			writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+			return
+		}
+	}
+	resp, err := h.deps.ContextEngine.Retrieve(c.Request.Context(), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "retrieval_search_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 type agentTaskRequest struct {
 	TaskType  string `json:"task_type"`
 	SkillID   string `json:"skill_id"`
@@ -441,6 +479,49 @@ func (h apiHandler) getInterviewTrace(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.trace.v1", "items": items})
 }
 
+func (h apiHandler) getInterviewReport(c *gin.Context) {
+	current, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+		return
+	}
+	if !canAccessUser(c, current.UserID) {
+		writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+		return
+	}
+	item, err := h.deps.InterviewService.GetReport(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_report_not_found", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.report.v1", "item": item})
+}
+
+func (h apiHandler) generateInterviewReport(c *gin.Context) {
+	var req interview.GenerateReportRequest
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+	}
+	current, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
+	if err != nil {
+		writeGinError(c, http.StatusNotFound, "interview_session_not_found", err.Error())
+		return
+	}
+	if !canAccessUser(c, current.UserID) {
+		writeGinError(c, http.StatusForbidden, "interview_session_forbidden", "session does not belong to current user")
+		return
+	}
+	item, err := h.deps.InterviewService.GenerateReport(c.Request.Context(), c.Param("session_id"), req)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "interview_report_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.report.v1", "item": item})
+}
+
 func (h apiHandler) listQuestionSets(c *gin.Context) {
 	items, err := h.deps.CodingStore.ListSets(c.Request.Context())
 	if err != nil {
@@ -468,6 +549,33 @@ func (h apiHandler) getQuestion(c *gin.Context) {
 	}
 	if !ok {
 		writeGinError(c, http.StatusNotFound, "coding_question_not_found", "question_id is not registered")
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+func (h apiHandler) suggestCodingCompletions(c *gin.Context) {
+	var req coding.CompletionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeGinError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	var question *coding.Question
+	if req.QuestionID != "" {
+		item, ok, err := h.deps.CodingStore.GetQuestion(c.Request.Context(), req.QuestionID)
+		if err != nil {
+			writeGinError(c, http.StatusInternalServerError, "coding_question_failed", err.Error())
+			return
+		}
+		if !ok || item.Status != "published" {
+			writeGinError(c, http.StatusNotFound, "coding_question_not_found", "question_id is not published or does not exist")
+			return
+		}
+		question = &item
+	}
+	item, err := coding.SuggestCompletions(req, question)
+	if err != nil {
+		writeGinError(c, http.StatusBadRequest, "coding_completion_failed", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -509,6 +617,15 @@ func (h apiHandler) workerSummary(c *gin.Context) {
 	item, err := h.deps.InterviewService.WorkerMetrics(c.Request.Context())
 	if err != nil {
 		writeGinError(c, http.StatusInternalServerError, "worker_metrics_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+func (h apiHandler) codingJudgeSummary(c *gin.Context) {
+	item, err := h.deps.CodingStore.JudgeSummary(c.Request.Context())
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "coding_judge_summary_failed", err.Error())
 		return
 	}
 	c.JSON(http.StatusOK, item)

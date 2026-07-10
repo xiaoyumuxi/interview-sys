@@ -562,6 +562,24 @@ type Turn struct {
 	UpdatedAt        string         `json:"updated_at"`
 }
 
+type GenerateReportRequest struct {
+	DryRun bool `json:"dry_run"`
+}
+
+type Report struct {
+	ReportID        string         `json:"report_id"`
+	SessionID       string         `json:"session_id"`
+	UserID          string         `json:"user_id"`
+	Status          string         `json:"status"`
+	Content         map[string]any `json:"content"`
+	RuntimeResponse map[string]any `json:"runtime_response"`
+	TraceID         string         `json:"trace_id,omitempty"`
+	ErrorText       string         `json:"error_text,omitempty"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
+	CompletedAt     string         `json:"completed_at,omitempty"`
+}
+
 func (s *Service) CreateSession(ctx context.Context, req CreateSessionRequest) (Session, error) {
 	if strings.TrimSpace(req.SkillID) == "" {
 		return Session{}, errors.New("skill_id is required")
@@ -702,6 +720,127 @@ WHERE session_id=$1`,
 
 func (s *Service) Trace(ctx context.Context, sessionID string) ([]Turn, error) {
 	return s.loadTurns(ctx, sessionID)
+}
+
+func (s *Service) RecentTurns(ctx context.Context, sessionID string, limit int) ([]contextengine.RecentTurn, error) {
+	turns, err := s.loadTurns(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > len(turns) {
+		limit = len(turns)
+	}
+	start := len(turns) - limit
+	if start < 0 {
+		start = 0
+	}
+	items := make([]contextengine.RecentTurn, 0, limit)
+	for i := len(turns) - 1; i >= start; i-- {
+		turn := turns[i]
+		items = append(items, contextengine.RecentTurn{
+			TurnID:         turn.TurnID,
+			SessionID:      turn.SessionID,
+			QuestionID:     turn.QuestionID,
+			QuestionNumber: turn.QuestionNumber,
+			AnswerRound:    turn.AnswerRound,
+			UserAnswer:     turn.UserAnswer,
+			Evaluation:     turn.Evaluation,
+			Score:          turn.Score,
+			TurnStatus:     turn.TurnStatus,
+			ErrorText:      turn.ErrorText,
+			CreatedAt:      turn.CreatedAt,
+		})
+	}
+	return items, nil
+}
+
+func (s *Service) GetReport(ctx context.Context, sessionID string) (Report, error) {
+	report, err := s.loadReport(ctx, sessionID)
+	if err != nil {
+		return Report{}, err
+	}
+	if report.ReportID == "" {
+		return Report{}, sql.ErrNoRows
+	}
+	return report, nil
+}
+
+func (s *Service) GenerateReport(ctx context.Context, sessionID string, req GenerateReportRequest) (Report, error) {
+	if existing, err := s.loadReport(ctx, sessionID); err != nil {
+		return Report{}, err
+	} else if existing.Status == "completed" {
+		return existing, nil
+	}
+	session, err := s.loadSession(ctx, sessionID, true)
+	if err != nil {
+		return Report{}, err
+	}
+	if session.SessionID == "" {
+		return Report{}, sql.ErrNoRows
+	}
+	if session.SessionStatus != SessionFinished || session.FlowStatus != FlowCompleted {
+		return Report{}, errors.New("interview session must be finished before report generation")
+	}
+	for _, turn := range session.Turns {
+		if turn.TurnStatus != TurnCompleted && turn.TurnStatus != TurnFailed {
+			return Report{}, errors.New("interview session still has unfinished turns")
+		}
+	}
+	reportID, err := s.beginReportGeneration(ctx, session)
+	if err != nil {
+		return Report{}, err
+	}
+	input := buildReportInput(session)
+	userInput, err := json.Marshal(input)
+	if err != nil {
+		_ = s.markReportFailed(ctx, sessionID, err)
+		return Report{}, err
+	}
+	provider, err := s.store.RuntimeProviderForTask(ctx, "summary")
+	if err != nil {
+		_ = s.markReportFailed(ctx, sessionID, err)
+		return Report{}, err
+	}
+	runtimeResp, err := s.runtime.RunTask(ctx, airuntime.TaskRequest{
+		TaskType:     "summary",
+		Provider:     provider,
+		ContextItems: []contextengine.ContextItem{},
+		UserInput:    string(userInput),
+		OutputSchema: finalReportOutputSchema(),
+		DryRun:       req.DryRun,
+	})
+	if err != nil {
+		_ = s.markReportFailed(ctx, sessionID, err)
+		return Report{}, err
+	}
+	content := cloneMap(runtimeResp.Output)
+	if _, ok := content["schema_version"]; !ok {
+		content["schema_version"] = "interview.report.content.v1"
+	}
+	traceID := store.NewID("trace")
+	if err := s.store.InsertAgentTrace(ctx, store.TraceRecord{
+		TraceID:      traceID,
+		TaskType:     "summary",
+		SkillID:      session.SkillID,
+		Input:        input,
+		ContextItems: []contextengine.ContextItem{},
+		Output:       runtimeResp,
+	}); err != nil {
+		traceID = ""
+	}
+	contentJSON, _ := json.Marshal(content)
+	runtimeJSON, _ := json.Marshal(runtimeResp)
+	_, err = s.db.ExecContext(ctx, `
+UPDATE interview_reports
+SET status='completed', content=$2, runtime_response=$3, trace_id=$4,
+    error_text='', completed_at=now(), updated_at=now()
+WHERE report_id=$1`, reportID, contentJSON, runtimeJSON, nullEmpty(traceID))
+	if err != nil {
+		return Report{}, err
+	}
+	_ = s.enqueueOutbox(ctx, workqueue.Event{Type: "interview.report_generated", SessionID: sessionID, Payload: map[string]any{"report_id": reportID}}, "interview.report_generated:"+sessionID, "interview_report", reportID)
+	_ = s.refreshSnapshot(ctx, sessionID, "report")
+	return s.GetReport(ctx, sessionID)
 }
 
 func (s *Service) enqueueAnswer(ctx context.Context, session Session, req SubmitAnswerRequest, requestID string, answerHash string, answer string) (map[string]any, string, error) {
@@ -1216,6 +1355,64 @@ WHERE turn_id=$1`, turnID).Scan(
 	return turn, nil
 }
 
+func (s *Service) loadReport(ctx context.Context, sessionID string) (Report, error) {
+	var report Report
+	var contentRaw, runtimeRaw []byte
+	var traceID sql.NullString
+	var createdAt, updatedAt time.Time
+	var completedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+SELECT report_id, session_id, COALESCE(user_id,''), status, content, runtime_response,
+       trace_id, error_text, created_at, updated_at, completed_at
+FROM interview_reports
+WHERE session_id=$1`, sessionID).Scan(
+		&report.ReportID, &report.SessionID, &report.UserID, &report.Status, &contentRaw, &runtimeRaw,
+		&traceID, &report.ErrorText, &createdAt, &updatedAt, &completedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Report{}, nil
+	}
+	if err != nil {
+		return Report{}, err
+	}
+	_ = json.Unmarshal(contentRaw, &report.Content)
+	_ = json.Unmarshal(runtimeRaw, &report.RuntimeResponse)
+	if report.Content == nil {
+		report.Content = map[string]any{}
+	}
+	if report.RuntimeResponse == nil {
+		report.RuntimeResponse = map[string]any{}
+	}
+	report.TraceID = traceID.String
+	report.CreatedAt = createdAt.Format(time.RFC3339)
+	report.UpdatedAt = updatedAt.Format(time.RFC3339)
+	if completedAt.Valid {
+		report.CompletedAt = completedAt.Time.Format(time.RFC3339)
+	}
+	return report, nil
+}
+
+func (s *Service) beginReportGeneration(ctx context.Context, session Session) (string, error) {
+	reportID := store.NewID("report")
+	err := s.db.QueryRowContext(ctx, `
+INSERT INTO interview_reports (report_id, session_id, user_id, status, error_text, updated_at)
+VALUES ($1,$2,$3,'running','',now())
+ON CONFLICT (session_id) DO UPDATE SET
+  status='running',
+  error_text='',
+  updated_at=now()
+RETURNING report_id`, reportID, session.SessionID, nullEmpty(session.UserID)).Scan(&reportID)
+	return reportID, err
+}
+
+func (s *Service) markReportFailed(ctx context.Context, sessionID string, cause error) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE interview_reports
+SET status='failed', error_text=$2, updated_at=now()
+WHERE session_id=$1`, sessionID, cause.Error())
+	return err
+}
+
 func (s *Service) findReplay(ctx context.Context, sessionID string, requestID string, questionNumber int, answerRound int, answerHash string) (map[string]any, bool, error) {
 	var raw []byte
 	err := s.db.QueryRowContext(ctx, `
@@ -1311,6 +1508,105 @@ func questionText(q *Question) string {
 		return q.Prompt
 	}
 	return q.Title
+}
+
+func buildReportInput(session Session) map[string]any {
+	turns := make([]map[string]any, 0, len(session.Turns))
+	completed := 0
+	failed := 0
+	totalScore := 0.0
+	strengths := make([]any, 0)
+	weaknesses := make([]any, 0)
+	evidence := make([]any, 0)
+	for _, turn := range session.Turns {
+		if turn.TurnStatus == TurnCompleted {
+			completed++
+			totalScore += turn.Score
+		}
+		if turn.TurnStatus == TurnFailed {
+			failed++
+		}
+		strengths = append(strengths, sliceFromMap(turn.Evaluation, "strengths")...)
+		weaknesses = append(weaknesses, sliceFromMap(turn.Evaluation, "weaknesses")...)
+		evidence = append(evidence, sliceFromMap(turn.Evaluation, "evidence")...)
+		turns = append(turns, map[string]any{
+			"turn_id":            turn.TurnID,
+			"question_id":        turn.QuestionID,
+			"question_number":    turn.QuestionNumber,
+			"answer_round":       turn.AnswerRound,
+			"turn_status":        turn.TurnStatus,
+			"user_answer":        turn.UserAnswer,
+			"score":              turn.Score,
+			"evaluation":         turn.Evaluation,
+			"follow_up_needed":   turn.FollowUpNeeded,
+			"follow_up_question": turn.FollowUpQuestion,
+			"error_text":         turn.ErrorText,
+		})
+	}
+	averageScore := 0.0
+	if completed > 0 {
+		averageScore = totalScore / float64(completed)
+	}
+	return map[string]any{
+		"schema_version": "interview.report.input.v1",
+		"session": map[string]any{
+			"session_id":      session.SessionID,
+			"user_id":         session.UserID,
+			"skill_id":        session.SkillID,
+			"session_status":  session.SessionStatus,
+			"flow_status":     session.FlowStatus,
+			"question_type":   stringFromMap(session.Metadata, "question_type"),
+			"total_score":     session.TotalScore,
+			"max_follow_ups":  session.MaxFollowUps,
+			"started_at":      session.CreatedAt,
+			"finished_at":     session.FinishedAt,
+			"metadata":        session.Metadata,
+			"completed_turns": completed,
+			"failed_turns":    failed,
+			"average_score":   averageScore,
+			"strengths":       strengths,
+			"weaknesses":      weaknesses,
+			"evidence":        evidence,
+		},
+		"turns": turns,
+		"instructions": []string{
+			"Generate a final interview report grounded only in the supplied session facts.",
+			"Summarize answer quality, strengths, weaknesses, evidence, and review suggestions.",
+			"Do not invent questions, scores, or user behavior that is not present in the facts.",
+		},
+	}
+}
+
+func finalReportOutputSchema() map[string]any {
+	return map[string]any{
+		"schema_version": "interview.report.content.v1",
+		"summary":        "string",
+		"overall_score":  "number",
+		"strengths":      []string{},
+		"weaknesses":     []string{},
+		"evidence":       []string{},
+		"review_plan":    []string{},
+		"next_actions":   []string{},
+	}
+}
+
+func sliceFromMap(input map[string]any, key string) []any {
+	value, ok := input[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []any:
+		return typed
+	case []string:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func cloneMap(input map[string]any) map[string]any {

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"ai-interview-platform/internal/coding"
 	"ai-interview-platform/internal/config"
 	"ai-interview-platform/internal/contextengine"
 	"ai-interview-platform/internal/interview"
@@ -30,7 +31,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	service, closeFn, err := newInterviewService(ctx, cfg, logger)
+	service, codingStore, closeFn, err := newInterviewService(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("initialize worker", "error", err)
 		os.Exit(1)
@@ -45,31 +46,41 @@ func main() {
 		"dead_letter_stream", cfg.InterviewDeadLetterStream,
 	)
 	service.StartWorker(ctx, opts)
+	if cfg.CodingJudgeEnabled {
+		judgeOpts := coding.DefaultWorkerOptions(cfg.CodingJudgeBatchSize)
+		evaluator := codingEvaluator(cfg, logger)
+		logger.Info("coding judge worker starting",
+			"mode", cfg.CodingJudgeMode,
+			"batch_size", judgeOpts.BatchSize,
+			"interval", judgeOpts.Interval,
+		)
+		coding.NewWorker(codingStore, evaluator, logger).Start(ctx, judgeOpts)
+	}
 
 	<-ctx.Done()
 	logger.Info("interview worker stopped")
 }
 
-func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Logger) (*interview.Service, func(), error) {
+func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Logger) (*interview.Service, *coding.Store, func(), error) {
 	skillRegistry := skill.NewRegistry(cfg.SkillsDir)
 	if err := skillRegistry.Load(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	providerRegistry := provider.NewRegistry()
 	dbStore, err := store.Open(cfg.DatabaseURL, cfg.ProviderKeyEncryptionSecret)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	closeFn := func() { _ = dbStore.Close() }
 
 	if err := dbStore.SeedProviderConfigs(ctx, providerRegistry.List()); err != nil {
 		closeFn()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := dbStore.SyncSkills(ctx, skillRegistry.All()); err != nil {
 		closeFn()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -81,7 +92,7 @@ func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Lo
 	if err := redisClient.Ping(ctx).Err(); err != nil {
 		_ = redisClient.Close()
 		closeFn()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	closeFn = func() {
 		_ = redisClient.Close()
@@ -93,7 +104,59 @@ func newInterviewService(ctx context.Context, cfg config.Config, logger *slog.Lo
 	engine.SetMemorySource(runtimeClient)
 	stream := workqueue.NewStreamWithDeadLetter(redisClient, logger, cfg.InterviewEventsStream, cfg.InterviewDeadLetterStream)
 	flights := singleflight.NewRedisFlight(redisClient, 65*time.Second, 10*time.Minute)
-	return interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream), closeFn, nil
+	interviewService := interview.NewService(dbStore.DB(), dbStore, engine, runtimeClient, flights, stream)
+	engine.SetRecentHistorySource(interviewService)
+	return interviewService, coding.NewStore(dbStore.DB()), closeFn, nil
+}
+
+func codingEvaluator(cfg config.Config, logger *slog.Logger) coding.Evaluator {
+	switch strings.ToLower(strings.TrimSpace(cfg.CodingJudgeMode)) {
+	case "docker":
+		return coding.NewDockerEvaluator(coding.DockerEvaluatorConfig{
+			DockerBinary:    cfg.CodingJudgeDockerBinary,
+			GoImage:         cfg.CodingJudgeGoImage,
+			JavaImage:       cfg.CodingJudgeJavaImage,
+			PythonImage:     cfg.CodingJudgePythonImage,
+			JavaScriptImage: cfg.CodingJudgeJavaScriptImage,
+			TypeScriptImage: cfg.CodingJudgeTypeScriptImage,
+			CppImage:        cfg.CodingJudgeCppImage,
+			Timeout:         time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+			Memory:          cfg.CodingJudgeMemory,
+			CPUs:            cfg.CodingJudgeCPUs,
+		})
+	case "docker_warm":
+		return coding.NewDockerWarmEvaluator(coding.DockerEvaluatorConfig{
+			DockerBinary:    cfg.CodingJudgeDockerBinary,
+			GoImage:         cfg.CodingJudgeGoImage,
+			JavaImage:       cfg.CodingJudgeJavaImage,
+			PythonImage:     cfg.CodingJudgePythonImage,
+			JavaScriptImage: cfg.CodingJudgeJavaScriptImage,
+			TypeScriptImage: cfg.CodingJudgeTypeScriptImage,
+			CppImage:        cfg.CodingJudgeCppImage,
+			Timeout:         time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+			Memory:          cfg.CodingJudgeMemory,
+			CPUs:            cfg.CodingJudgeCPUs,
+		}, cfg.CodingJudgeContainerPrefix)
+	case "native_trusted":
+		if logger != nil {
+			logger.Warn("coding judge native_trusted mode is enabled; user code runs on the host without container isolation")
+		}
+		return coding.NewNativeEvaluator(coding.NativeEvaluatorConfig{
+			GoBinary:         cfg.CodingJudgeNativeGo,
+			JavaBinary:       cfg.CodingJudgeNativeJava,
+			JavaCompiler:     cfg.CodingJudgeNativeJavac,
+			PythonBinary:     cfg.CodingJudgeNativePython,
+			JavaScriptBinary: cfg.CodingJudgeNativeNode,
+			TypeScriptBinary: cfg.CodingJudgeNativeDeno,
+			CppCompiler:      cfg.CodingJudgeNativeGpp,
+			Timeout:          time.Duration(cfg.CodingJudgeTimeoutSeconds) * time.Second,
+		})
+	default:
+		if logger != nil {
+			logger.Warn("coding judge sandbox disabled; submissions will become system_error/sandbox_not_configured", "mode", cfg.CodingJudgeMode)
+		}
+		return coding.SandboxUnavailableEvaluator{}
+	}
 }
 
 func loadDotEnv(path string) {
