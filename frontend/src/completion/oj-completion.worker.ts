@@ -26,14 +26,19 @@ const grammarURLs: Record<string, string> = {
   python: pythonWasmURL,
   typescript: typescriptWasmURL
 };
-const parserReady = Parser.init({ locateFile: () => parserWasmURL });
+const isCompletionWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+const parserReady = isCompletionWorker
+  ? Parser.init({ locateFile: () => parserWasmURL })
+  : Promise.resolve();
 const parsers = new Map<string, Promise<Parser>>();
 const documents = new Map<string, { source: string; tree: Tree }>();
 const encoder = new TextEncoder();
 
-self.addEventListener("message", (event: MessageEvent<OJCompletionRequest>) => {
-  void complete(event.data).then((response) => self.postMessage(response));
-});
+if (isCompletionWorker) {
+  self.addEventListener("message", (event: MessageEvent<OJCompletionRequest>) => {
+    void complete(event.data).then((result) => self.postMessage(result));
+  });
+}
 
 async function complete(request: OJCompletionRequest): Promise<OJCompletionResponse> {
   try {
@@ -128,7 +133,7 @@ function safeUTF16Boundary(value: string, offset: number): number {
     : offset;
 }
 
-function suggestionsAtCursor(
+export function suggestionsAtCursor(
   language: string,
   languageIndex: OJCompletionLanguageIndex,
   root: SyntaxNode,
@@ -143,8 +148,10 @@ function suggestionsAtCursor(
   const importAliases = new Map<string, string>();
   const symbols = new Map<string, string>();
   const cursorByte = byteOffset(source, cursorOffset);
+  const visibleScopes = visibleScopeIDs(root, cursorByte);
 
   walk(root, cursorByte, (node) => {
+    if (!nodeIsVisible(node, root, visibleScopes)) return;
     collectImportAlias(node, aliases, importAliases);
     collectDeclaration(language, node, aliases, factories, importAliases, symbols);
   });
@@ -161,6 +168,41 @@ function suggestionsAtCursor(
     .sort((a, b) => completionScore(a.label, prefix) - completionScore(b.label, prefix) || a.label.localeCompare(b.label))
     .slice(0, 40);
   return { items, receiverType };
+}
+
+const lexicalScopeTypes = new Set([
+  "block",
+  "class_body",
+  "compound_statement",
+  "constructor_declaration",
+  "function_declaration",
+  "function_definition",
+  "lambda_expression",
+  "method_declaration",
+  "module",
+  "program",
+  "source_file",
+  "statement_block",
+  "translation_unit"
+]);
+
+function visibleScopeIDs(root: SyntaxNode, cursorByte: number): Set<number> {
+  const scopes = new Set<number>([root.id]);
+  let current: SyntaxNode | null = root.descendantForIndex(Math.max(0, cursorByte - 1));
+  while (current) {
+    if (lexicalScopeTypes.has(current.type)) scopes.add(current.id);
+    current = current.parent;
+  }
+  return scopes;
+}
+
+function nodeIsVisible(node: SyntaxNode, root: SyntaxNode, visibleScopes: Set<number>): boolean {
+  let current = node.parent;
+  while (current) {
+    if (lexicalScopeTypes.has(current.type)) return visibleScopes.has(current.id);
+    current = current.parent;
+  }
+  return visibleScopes.has(root.id);
 }
 
 function collectDeclaration(

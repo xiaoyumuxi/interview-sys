@@ -36,5 +36,7 @@ export interface OJCompletionLanguageIndex {
 
 export interface OJCompletionIndex {
   schema_version: string;
+  judge_targets: Record<string, string>;
+  generation_toolchains: Record<string, string>;
   languages: Record<string, OJCompletionLanguageIndex>;
 }

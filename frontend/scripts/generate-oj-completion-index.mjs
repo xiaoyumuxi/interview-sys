@@ -8,10 +8,25 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const profilePath = join(root, "oj-completion-profile.json");
 const outputPath = join(root, "src", "generated", "oj-completion-index.json");
 const profile = JSON.parse(readFileSync(profilePath, "utf8"));
+const commands = {
+  javap: process.env.OJ_INDEX_JAVAP || "javap",
+  go: process.env.OJ_INDEX_GO || "go",
+  python: process.env.OJ_INDEX_PYTHON || firstAvailableCommand(["python3.13", "python3"]),
+  clang: process.env.OJ_INDEX_CLANG || "clang++"
+};
 
 const index = {
   schema_version: "oj.completion.index.v1",
   profile_schema_version: profile.schema_version,
+  judge_targets: profile.judge_targets,
+  generation_toolchains: {
+    java: commandVersion(commands.javap, ["-version"]),
+    go: commandVersion(commands.go, ["version"]),
+    python: commandVersion(commands.python, ["--version"]),
+    javascript: `TypeScript ${ts.version}`,
+    typescript: `TypeScript ${ts.version}`,
+    cpp: commandVersion(commands.clang, ["--version"])
+  },
   languages: {}
 };
 
@@ -37,7 +52,7 @@ if (process.argv.includes("--check")) {
 function generateJava(languageProfile) {
   const types = {};
   for (const [name, config] of Object.entries(languageProfile.types)) {
-    const text = execFileSync("javap", ["-public", config.probe], { encoding: "utf8" });
+    const text = execFileSync(commands.javap, ["-public", config.probe], { encoding: "utf8" });
     const members = [];
     for (const rawLine of text.split("\n")) {
       const line = rawLine.trim();
@@ -56,7 +71,7 @@ function generateJava(languageProfile) {
 function generateGo(languageProfile) {
   const types = {};
   for (const [name, config] of Object.entries(languageProfile.types)) {
-    const text = execFileSync("go", ["doc", "-all", config.probe], { encoding: "utf8" });
+    const text = execFileSync(commands.go, ["doc", "-all", config.probe], { encoding: "utf8" });
     const members = [];
     for (const rawLine of text.split("\n")) {
       const line = rawLine.trim();
@@ -108,7 +123,7 @@ for name, config in profile["types"].items():
     result[name] = {"aliases": config.get("aliases", [name]), "factories": config.get("factories", []), "members": members}
 print(json.dumps(result))
 `;
-  const output = execFileSync("python3", ["-c", script, JSON.stringify(languageProfile)], { encoding: "utf8" });
+  const output = execFileSync(commands.python, ["-c", script, JSON.stringify(languageProfile)], { encoding: "utf8" });
   const rawTypes = JSON.parse(output);
   const types = {};
   for (const [name, config] of Object.entries(rawTypes)) {
@@ -151,8 +166,8 @@ function generateCpp(languageProfile) {
   for (const [name, config] of Object.entries(languageProfile.types)) {
     const line = `void complete() { ${config.probe} value; value.`;
     const source = `#include <${config.include}>\n${line}\n}\n`;
-    const result = spawnSync("clang++", [
-      "-x", "c++", "-std=c++17", "-fsyntax-only", "-Xclang",
+    const result = spawnSync(commands.clang, [
+      "-x", "c++", "-std=c++20", "-fsyntax-only", "-Xclang",
       `-code-completion-at=-:2:${line.length + 1}`, "-"
     ], { input: source, encoding: "utf8", maxBuffer: 20 * 1024 * 1024 });
     if (result.status !== 0 && !result.stdout.includes("COMPLETION:")) {
@@ -245,6 +260,17 @@ function cleanJavaDetail(value) {
 
 function cleanClangDetail(value) {
   return value.replace(/\[#(.*?)#\]/g, "$1 ").replace(/<#(.*?)#>/g, "$1");
+}
+
+function commandVersion(command, args) {
+  return execFileSync(command, args, { encoding: "utf8" }).trim().split("\n")[0];
+}
+
+function firstAvailableCommand(candidates) {
+  for (const command of candidates) {
+    if (spawnSync(command, ["--version"], { encoding: "utf8" }).status === 0) return command;
+  }
+  throw new Error(`none of the required commands are available: ${candidates.join(", ")}`);
 }
 
 function walkTS(node, visit) {

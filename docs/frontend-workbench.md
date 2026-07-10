@@ -59,7 +59,7 @@
 
 ### OJ SDK 索引
 
-`frontend/oj-completion-profile.json` 只维护算法场景需要的类型、别名、模块和工厂函数白名单，不维护具体方法。`npm run generate:oj-index` 会生成 `frontend/src/generated/oj-completion-index.json`：Java 方法来自 `javap`，Go 来自 `go doc`，Python 来自标准库 introspection，JavaScript/TypeScript 来自 TypeScript `lib*.d.ts`，C++ 来自 Clang code completion。`npm run check:oj-index` 用于确认已提交索引与当前工具链生成结果一致。
+`frontend/oj-completion-profile.json` 只维护算法场景需要的类型、别名、模块和工厂函数白名单，不维护具体方法。`npm run generate:oj-index` 会生成 `frontend/src/generated/oj-completion-index.json`：Java 方法来自 `javap`，Go 来自 `go doc`，Python 来自标准库 introspection，JavaScript/TypeScript 来自 TypeScript `lib*.d.ts`，C++ 来自 Clang C++20 code completion。索引同时记录 judge 目标版本与实际生成工具链；生成命令可通过 `OJ_INDEX_JAVAP`、`OJ_INDEX_GO`、`OJ_INDEX_PYTHON`、`OJ_INDEX_CLANG` 覆盖。`npm run check:oj-index` 用于确认已提交索引与当前工具链生成结果一致。
 
 Tree-sitter 运行时和六种 grammar 是独立静态资源；页面只请求当前语言 grammar。主线程只处理 Monaco，AST 解析、增量 tree 更新、作用域扫描和候选过滤全部在 Worker 内完成。
 

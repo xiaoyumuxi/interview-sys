@@ -1,6 +1,22 @@
 {
   "schema_version": "oj.completion.index.v1",
   "profile_schema_version": "oj.completion.profile.v1",
+  "judge_targets": {
+    "go": "1.26",
+    "java": "21",
+    "python": "3.13",
+    "javascript": "Node.js 22",
+    "typescript": "Deno 2.1.4",
+    "cpp": "GCC 14 / C++20"
+  },
+  "generation_toolchains": {
+    "java": "17.0.19",
+    "go": "go version go1.26.4 darwin/arm64",
+    "python": "Python 3.13.12",
+    "javascript": "TypeScript 5.9.3",
+    "typescript": "TypeScript 5.9.3",
+    "cpp": "Apple clang version 21.0.0 (clang-2100.1.1.101)"
+  },
   "languages": {
     "java": {
       "types": {
@@ -4807,7 +4823,7 @@
             {
               "id": "dict.clear",
               "label": "clear",
-              "detail": "clear()",
+              "detail": "clear(self, /)",
               "insert_text": "clear($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4816,7 +4832,7 @@
             {
               "id": "dict.copy",
               "label": "copy",
-              "detail": "copy()",
+              "detail": "copy(self, /)",
               "insert_text": "copy($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4843,7 +4859,7 @@
             {
               "id": "dict.items",
               "label": "items",
-              "detail": "items()",
+              "detail": "items(self, /)",
               "insert_text": "items($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4852,7 +4868,7 @@
             {
               "id": "dict.keys",
               "label": "keys",
-              "detail": "keys()",
+              "detail": "keys(self, /)",
               "insert_text": "keys($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4897,7 +4913,7 @@
             {
               "id": "dict.values",
               "label": "values",
-              "detail": "values()",
+              "detail": "values(self, /)",
               "insert_text": "values($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4915,8 +4931,8 @@
             {
               "id": "set.add",
               "label": "add",
-              "detail": "add()",
-              "insert_text": "add($0)",
+              "detail": "add(self, object, /)",
+              "insert_text": "add($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4924,7 +4940,7 @@
             {
               "id": "set.clear",
               "label": "clear",
-              "detail": "clear()",
+              "detail": "clear(self, /)",
               "insert_text": "clear($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4933,7 +4949,7 @@
             {
               "id": "set.copy",
               "label": "copy",
-              "detail": "copy()",
+              "detail": "copy(self, /)",
               "insert_text": "copy($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -4942,8 +4958,8 @@
             {
               "id": "set.difference",
               "label": "difference",
-              "detail": "difference()",
-              "insert_text": "difference($0)",
+              "detail": "difference(self, /, *others)",
+              "insert_text": "difference($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4951,8 +4967,8 @@
             {
               "id": "set.difference_update",
               "label": "difference_update",
-              "detail": "difference_update()",
-              "insert_text": "difference_update($0)",
+              "detail": "difference_update(self, /, *others)",
+              "insert_text": "difference_update($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4960,8 +4976,8 @@
             {
               "id": "set.discard",
               "label": "discard",
-              "detail": "discard()",
-              "insert_text": "discard($0)",
+              "detail": "discard(self, object, /)",
+              "insert_text": "discard($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4969,8 +4985,8 @@
             {
               "id": "set.intersection",
               "label": "intersection",
-              "detail": "intersection()",
-              "insert_text": "intersection($0)",
+              "detail": "intersection(self, /, *others)",
+              "insert_text": "intersection($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4978,8 +4994,8 @@
             {
               "id": "set.intersection_update",
               "label": "intersection_update",
-              "detail": "intersection_update()",
-              "insert_text": "intersection_update($0)",
+              "detail": "intersection_update(self, /, *others)",
+              "insert_text": "intersection_update($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4987,8 +5003,8 @@
             {
               "id": "set.isdisjoint",
               "label": "isdisjoint",
-              "detail": "isdisjoint()",
-              "insert_text": "isdisjoint($0)",
+              "detail": "isdisjoint(self, other, /)",
+              "insert_text": "isdisjoint($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -4996,8 +5012,8 @@
             {
               "id": "set.issubset",
               "label": "issubset",
-              "detail": "issubset()",
-              "insert_text": "issubset($0)",
+              "detail": "issubset(self, other, /)",
+              "insert_text": "issubset($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5005,8 +5021,8 @@
             {
               "id": "set.issuperset",
               "label": "issuperset",
-              "detail": "issuperset()",
-              "insert_text": "issuperset($0)",
+              "detail": "issuperset(self, other, /)",
+              "insert_text": "issuperset($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5014,7 +5030,7 @@
             {
               "id": "set.pop",
               "label": "pop",
-              "detail": "pop()",
+              "detail": "pop(self, /)",
               "insert_text": "pop($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5023,8 +5039,8 @@
             {
               "id": "set.remove",
               "label": "remove",
-              "detail": "remove()",
-              "insert_text": "remove($0)",
+              "detail": "remove(self, object, /)",
+              "insert_text": "remove($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5032,8 +5048,8 @@
             {
               "id": "set.symmetric_difference",
               "label": "symmetric_difference",
-              "detail": "symmetric_difference()",
-              "insert_text": "symmetric_difference($0)",
+              "detail": "symmetric_difference(self, other, /)",
+              "insert_text": "symmetric_difference($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5041,8 +5057,8 @@
             {
               "id": "set.symmetric_difference_update",
               "label": "symmetric_difference_update",
-              "detail": "symmetric_difference_update()",
-              "insert_text": "symmetric_difference_update($0)",
+              "detail": "symmetric_difference_update(self, other, /)",
+              "insert_text": "symmetric_difference_update($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5050,8 +5066,8 @@
             {
               "id": "set.union",
               "label": "union",
-              "detail": "union()",
-              "insert_text": "union($0)",
+              "detail": "union(self, /, *others)",
+              "insert_text": "union($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5059,8 +5075,8 @@
             {
               "id": "set.update",
               "label": "update",
-              "detail": "update()",
-              "insert_text": "update($0)",
+              "detail": "update(self, /, *others)",
+              "insert_text": "update($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5149,8 +5165,8 @@
             {
               "id": "str.format",
               "label": "format",
-              "detail": "format()",
-              "insert_text": "format($0)",
+              "detail": "format(self, /, *args, **kwargs)",
+              "insert_text": "format($1, $2)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5158,8 +5174,8 @@
             {
               "id": "str.format_map",
               "label": "format_map",
-              "detail": "format_map()",
-              "insert_text": "format_map($0)",
+              "detail": "format_map(self, mapping, /)",
+              "insert_text": "format_map($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5356,7 +5372,7 @@
             {
               "id": "str.replace",
               "label": "replace",
-              "detail": "replace(self, old, new, count=-1, /)",
+              "detail": "replace(self, old, new, /, count=-1)",
               "insert_text": "replace($1, $2, $3)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5509,8 +5525,8 @@
             {
               "id": "deque.append",
               "label": "append",
-              "detail": "append()",
-              "insert_text": "append($0)",
+              "detail": "append(self, item, /)",
+              "insert_text": "append($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5518,8 +5534,8 @@
             {
               "id": "deque.appendleft",
               "label": "appendleft",
-              "detail": "appendleft()",
-              "insert_text": "appendleft($0)",
+              "detail": "appendleft(self, item, /)",
+              "insert_text": "appendleft($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5527,7 +5543,7 @@
             {
               "id": "deque.clear",
               "label": "clear",
-              "detail": "clear()",
+              "detail": "clear(self, /)",
               "insert_text": "clear($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5536,7 +5552,7 @@
             {
               "id": "deque.copy",
               "label": "copy",
-              "detail": "copy()",
+              "detail": "copy(self, /)",
               "insert_text": "copy($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5545,8 +5561,8 @@
             {
               "id": "deque.count",
               "label": "count",
-              "detail": "count()",
-              "insert_text": "count($0)",
+              "detail": "count(self, value, /)",
+              "insert_text": "count($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5554,8 +5570,8 @@
             {
               "id": "deque.extend",
               "label": "extend",
-              "detail": "extend()",
-              "insert_text": "extend($0)",
+              "detail": "extend(self, iterable, /)",
+              "insert_text": "extend($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5563,8 +5579,8 @@
             {
               "id": "deque.extendleft",
               "label": "extendleft",
-              "detail": "extendleft()",
-              "insert_text": "extendleft($0)",
+              "detail": "extendleft(self, iterable, /)",
+              "insert_text": "extendleft($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5581,8 +5597,8 @@
             {
               "id": "deque.insert",
               "label": "insert",
-              "detail": "insert()",
-              "insert_text": "insert($0)",
+              "detail": "insert(self, index, value, /)",
+              "insert_text": "insert($1, $2)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5590,7 +5606,7 @@
             {
               "id": "deque.pop",
               "label": "pop",
-              "detail": "pop()",
+              "detail": "pop(self, /)",
               "insert_text": "pop($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5599,7 +5615,7 @@
             {
               "id": "deque.popleft",
               "label": "popleft",
-              "detail": "popleft()",
+              "detail": "popleft(self, /)",
               "insert_text": "popleft($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5608,8 +5624,8 @@
             {
               "id": "deque.remove",
               "label": "remove",
-              "detail": "remove()",
-              "insert_text": "remove($0)",
+              "detail": "remove(self, value, /)",
+              "insert_text": "remove($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5617,7 +5633,7 @@
             {
               "id": "deque.reverse",
               "label": "reverse",
-              "detail": "reverse()",
+              "detail": "reverse(self, /)",
               "insert_text": "reverse($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5626,8 +5642,8 @@
             {
               "id": "deque.rotate",
               "label": "rotate",
-              "detail": "rotate()",
-              "insert_text": "rotate($0)",
+              "detail": "rotate(self, n=1, /)",
+              "insert_text": "rotate($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5643,7 +5659,7 @@
             {
               "id": "Counter.clear",
               "label": "clear",
-              "detail": "clear()",
+              "detail": "clear(self, /)",
               "insert_text": "clear($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5688,7 +5704,7 @@
             {
               "id": "Counter.items",
               "label": "items",
-              "detail": "items()",
+              "detail": "items(self, /)",
               "insert_text": "items($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5697,7 +5713,7 @@
             {
               "id": "Counter.keys",
               "label": "keys",
-              "detail": "keys()",
+              "detail": "keys(self, /)",
               "insert_text": "keys($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5749,6 +5765,15 @@
               "rank": 5
             },
             {
+              "id": "Counter.total",
+              "label": "total",
+              "detail": "total(self)",
+              "insert_text": "total($0)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
               "id": "Counter.update",
               "label": "update",
               "detail": "update(self, iterable=None, /, **kwds)",
@@ -5760,7 +5785,7 @@
             {
               "id": "Counter.values",
               "label": "values",
-              "detail": "values()",
+              "detail": "values(self, /)",
               "insert_text": "values($0)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -5857,8 +5882,8 @@
             {
               "id": "bisect.bisect",
               "label": "bisect",
-              "detail": "bisect(a, x, lo=0, hi=None)",
-              "insert_text": "bisect($1, $2, $3, $4)",
+              "detail": "bisect(a, x, lo=0, hi=None, *, key=None)",
+              "insert_text": "bisect($1, $2, $3, $4, $5)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5866,8 +5891,8 @@
             {
               "id": "bisect.bisect_left",
               "label": "bisect_left",
-              "detail": "bisect_left(a, x, lo=0, hi=None)",
-              "insert_text": "bisect_left($1, $2, $3, $4)",
+              "detail": "bisect_left(a, x, lo=0, hi=None, *, key=None)",
+              "insert_text": "bisect_left($1, $2, $3, $4, $5)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5875,8 +5900,8 @@
             {
               "id": "bisect.bisect_right",
               "label": "bisect_right",
-              "detail": "bisect_right(a, x, lo=0, hi=None)",
-              "insert_text": "bisect_right($1, $2, $3, $4)",
+              "detail": "bisect_right(a, x, lo=0, hi=None, *, key=None)",
+              "insert_text": "bisect_right($1, $2, $3, $4, $5)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5884,8 +5909,8 @@
             {
               "id": "bisect.insort",
               "label": "insort",
-              "detail": "insort(a, x, lo=0, hi=None)",
-              "insert_text": "insort($1, $2, $3, $4)",
+              "detail": "insort(a, x, lo=0, hi=None, *, key=None)",
+              "insert_text": "insort($1, $2, $3, $4, $5)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5893,8 +5918,8 @@
             {
               "id": "bisect.insort_left",
               "label": "insort_left",
-              "detail": "insort_left(a, x, lo=0, hi=None)",
-              "insert_text": "insort_left($1, $2, $3, $4)",
+              "detail": "insort_left(a, x, lo=0, hi=None, *, key=None)",
+              "insert_text": "insort_left($1, $2, $3, $4, $5)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5902,8 +5927,8 @@
             {
               "id": "bisect.insort_right",
               "label": "insort_right",
-              "detail": "insort_right(a, x, lo=0, hi=None)",
-              "insert_text": "insort_right($1, $2, $3, $4)",
+              "detail": "insort_right(a, x, lo=0, hi=None, *, key=None)",
+              "insert_text": "insort_right($1, $2, $3, $4, $5)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -5975,6 +6000,15 @@
               "label": "atanh",
               "detail": "atanh(x, /)",
               "insert_text": "atanh($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
+              "id": "math.cbrt",
+              "label": "cbrt",
+              "detail": "cbrt(x, /)",
+              "insert_text": "cbrt($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -6070,6 +6104,15 @@
               "rank": 5
             },
             {
+              "id": "math.exp2",
+              "label": "exp2",
+              "detail": "exp2(x, /)",
+              "insert_text": "exp2($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
               "id": "math.expm1",
               "label": "expm1",
               "detail": "expm1(x, /)",
@@ -6090,7 +6133,7 @@
             {
               "id": "math.factorial",
               "label": "factorial",
-              "detail": "factorial(x, /)",
+              "detail": "factorial(n, /)",
               "insert_text": "factorial($1)",
               "kind": "method",
               "source": "oj_sdk_index",
@@ -6101,6 +6144,15 @@
               "label": "floor",
               "detail": "floor(x, /)",
               "insert_text": "floor($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
+              "id": "math.fma",
+              "label": "fma",
+              "detail": "fma(x, y, z, /)",
+              "insert_text": "fma($1, $2, $3)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -6279,8 +6331,8 @@
             {
               "id": "math.nextafter",
               "label": "nextafter",
-              "detail": "nextafter(x, y, /)",
-              "insert_text": "nextafter($1, $2)",
+              "detail": "nextafter(x, y, /, *, steps=None)",
+              "insert_text": "nextafter($1, $2, $3)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -6353,6 +6405,15 @@
               "label": "sqrt",
               "detail": "sqrt(x, /)",
               "insert_text": "sqrt($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
+              "id": "math.sumprod",
+              "label": "sumprod",
+              "detail": "sumprod(p, q, /)",
+              "insert_text": "sumprod($1, $2)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -9861,6 +9922,15 @@
               "rank": 5
             },
             {
+              "id": "map.contains",
+              "label": "contains",
+              "detail": "bool contains(const key_type &k) const ",
+              "insert_text": "contains($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
               "id": "map.count",
               "label": "count",
               "detail": "size_type count(const key_type &k) const ",
@@ -10176,6 +10246,15 @@
               "rank": 5
             },
             {
+              "id": "unordered_map.contains",
+              "label": "contains",
+              "detail": "bool contains(const key_type &k) const ",
+              "insert_text": "contains($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
               "id": "unordered_map.count",
               "label": "count",
               "detail": "size_type count(const key_type &k) const ",
@@ -10441,6 +10520,15 @@
               "label": "clear",
               "detail": "void clear()",
               "insert_text": "clear($0)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
+              "id": "set.contains",
+              "label": "contains",
+              "detail": "bool contains(const key_type &k) const ",
+              "insert_text": "contains($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -10729,6 +10817,15 @@
               "label": "clear",
               "detail": "void clear()",
               "insert_text": "clear($0)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
+              "id": "unordered_set.contains",
+              "label": "contains",
+              "detail": "bool contains(const key_type &k) const ",
+              "insert_text": "contains($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5
@@ -11643,6 +11740,15 @@
               "rank": 5
             },
             {
+              "id": "string.ends_with",
+              "label": "ends_with",
+              "detail": "bool ends_with(__self_view sv) const ",
+              "insert_text": "ends_with($1)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
               "id": "string.erase",
               "label": "erase",
               "detail": "iterator erase(const_iterator pos)",
@@ -11836,6 +11942,15 @@
               "label": "size",
               "detail": "size_type size() const ",
               "insert_text": "size($0)",
+              "kind": "method",
+              "source": "oj_sdk_index",
+              "rank": 5
+            },
+            {
+              "id": "string.starts_with",
+              "label": "starts_with",
+              "detail": "bool starts_with(__self_view sv) const ",
+              "insert_text": "starts_with($1)",
               "kind": "method",
               "source": "oj_sdk_index",
               "rank": 5

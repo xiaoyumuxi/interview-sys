@@ -1,5 +1,13 @@
 {
   "schema_version": "oj.completion.profile.v1",
+  "judge_targets": {
+    "go": "1.26",
+    "java": "21",
+    "python": "3.13",
+    "javascript": "Node.js 22",
+    "typescript": "Deno 2.1.4",
+    "cpp": "GCC 14 / C++20"
+  },
   "languages": {
     "java": {
       "types": {
