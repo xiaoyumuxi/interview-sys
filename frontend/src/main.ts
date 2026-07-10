@@ -1,4 +1,5 @@
 import "./styles.css";
+import "./design-system.css";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import "monaco-editor/min/vs/editor/editor.main.css";
@@ -27,6 +28,8 @@ import { locales, normalizeLocale, translate, translateHtml, type Locale } from 
 import { suggestOJCompletions } from "./completion/oj-completion-client";
 import type { OJCompletionSuggestion } from "./completion/types";
 import {
+  Activity,
+  ArrowRight,
   Bot,
   BrainCircuit,
   Captions,
@@ -54,21 +57,25 @@ import {
   RotateCw,
   Save,
   Send,
+  ServerCog,
   Settings2,
+  ShieldCheck,
+  Sparkles,
   Terminal,
   UserRound,
   Users,
   Video,
   VideoOff,
+  Waypoints,
   X,
   createIcons
 } from "lucide";
 
-type View = "dashboard" | "interview" | "coding" | "memory" | "evaluation";
+type View = "dashboard" | "interview" | "coding" | "memory" | "ops" | "evaluation";
 type LoadState<T> = { loading: boolean; error: string; data: T };
 type RoomPanel = "briefing" | "participants" | "notes";
 type RunbookState = "done" | "active" | "pending";
-type SettingsPanel = "general" | "providers" | "workers" | "judge" | "quality";
+type AdminPanel = "overview" | "providers" | "workers" | "judge";
 
 interface EmptyAction {
   label: string;
@@ -87,7 +94,6 @@ interface AppState {
   skills: Skill[];
   settings: {
     open: boolean;
-    panel: SettingsPanel;
   };
   dashboard: LoadState<DashboardData>;
   interview: {
@@ -122,7 +128,7 @@ interface AppState {
     error: string;
   };
   memory: LoadState<JsonObject>;
-  admin: LoadState<AdminData>;
+  admin: LoadState<AdminData> & { panel: AdminPanel };
   evaluation: {
     cases: EvaluationCase[];
     runs: EvaluationRun[];
@@ -134,14 +140,12 @@ interface AppState {
 }
 
 interface DashboardData {
-  health: JsonObject | null;
-  worker: JsonObject | null;
-  judge: JsonObject | null;
   evalRuns: EvaluationRun[];
   submissions: CodingSubmission[];
 }
 
 interface AdminData {
+  health: JsonObject | null;
   providers: JsonObject[];
   routes: JsonObject[];
   worker: JsonObject | null;
@@ -183,6 +187,8 @@ monacoEnvironment.MonacoEnvironment = {
   getWorker: () => new EditorWorker()
 };
 const iconSet = {
+  Activity,
+  ArrowRight,
   Bot,
   BrainCircuit,
   Captions,
@@ -210,12 +216,16 @@ const iconSet = {
   RotateCw,
   Save,
   Send,
+  ServerCog,
   Settings2,
+  ShieldCheck,
+  Sparkles,
   Terminal,
   UserRound,
   Users,
   Video,
   VideoOff,
+  Waypoints,
   X
 };
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -242,10 +252,9 @@ const state: AppState = {
   toast: "",
   skills: [],
   settings: {
-    open: false,
-    panel: "general"
+    open: false
   },
-  dashboard: { loading: false, error: "", data: { health: null, worker: null, judge: null, evalRuns: [], submissions: [] } },
+  dashboard: { loading: false, error: "", data: { evalRuns: [], submissions: [] } },
   interview: { session: null, trace: [], report: null, answer: "", dryRun: true, error: "", loading: false },
   meeting: {
     micOn: localStorage.getItem("frontend:meeting:mic") === "on",
@@ -270,7 +279,7 @@ const state: AppState = {
     error: ""
   },
   memory: { loading: false, error: "", data: {} },
-  admin: { loading: false, error: "", data: { providers: [], routes: [], worker: null, judge: null } },
+  admin: { loading: false, error: "", panel: "overview", data: { health: null, providers: [], routes: [], worker: null, judge: null } },
   evaluation: { cases: [], runs: [], selectedCaseId: "", lastRun: null, loading: false, error: "" }
 };
 
@@ -282,6 +291,7 @@ async function boot(): Promise<void> {
   if (state.accessToken) {
     try {
       state.user = await api.me();
+      enforceViewAccess();
       await loadInitialData();
     } catch {
       clearAuth();
@@ -295,6 +305,7 @@ async function loadInitialData(): Promise<void> {
   if (state.view === "dashboard") await loadDashboard();
   if (state.view === "coding") await loadCoding();
   if (state.view === "memory") await loadMemory();
+  if (state.view === "ops") await loadAdmin();
   if (state.view === "evaluation") await loadEvaluation();
 }
 
@@ -619,36 +630,74 @@ function icon(name: string, className = "ui-icon"): string {
 function renderLogin(): string {
   return `
     <main class="login-screen">
-      <section class="login-panel">
-        <div class="brand-row">
-          <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
-          <div>
-            <h1>InterviewOS</h1>
-            <p>AI training runtime control surface</p>
+      <section class="login-shell">
+        <div class="login-story">
+          <div class="brand-row login-brand">
+            <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
+            <div>
+              <strong>InterviewOS</strong>
+              <span>AI training runtime</span>
+            </div>
+          </div>
+          <div class="login-thesis">
+            <span class="eyebrow">Practice intelligence</span>
+            <h1>Train the signal,<br /><em>not the script.</em></h1>
+            <p>One focused workspace for interview practice, code judging, durable memory and measurable improvement.</p>
+          </div>
+          <div class="signal-rail" aria-label="Training loop">
+            ${loginSignal("01", "Practice", "Answer with intent", "messages-square", "active")}
+            ${loginSignal("02", "Evaluate", "Make evidence visible", "activity", "")}
+            ${loginSignal("03", "Improve", "Carry insight forward", "waypoints", "")}
+          </div>
+          <div class="story-footnote">
+            ${icon("shield-check")}
+            <span>Provider keys and business state stay behind the Go API boundary.</span>
           </div>
         </div>
-        ${languageSwitcher("login-language")}
-        <form id="login-form" class="login-form">
-          <label>
-            Email
-            <input name="email" type="email" autocomplete="email" value="root@example.local" required />
-          </label>
-          <label>
-            Password
-            <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" required />
-          </label>
-          <button class="button primary" type="submit">${icon("log-in")}<span>Sign in</span></button>
-        </form>
-        <p class="muted">Use the local root account from the backend bootstrap, or any user created through the API.</p>
+        <div class="login-access">
+          <div class="access-heading">
+            <span class="access-icon">${icon("sparkles")}</span>
+            <div>
+              <span class="eyebrow">Workspace access</span>
+              <h2>Welcome back</h2>
+              <p>Continue your next focused practice loop.</p>
+            </div>
+          </div>
+          ${languageSwitcher("login-language")}
+          <form id="login-form" class="login-form">
+            <label>
+              Email
+              <input name="email" type="email" autocomplete="email" value="root@example.local" required />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" required />
+            </label>
+            <button class="button primary login-submit" type="submit"><span>Sign in</span>${icon("arrow-right")}</button>
+          </form>
+          <p class="muted login-help">Use the local root account from the backend bootstrap, or any user created through the API.</p>
+        </div>
       </section>
     </main>
   `;
 }
 
+function loginSignal(index: string, label: string, hint: string, iconName: string, stateClass: string): string {
+  return `
+    <div class="signal-node ${stateClass}">
+      <span class="signal-index">${index}</span>
+      <span class="signal-icon">${icon(iconName)}</span>
+      <div><strong>${label}</strong><small>${hint}</small></div>
+    </div>
+  `;
+}
+
 function renderShell(): string {
   const busy = isCurrentViewLoading();
+  const management = isManagementView(state.view);
+  const rootUser = canManageSystem();
   return `
-    <div class="app-shell">
+    <div class="app-shell ${management ? "management-space" : "training-space"}">
       <aside class="sidebar">
         <div class="brand-row sidebar-brand">
           <span class="brand-mark">${icon("brain-circuit", "brand-icon")}</span>
@@ -657,32 +706,46 @@ function renderShell(): string {
             <span>AI training runtime</span>
           </div>
         </div>
-        <nav class="nav-list">
-          ${navItem("dashboard", "Dashboard", "Overview", "layout-dashboard")}
-          ${navItem("interview", "Interview", "Session", "messages-square")}
-          ${navItem("coding", "Coding", "Practice", "code-2")}
-          ${navItem("memory", "Memory", "Review", "database")}
-          ${navItem("evaluation", "Evaluation", "Quality", "clipboard-check")}
-        </nav>
-        <div class="sidebar-health">
-          <strong>Runtime health</strong>
-          <div class="chip-row">
-            <span class="chip ok">Go API</span>
-            <span class="chip info">Worker</span>
+        <div class="sidebar-navigation">
+          <div class="nav-group">
+            <span class="nav-label">Training workspace</span>
+            <nav class="nav-list" aria-label="Training workspace">
+              ${navItem("dashboard", "Dashboard", "Your progress", "layout-dashboard")}
+              ${navItem("interview", "Interview", "Live practice", "messages-square")}
+              ${navItem("coding", "Coding", "Problem solving", "code-2")}
+              ${navItem("memory", "Memory", "Personal review", "database")}
+            </nav>
           </div>
-          <small>Poll with the dashboard refresh action.</small>
+          ${rootUser ? `
+            <div class="nav-group management-group">
+              <span class="nav-label">System management</span>
+              <nav class="nav-list management-nav" aria-label="System management">
+                ${navItem("ops", "Operations", "Runtime control", "server-cog")}
+                ${navItem("evaluation", "Quality lab", "Regression checks", "clipboard-check")}
+              </nav>
+            </div>
+          ` : ""}
+        </div>
+        <div class="workspace-mode-card ${management ? "management" : "training"}">
+          <span>${icon(management ? "shield-check" : "sparkles")}</span>
+          <div>
+            <small>${management ? "Admin workspace" : "Training workspace"}</small>
+            <strong>${management ? "System mode" : "Focus mode"}</strong>
+            <p>${management ? "Root-only configuration and runtime state." : "Practice, review and improve without operational noise."}</p>
+          </div>
         </div>
       </aside>
       <section class="workspace">
         <header class="topbar">
-          <div>
+          <div class="page-heading">
+            <div class="page-context"><span class="space-badge">${management ? "Operations" : "Training"}</span><span class="page-kicker">InterviewOS / ${pageTitle(state.view)}</span></div>
             <h1>${pageTitle(state.view)}</h1>
             <p>${pageSubtitle(state.view)}</p>
           </div>
           <div class="topbar-actions">
             <button class="button ghost" data-action="refresh" ${busy ? "disabled" : ""}>${icon("refresh-cw")}<span>${busy ? "Updating" : "Refresh"}</span></button>
             ${languageSwitcher("topbar-language")}
-            <div class="user-pill">${escapeHtml(state.user?.display_name ?? "User")} · ${escapeHtml(state.user?.role ?? "user")}</div>
+            <div class="user-pill"><span>${escapeHtml((state.user?.display_name ?? "U").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(state.user?.display_name ?? "User")}</strong><small>${escapeHtml(state.user?.role ?? "user")}</small></div></div>
             <button class="icon-button" data-action="open-settings" aria-label="Settings">${icon("settings-2")}</button>
             <button class="icon-button" data-action="logout" aria-label="Sign out">${icon("log-out")}</button>
           </div>
@@ -702,6 +765,7 @@ function navItem(view: View, label: string, sub: string, iconName: string): stri
     <button class="nav-item${active}" data-view="${view}">
       <span class="nav-mark">${icon(iconName)}</span>
       <span><strong>${label}</strong><small>${sub}</small></span>
+      <i class="nav-indicator" aria-hidden="true"></i>
     </button>
   `;
 }
@@ -716,6 +780,8 @@ function renderPage(): string {
       return renderCoding();
     case "memory":
       return renderMemory();
+    case "ops":
+      return renderAdmin();
     case "evaluation":
       return renderEvaluation();
   }
@@ -723,34 +789,36 @@ function renderPage(): string {
 
 function renderDashboard(): string {
   const data = state.dashboard.data;
-  const worker = data.worker;
-  const queue = record(worker?.queue);
-  const outbox = record(worker?.outbox);
-  const judge = data.judge;
+  const scoredSubmissions = data.submissions.filter((item) => Number.isFinite(Number(item.score)) && Number(item.score) > 0);
+  const bestScore = scoredSubmissions.length ? Math.max(...scoredSubmissions.map((item) => Number(item.score))) : 0;
+  const averageScore = scoredSubmissions.length
+    ? Math.round(scoredSubmissions.reduce((sum, item) => sum + Number(item.score), 0) / scoredSubmissions.length)
+    : 0;
   return `
     ${state.dashboard.error ? banner(state.dashboard.error, "error") : ""}
-    <section class="console-hero">
+    <section class="console-hero training-hero">
       <div class="console-copy">
-        <span class="eyebrow">Control plane</span>
-        <h2>Keep the training loop visible</h2>
-        <p>Start from the work that changes state: create an interview, submit code, review memory, then use evaluation runs to catch regressions before the loop drifts.</p>
+        <span class="eyebrow">Personal training plan</span>
+        <h2>What will you improve today?</h2>
+        <p>Choose one deliberate practice task, capture the evidence, then carry the useful signal into your next session.</p>
         <div class="hero-actions">
           <button class="button primary" data-view="interview">${icon("messages-square")}<span>Start interview</span></button>
           <button class="button secondary" data-view="coding">${icon("code-2")}<span>Practice coding</span></button>
           <button class="button secondary" data-view="memory">${icon("database")}<span>Review memory</span></button>
         </div>
       </div>
-      <div class="console-panel">
-        ${operationRow("API boundary", stringValue(data.health?.status, "unknown"), "healthz")}
-        ${operationRow("Async worker", stringValue(queue.pending, "0"), "pending stream items")}
-        ${operationRow("Judge lane", stringValue(record(judge).queued, "0"), "queued submissions")}
+      <div class="focus-plan" aria-label="Today’s practice path">
+        <div class="focus-plan-head"><span>${icon("waypoints")}</span><div><strong>Today’s practice path</strong><small>One focused loop</small></div></div>
+        ${focusPlanItem("Warm up", "Open a live interview room", "interview", "messages-square", "active")}
+        ${focusPlanItem("Build evidence", "Solve one coding problem", "coding", "code-2", "")}
+        ${focusPlanItem("Reflect", "Review durable memory", "memory", "database", "")}
       </div>
     </section>
     <section class="metric-grid">
-      ${metricCard("API status", stringValue(data.health?.status, "unknown"), "healthz", "teal", "terminal")}
-      ${metricCard("Queue pending", stringValue(queue.pending, "0"), "Redis Stream", "blue", "messages-square")}
-      ${metricCard("Outbox pending", stringValue(outbox.pending, "0"), "PostgreSQL outbox", "amber", "database")}
-      ${metricCard("Judge queued", stringValue(record(judge).queued, "0"), "coding submissions", "cyan", "code-2")}
+      ${metricCard("Coding attempts", String(data.submissions.length), "recent submissions", "teal", "code-2")}
+      ${metricCard("Best score", String(bestScore), "personal best", "blue", "flag")}
+      ${metricCard("Average score", String(averageScore), "scored attempts", "amber", "activity")}
+      ${metricCard("Review signals", String(data.evalRuns.length), "quality records", "cyan", "clipboard-check")}
     </section>
     <section class="content-grid two">
       <article class="card">
@@ -764,7 +832,7 @@ function renderDashboard(): string {
       </article>
       <article class="card">
         <div class="section-head">
-          <div><h2>Evaluation runs</h2><p>Quality gates from the backend evaluation harness.</p></div>
+          <div><h2>Recent feedback</h2><p>Quality signals captured from your recent practice.</p></div>
         </div>
         ${table(
           ["Case", "Task", "Status", "Score"],
@@ -772,16 +840,31 @@ function renderDashboard(): string {
         )}
       </article>
     </section>
-    <section class="card">
+    <section class="card practice-loop-card">
       <div class="section-head">
-        <div><h2>Runtime timeline</h2><p>The front end should make asynchronous state visible instead of hiding backend work.</p></div>
+        <div><h2>Your improvement loop</h2><p>A useful session ends with evidence you can act on next time.</p></div>
       </div>
-      <div class="timeline">
-        ${["Answer queued", "Worker claimed", "Runtime scored", "Report generated", "Memory review"].map((label, index) => `
-          <div class="timeline-step ${index < 3 ? "done" : ""}"><span></span><strong>${label}</strong></div>
+      <div class="timeline practice-timeline">
+        ${[
+          ["Practice", "Answer or solve"],
+          ["Evidence", "Capture feedback"],
+          ["Reflect", "Find the weak signal"],
+          ["Repeat", "Train it deliberately"]
+        ].map(([label, hint], index) => `
+          <div class="timeline-step ${index === 0 ? "done" : ""}"><span></span><strong>${label}</strong><small>${hint}</small></div>
         `).join("")}
       </div>
     </section>
+  `;
+}
+
+function focusPlanItem(label: string, hint: string, view: View, iconName: string, stateClass: string): string {
+  return `
+    <button class="focus-plan-item ${stateClass}" data-view="${view}">
+      <span>${icon(iconName)}</span>
+      <div><strong>${label}</strong><small>${hint}</small></div>
+      ${icon("arrow-right")}
+    </button>
   `;
 }
 
@@ -1448,127 +1531,48 @@ function renderMemoryCandidate(item: JsonObject): string {
 function renderSettingsModal(): string {
   return `
     <div class="settings-backdrop" role="presentation">
-      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" data-role="settings-modal">
+      <section class="settings-modal personal-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" data-role="settings-modal">
         <header class="settings-header">
           <div>
-            <span class="settings-kicker">${icon("settings-2")} Configuration center</span>
-            <h2 id="settings-dialog-title">Settings</h2>
-            <p>Runtime, judge and provider configuration.</p>
+            <span class="settings-kicker">${icon("user-round")} Personal preferences</span>
+            <h2 id="settings-dialog-title">Your settings</h2>
+            <p>Account, language and training workspace preferences.</p>
           </div>
           <div class="settings-header-actions">
-            ${statusBadge(state.admin.loading ? "Updating" : "Ready")}
             <button class="settings-close" data-action="close-settings" aria-label="Close settings">${icon("x")}</button>
           </div>
         </header>
-        <div class="settings-layout">
-          <aside class="settings-nav" aria-label="Settings sections">
-            ${settingsNavItem("general", "General", "Account and language", "settings-2")}
-            ${settingsNavItem("providers", "Providers", "Model routes", "radio")}
-            ${settingsNavItem("workers", "Workers", "Async lanes", "terminal")}
-            ${settingsNavItem("judge", "Coding judge", "Runner state", "code-2")}
-            ${settingsNavItem("quality", "Quality gates", "Eval signals", "clipboard-check")}
-          </aside>
-          <div class="settings-content">
-            ${renderSettingsPanel()}
-          </div>
+        <div class="settings-content personal-settings-content">
+          ${renderPersonalSettings()}
         </div>
       </section>
     </div>
   `;
 }
 
-function settingsNavItem(panel: SettingsPanel, label: string, hint: string, iconName: string): string {
-  const active = state.settings.panel === panel ? " active" : "";
+function renderPersonalSettings(): string {
   return `
-    <button class="settings-nav-item${active}" data-action="set-settings-panel" data-panel="${panel}" aria-pressed="${active ? "true" : "false"}">
-      ${icon(iconName)}
-      <span><strong>${label}</strong><small>${hint}</small></span>
-    </button>
-  `;
-}
-
-function renderSettingsPanel(): string {
-  const data = state.admin.data;
-  if (state.settings.panel === "providers") {
-    return settingsSection(
-      "Providers",
-      "Provider registry and task routes stay in the configuration center, away from training flow.",
-      "load-admin",
-      `
-        <div class="settings-block">
-          <div class="settings-block-head"><h3>Task routing</h3><span>${data.routes.length} records</span></div>
-          ${data.routes.length ? table(
-            ["Task", "Provider", "Fallback"],
-            data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
-          ) : emptyState("No records", "Nothing has been returned by the API yet.")}
-        </div>
-        <div class="settings-block">
-          <div class="settings-block-head"><h3>Provider registry</h3><span>${data.providers.length} records</span></div>
-          ${data.providers.length ? table(
-            ["Provider", "Type", "Enabled"],
-            data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
-          ) : emptyState("No records", "Nothing has been returned by the API yet.")}
-        </div>
-      `
-    );
-  }
-  if (state.settings.panel === "workers") {
-    return settingsSection(
-      "Workers",
-      "Redis stream, outbox and dead-letter state for the backend runtime.",
-      "load-admin",
-      settingsWorkerSummary(data.worker)
-    );
-  }
-  if (state.settings.panel === "judge") {
-    return settingsSection(
-      "Coding judge",
-      "Judge queue, runner mode and sandbox status for coding practice.",
-      "load-admin",
-      settingsJudgeSummary(data.judge)
-    );
-  }
-  if (state.settings.panel === "quality") {
-    return settingsSection(
-      "Quality gates",
-      "Evaluation remains a user-facing quality workflow; configure backend signals here.",
-      "load-admin",
-      `
-        <div class="settings-row"><span>Evaluation harness</span><strong>Active page</strong></div>
-        <div class="settings-row"><span>Runtime traces</span><strong>${state.interview.trace.length} records</strong></div>
-        <div class="settings-row"><span>Recent runs</span><strong>${state.dashboard.data.evalRuns.length} records</strong></div>
-        ${settingsHealthSummary(state.dashboard.data.health)}
-      `
-    );
-  }
-  return settingsSection(
-    "General",
-    "Keep product preferences separate from training tasks.",
-    "load-admin",
-    `
-      <div class="settings-row"><span>Language</span><strong>${state.locale === "zh-CN" ? "中文" : "English"}</strong></div>
-      <div class="settings-row"><span>Signed in</span><strong>${escapeHtml(state.user?.display_name ?? "User")}</strong></div>
-      <div class="settings-row"><span>API status</span><strong>${escapeHtml(stringValue(state.dashboard.data.health?.status, "unknown"))}</strong></div>
-      <div class="settings-row"><span>Configuration source</span><strong>Go Core API</strong></div>
-      <div class="settings-note">${icon("panel-right-open")} Clicking outside will not close this window.</div>
-    `
-  );
-}
-
-function settingsSection(title: string, copy: string, refreshAction: string, content: string): string {
-  return `
-    <div class="settings-section">
-      ${state.admin.error ? banner(state.admin.error, "error") : ""}
-      <div class="settings-section-head">
+    <div class="personal-settings-grid">
+      <section class="profile-settings-card">
+        <div class="profile-avatar">${escapeHtml((state.user?.display_name ?? "U").slice(0, 1).toUpperCase())}</div>
         <div>
-          <h2>${escapeHtml(title)}</h2>
-          <p>${escapeHtml(copy)}</p>
+          <span class="eyebrow">Signed-in profile</span>
+          <h3>${escapeHtml(state.user?.display_name ?? "User")}</h3>
+          <p>${escapeHtml(state.user?.email ?? "Local account")} · ${escapeHtml(state.user?.role ?? "user")}</p>
         </div>
-        <button class="button secondary" data-action="${refreshAction}" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Refresh"}</span></button>
-      </div>
-      <div class="settings-section-body">
-        ${content}
-      </div>
+        <span class="status ok">Active</span>
+      </section>
+      <section class="settings-preference-card">
+        <div class="settings-preference-head">
+          <span>${icon("settings-2")}</span>
+          <div><h3>Language</h3><p>Choose the language used across your training workspace.</p></div>
+        </div>
+        ${languageSwitcher("settings-language")}
+      </section>
+      <section class="settings-boundary-note">
+        <span>${icon("shield-check")}</span>
+        <div><strong>System management is separate</strong><p>Provider routing, workers and judge controls live in the root-only Operations workspace.</p></div>
+      </section>
     </div>
   `;
 }
@@ -1705,36 +1709,155 @@ function formatSettingValue(value: unknown): string {
 }
 
 function renderAdmin(): string {
+  if (!canManageSystem()) {
+    return banner("Root access is required for system management.", "error");
+  }
   const data = state.admin.data;
+  const queue = record(data.worker?.queue);
+  const pendingClaims = sumMetric(arrayRecords(queue.groups), "pending");
+  const judge = record(data.judge);
+  const enabledProviders = data.providers.filter((item) => item.enabled === true).length;
+  const healthStatus = stringValue(data.health?.status, "unknown");
   return `
     ${state.admin.error ? banner(state.admin.error, "error") : ""}
-    <section class="content-grid two">
-      <article class="card">
-        <div class="section-head">
-          <div><h2>Provider routes</h2><p>Root-only provider and task routing state.</p></div>
-          <button class="button secondary" data-action="load-admin" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Reload"}</span></button>
+    <section class="console-hero operations-hero ops-hero">
+      <div class="console-copy">
+        <span class="eyebrow">Root control plane</span>
+        <h2>Operate the runtime without entering the training flow.</h2>
+        <p>Provider routing, asynchronous workers and the coding judge stay in a separate, permission-bound workspace.</p>
+        <div class="hero-actions">
+          <button class="button primary" data-action="load-admin" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Synchronizing" : "Sync runtime"}</span></button>
+          <button class="button secondary" data-view="evaluation">${icon("clipboard-check")}<span>Open quality lab</span></button>
         </div>
-        ${table(
-          ["Task", "Provider", "Fallback"],
-          data.routes.map((item) => [stringValue(item.task_type), stringValue(item.provider_id), stringValue(item.fallback_provider_id, "-")])
-        )}
-      </article>
-      <article class="card">
-        <h2>Providers</h2>
-        ${table(
-          ["Provider", "Type", "Enabled"],
-          data.providers.map((item) => [stringValue(item.provider_id), stringValue(item.provider_type), statusBadge(String(Boolean(item.enabled)))])
-        )}
-      </article>
+      </div>
+      <div class="console-panel ops-access-card">
+        <div class="signal-track-heading"><span>${icon("server-cog")}</span><div><strong>Runtime signal</strong><small>Current control-plane snapshot</small></div></div>
+        ${operationRow("Go API", healthStatus, "health boundary")}
+        ${operationRow("Worker claims", numberLabel(pendingClaims), "pending messages")}
+        ${operationRow("Judge queue", numberLabel(judge.queued), "waiting submissions")}
+      </div>
     </section>
-    <section class="content-grid two">
-      <article class="card"><h2>Worker summary</h2><pre class="json-box">${escapeHtml(JSON.stringify(data.worker, null, 2))}</pre></article>
-      <article class="card"><h2>Coding judge</h2><pre class="json-box">${escapeHtml(JSON.stringify(data.judge, null, 2))}</pre></article>
+    <section class="metric-grid admin-metric-grid ops-snapshot-grid">
+      ${metricCard("API status", healthStatus, "Go Core API", healthStatus.toLowerCase() === "ok" ? "teal" : "amber", "monitor-up")}
+      ${metricCard("Providers enabled", `${enabledProviders}/${data.providers.length}`, "configured providers", "blue", "server-cog")}
+      ${metricCard("Task routes", numberLabel(data.routes.length), "routing decisions", "cyan", "waypoints")}
+      ${metricCard("Judge queued", numberLabel(judge.queued), "awaiting execution", numericValue(judge.queued) > 0 ? "amber" : "teal", "code-2")}
+    </section>
+    <section class="content-grid two-wide admin-workbench ops-console">
+      <aside class="card admin-panel-nav-card ops-console-nav">
+        <div class="section-head ops-nav-heading">
+          <div><span class="eyebrow">Operations map</span><h2>Runtime management</h2><p>Select one operational surface at a time.</p></div>
+        </div>
+        <nav class="settings-nav admin-panel-nav" aria-label="Operations panels">
+          ${adminPanelButton("overview", "Overview", "Health and boundaries", "layout-dashboard")}
+          ${adminPanelButton("providers", "Providers", "Models and task routes", "waypoints")}
+          ${adminPanelButton("workers", "Workers", "Queue and outbox state", "radio")}
+          ${adminPanelButton("judge", "Coding judge", "Submission execution", "code-2")}
+        </nav>
+      </aside>
+      <article class="card admin-panel-content ops-console-content">
+        ${renderAdminPanel()}
+      </article>
     </section>
   `;
 }
 
+function adminPanelButton(panel: AdminPanel, label: string, hint: string, iconName: string): string {
+  return `
+    <button class="settings-nav-item ops-nav-item ${state.admin.panel === panel ? "active" : ""}" data-action="set-admin-panel" data-panel="${panel}" aria-pressed="${state.admin.panel === panel ? "true" : "false"}">
+      ${icon(iconName)}
+      <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span>
+    </button>
+  `;
+}
+
+function renderAdminPanel(): string {
+  const data = state.admin.data;
+  if (state.admin.panel === "providers") {
+    return `
+      <div class="settings-section">
+        ${adminPanelHeading("Provider routing", "Inspect which model providers are enabled and how runtime tasks are routed.", "waypoints")}
+        <div class="settings-section-body">
+          <section class="settings-block">
+            <div class="settings-block-head"><h3>Providers</h3><span>${data.providers.length} configured</span></div>
+            ${table(
+              ["Provider", "Type", "Enabled"],
+              data.providers.map((item) => [
+                escapeHtml(stringValue(item.provider_id ?? item.id, "unknown")),
+                escapeHtml(stringValue(item.provider_type ?? item.type, "-")),
+                statusBadge(String(Boolean(item.enabled)))
+              ])
+            )}
+          </section>
+          <section class="settings-block">
+            <div class="settings-block-head"><h3>Task routes</h3><span>${data.routes.length} decisions</span></div>
+            ${table(
+              ["Task", "Primary provider", "Fallback"],
+              data.routes.map((item) => [
+                escapeHtml(stringValue(item.task_type, "unknown")),
+                escapeHtml(stringValue(item.provider_id, "-")),
+                escapeHtml(stringValue(item.fallback_provider_id, "-"))
+              ])
+            )}
+          </section>
+        </div>
+      </div>
+    `;
+  }
+  if (state.admin.panel === "workers") {
+    return `
+      <div class="settings-section">
+        ${adminPanelHeading("Worker pipeline", "Follow Redis claims, outbox dispatch and dead-letter pressure without exposing them in the learner workspace.", "radio")}
+        <div class="settings-section-body">${settingsWorkerSummary(data.worker)}</div>
+      </div>
+    `;
+  }
+  if (state.admin.panel === "judge") {
+    return `
+      <div class="settings-section">
+        ${adminPanelHeading("Coding judge", "Inspect the execution lane and submission status distribution.", "code-2")}
+        <div class="settings-section-body">${settingsJudgeSummary(data.judge)}</div>
+      </div>
+    `;
+  }
+  return `
+    <div class="settings-section">
+      ${adminPanelHeading("System overview", "A compact health check for the deterministic business and execution boundaries.", "monitor-up")}
+      <div class="settings-section-body">
+        ${settingsHealthSummary(data.health)}
+        <section class="settings-block ops-boundary-map">
+          <div class="settings-block-head"><h3>Responsibility boundaries</h3><span>3 services</span></div>
+          ${operationBoundary("Go Core API", "Business state, authorization, routing and audit", "monitor-up")}
+          ${operationBoundary("Python AI Runtime", "Model orchestration and structured AI inference", "brain-circuit")}
+          ${operationBoundary("Worker lanes", "Outbox dispatch, retry and isolated code execution", "radio")}
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function adminPanelHeading(title: string, copy: string, iconName: string): string {
+  return `
+    <div class="settings-section-head ops-panel-head">
+      <div><span class="settings-kicker">${icon(iconName)} Root only</span><h2>${escapeHtml(title)}</h2><p>${escapeHtml(copy)}</p></div>
+      <button class="button secondary ops-refresh" data-action="load-admin" ${state.admin.loading ? "disabled" : ""}>${icon("refresh-cw")}<span>${state.admin.loading ? "Updating" : "Reload"}</span></button>
+    </div>
+  `;
+}
+
+function operationBoundary(label: string, hint: string, iconName: string): string {
+  return `
+    <div class="settings-detail-row admin-boundary-row">
+      <span>${icon(iconName)} ${escapeHtml(label)}</span>
+      <strong>${escapeHtml(hint)}</strong>
+    </div>
+  `;
+}
+
 function renderEvaluation(): string {
+  if (!canManageSystem()) {
+    return banner("Root access is required for the evaluation harness.", "error");
+  }
   return `
     ${state.evaluation.error ? banner(state.evaluation.error, "error") : ""}
     <section class="content-grid two-wide">
@@ -1805,9 +1928,9 @@ function bindEvents(): void {
   document.onkeydown = (event) => {
     if (event.key === "Escape" && state.settings.open) closeSettings();
   };
-  document.querySelectorAll<HTMLButtonElement>("[data-action='set-settings-panel']").forEach((button) => {
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-admin-panel']").forEach((button) => {
     button.addEventListener("click", () => {
-      setSettingsPanel((button.dataset.panel as SettingsPanel | undefined) ?? "general");
+      setAdminPanel(normalizeAdminPanel(button.dataset.panel));
     });
   });
   document.querySelectorAll<HTMLButtonElement>("[data-action='toggle-meeting-control']").forEach((button) => {
@@ -1904,6 +2027,13 @@ function bindEvents(): void {
 }
 
 async function navigate(view: View): Promise<void> {
+  if (isManagementView(view) && !canManageSystem()) {
+    toast(ui("Root access is required for system management."));
+    state.view = "dashboard";
+    localStorage.setItem("frontend:view", state.view);
+    render();
+    return;
+  }
   state.view = view;
   localStorage.setItem("frontend:view", view);
   render();
@@ -1913,7 +2043,6 @@ async function navigate(view: View): Promise<void> {
 async function openSettings(): Promise<void> {
   state.settings.open = true;
   render();
-  await loadAdmin();
 }
 
 function closeSettings(): void {
@@ -1921,8 +2050,9 @@ function closeSettings(): void {
   render();
 }
 
-function setSettingsPanel(panel: SettingsPanel): void {
-  state.settings.panel = normalizeSettingsPanel(panel);
+function setAdminPanel(panel: AdminPanel): void {
+  if (!canManageSystem()) return;
+  state.admin.panel = panel;
   render();
 }
 
@@ -1930,6 +2060,7 @@ async function refreshCurrentView(): Promise<void> {
   if (state.view === "dashboard") await loadDashboard();
   if (state.view === "coding") await loadCoding();
   if (state.view === "memory") await loadMemory();
+  if (state.view === "ops") await loadAdmin();
   if (state.view === "evaluation") await loadEvaluation();
   if (state.view === "interview" && state.interview.session) await pollSession();
 }
@@ -1942,6 +2073,7 @@ async function handleLogin(email: string, password: string): Promise<void> {
   try {
     const auth = await api.login(email, password);
     saveAuth(auth);
+    enforceViewAccess();
     await loadInitialData();
     toast(ui("Signed in"));
   } catch (error) {
@@ -1972,21 +2104,15 @@ async function loadDashboard(): Promise<void> {
   state.dashboard.loading = true;
   state.dashboard.error = "";
   render();
-  const [health, worker, judge, evalRuns, submissions] = await Promise.allSettled([
-    api.health(),
-    api.workerSummary(),
-    api.codingJudgeSummary(),
+  const [evalRuns, submissions] = await Promise.allSettled([
     api.listEvaluationRuns(),
     api.listCodingSubmissions()
   ]);
   state.dashboard.data = {
-    health: settledValue(health, null),
-    worker: settledValue(worker, null),
-    judge: settledValue(judge, null),
     evalRuns: settledValue(evalRuns, []),
     submissions: settledValue(submissions, [])
   };
-  state.dashboard.error = firstError([health, worker, judge, evalRuns, submissions]);
+  state.dashboard.error = firstError([evalRuns, submissions]);
   state.dashboard.loading = false;
   render();
 }
@@ -2084,27 +2210,41 @@ async function loadMemory(): Promise<void> {
 }
 
 async function loadAdmin(): Promise<void> {
+  if (!canManageSystem()) {
+    enforceViewAccess();
+    state.admin.error = "Root access is required for system management.";
+    render();
+    return;
+  }
   state.admin.loading = true;
   state.admin.error = "";
   render();
-  const [providers, routes, worker, judge] = await Promise.allSettled([
+  const [health, providers, routes, worker, judge] = await Promise.allSettled([
+    api.health(),
     api.listProviders(),
     api.listProviderRoutes(),
     api.workerSummary(),
     api.codingJudgeSummary()
   ]);
   state.admin.data = {
+    health: settledValue(health, null),
     providers: settledValue(providers, []),
     routes: settledValue(routes, []),
     worker: settledValue(worker, null),
     judge: settledValue(judge, null)
   };
-  state.admin.error = firstError([providers, routes, worker, judge]);
+  state.admin.error = firstError([health, providers, routes, worker, judge]);
   state.admin.loading = false;
   render();
 }
 
 async function loadEvaluation(): Promise<void> {
+  if (!canManageSystem()) {
+    enforceViewAccess();
+    state.evaluation.error = "Root access is required for the evaluation harness.";
+    render();
+    return;
+  }
   state.evaluation.loading = true;
   state.evaluation.error = "";
   render();
@@ -2464,6 +2604,13 @@ function clearAuth(): void {
   state.user = null;
   state.accessToken = "";
   state.refreshToken = "";
+  if (isManagementView(state.view)) {
+    state.view = "dashboard";
+    localStorage.setItem("frontend:view", state.view);
+  }
+  state.dashboard = { loading: false, error: "", data: { evalRuns: [], submissions: [] } };
+  state.admin = { loading: false, error: "", panel: "overview", data: { health: null, providers: [], routes: [], worker: null, judge: null } };
+  state.evaluation = { cases: [], runs: [], selectedCaseId: "", lastRun: null, loading: false, error: "" };
   localStorage.removeItem("frontend:access_token");
   localStorage.removeItem("frontend:refresh_token");
   api.clearTokens();
@@ -2558,6 +2705,7 @@ function isCurrentViewLoading(): boolean {
   if (state.view === "interview") return state.interview.loading;
   if (state.view === "coding") return state.coding.loading;
   if (state.view === "memory") return state.memory.loading;
+  if (state.view === "ops") return state.admin.loading;
   return state.evaluation.loading;
 }
 
@@ -2566,6 +2714,7 @@ function currentViewError(): string {
   if (state.view === "interview") return state.interview.error;
   if (state.view === "coding") return state.coding.error;
   if (state.view === "memory") return state.memory.error;
+  if (state.view === "ops") return state.admin.error;
   return state.evaluation.error;
 }
 
@@ -2589,7 +2738,7 @@ function renderInteractionStrip(): string {
 }
 
 function interactionHint(): string {
-  if (state.view === "dashboard") return "Choose the next training task or refresh the operational snapshot.";
+  if (state.view === "dashboard") return "Choose one focused training task and carry its evidence into your next session.";
   if (state.view === "interview") {
     if (!state.interview.session) return "Create a session, then answer the active question.";
     return "Answer, poll the session, then generate the report when the flow is complete.";
@@ -2599,6 +2748,7 @@ function interactionHint(): string {
     return "Edit code, submit it, then watch the asynchronous verdict.";
   }
   if (state.view === "memory") return "Review candidates one by one so only trusted memory reaches prompts.";
+  if (state.view === "ops") return "Inspect one runtime lane at a time; refresh to synchronize the root-only snapshot.";
   return "Save a sample case, run it, then inspect assertions and score changes.";
 }
 
@@ -2610,6 +2760,7 @@ function renderNextAction(): string {
   }
   if (state.view === "coding") return `<button class="button secondary" data-action="load-coding">${icon("refresh-cw")}<span>Reload</span></button>`;
   if (state.view === "memory") return `<button class="button secondary" data-action="load-memory">${icon("refresh-cw")}<span>Reload</span></button>`;
+  if (state.view === "ops") return `<button class="button secondary" data-action="load-admin">${icon("refresh-cw")}<span>Sync runtime</span></button>`;
   if (state.view === "evaluation") return `<button class="button secondary" data-action="load-evaluation">${icon("refresh-cw")}<span>Reload</span></button>`;
   return `<button class="button secondary" data-action="refresh">${icon("refresh-cw")}<span>Refresh</span></button>`;
 }
@@ -2813,32 +2964,49 @@ function pageTitle(view: View): string {
     interview: "Interview session",
     coding: "Coding practice",
     memory: "Memory review",
+    ops: "Operations console",
     evaluation: "Evaluation harness"
   }[view];
 }
 
 function pageSubtitle(view: View): string {
   return {
-    dashboard: "Operational snapshot of sessions, queues, runtime health and quality gates.",
+    dashboard: "Personal practice progress, recent attempts and the next deliberate training step.",
     interview: "Focused answer workflow with async evaluation, follow-up and trace evidence.",
     coding: "Question list, editor, sample tests and asynchronous judge results.",
     memory: "Human-in-the-loop approval for durable candidate memory.",
+    ops: "Root-only provider routing, worker health and coding judge operations.",
     evaluation: "Quality samples, dry-run checks and regression records."
   }[view];
 }
 
 function normalizeView(value: string | null | undefined): View {
-  if (value === "interview" || value === "coding" || value === "memory" || value === "evaluation") {
+  if (value === "interview" || value === "coding" || value === "memory" || value === "ops" || value === "evaluation") {
     return value;
   }
   return "dashboard";
 }
 
-function normalizeSettingsPanel(value: string | null | undefined): SettingsPanel {
-  if (value === "providers" || value === "workers" || value === "judge" || value === "quality") {
+function normalizeAdminPanel(value: string | null | undefined): AdminPanel {
+  if (value === "providers" || value === "workers" || value === "judge") {
     return value;
   }
-  return "general";
+  return "overview";
+}
+
+function canManageSystem(): boolean {
+  return state.user?.role === "root";
+}
+
+function isManagementView(view: View): boolean {
+  return view === "ops" || view === "evaluation";
+}
+
+function enforceViewAccess(): void {
+  if (!canManageSystem() && isManagementView(state.view)) {
+    state.view = "dashboard";
+    localStorage.setItem("frontend:view", state.view);
+  }
 }
 
 function escapeHtml(value: string): string {

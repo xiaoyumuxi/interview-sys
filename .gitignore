@@ -5,6 +5,7 @@
 
 # Local caches and temp files
 .cache/
+frontend/.vite/
 tmp/
 *.tmp
 *.log

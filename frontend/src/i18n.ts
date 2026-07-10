@@ -6,6 +6,172 @@ export const locales: Array<{ value: Locale; label: string }> = [
 ];
 
 const zh: Record<string, string> = {
+  InterviewOS: "面试OS",
+  "InterviewOS / Training dashboard": "面试OS / 训练工作台",
+  "InterviewOS / Interview session": "面试OS / 面试会话",
+  "InterviewOS / Coding practice": "面试OS / 代码题练习",
+  "InterviewOS / Memory review": "面试OS / 记忆审核",
+  "InterviewOS / Operations console": "面试OS / 运行管理台",
+  "InterviewOS / Evaluation harness": "面试OS / 质量实验室",
+  "Practice intelligence": "训练智能",
+  "Train the signal,": "练出真本事，",
+  "not the script.": "不背标准答案。",
+  "One focused workspace for interview practice, code judging, durable memory and measurable improvement.":
+    "在一个专注工作台中完成面试训练、代码判题、长期记忆与可量化提升。",
+  "Answer with intent": "带着目标作答",
+  Evaluate: "评估",
+  "Make evidence visible": "让证据清晰可见",
+  Improve: "提升",
+  "Carry insight forward": "让洞察持续积累",
+  "Provider keys and business state stay behind the Go API boundary.":
+    "Provider 密钥与业务状态始终位于 Go API 边界之后。",
+  "Workspace access": "进入工作台",
+  "Welcome back": "欢迎回来",
+  "Continue your next focused practice loop.": "继续下一轮专注训练。",
+  "Practice workspace": "训练工作区",
+  Core: "核心",
+  Async: "异步",
+  "Runtime signal": "运行时信号",
+  "Runtime signal track": "运行时信号轨道",
+  "Live training infrastructure": "实时训练基础设施",
+  "Training loop": "训练闭环",
+  "Training workspace": "训练工作区",
+  "Your progress": "成长概览",
+  "Live practice": "模拟面试",
+  "Problem solving": "编程训练",
+  "Personal review": "个人复盘",
+  "System management": "系统管理",
+  Operations: "运行管理",
+  "Runtime control": "运行控制",
+  "Quality lab": "质量实验室",
+  "Regression checks": "回归检查",
+  "Admin workspace": "管理后台",
+  Training: "训练",
+  "System mode": "系统管理模式",
+  "Focus mode": "专注训练模式",
+  "Root-only configuration and runtime state.": "仅 root 用户可查看配置与运行状态。",
+  "Practice, review and improve without operational noise.": "专注练习、复盘和提升，不受运维信息干扰。",
+  "Personal training plan": "个人训练计划",
+  "What will you improve today?": "今天想重点提升什么？",
+  "Choose one deliberate practice task, capture the evidence, then carry the useful signal into your next session.":
+    "选择一项针对性训练，留下可复盘的证据，并把有效经验带入下一次练习。",
+  "Today’s practice path": "今日训练路径",
+  "One focused loop": "完成一次专注闭环",
+  "Warm up": "热身",
+  "Open a live interview room": "进入模拟面试房间",
+  "Build evidence": "积累证据",
+  "Solve one coding problem": "完成一道代码题",
+  Reflect: "复盘",
+  "Review durable memory": "回顾长期记忆",
+  "Coding attempts": "代码练习次数",
+  "recent submissions": "近期提交",
+  "Best score": "最佳得分",
+  "personal best": "个人最佳",
+  "Average score": "平均得分",
+  "scored attempts": "已评分练习",
+  "Review signals": "复盘记录",
+  "quality records": "质量记录",
+  "Your improvement loop": "你的提升闭环",
+  "A useful session ends with evidence you can act on next time.":
+    "一次有效训练，应当留下能指导下一次行动的证据。",
+  "Answer or solve": "作答或解题",
+  Evidence: "留存证据",
+  "Capture feedback": "记录反馈",
+  "Find the weak signal": "定位薄弱点",
+  Repeat: "再练一次",
+  "Train it deliberately": "针对性强化",
+  "Personal preferences": "个人偏好",
+  "Your settings": "个人设置",
+  "Account, language and training workspace preferences.": "管理账号、语言和训练工作区偏好。",
+  "Signed-in profile": "当前登录账号",
+  "Local account": "本地账号",
+  Active: "正常",
+  "Choose the language used across your training workspace.": "选择训练工作区的界面语言。",
+  "System management is separate": "系统管理已独立分区",
+  "Provider routing, workers and judge controls live in the root-only Operations workspace.":
+    "Provider 路由、Worker 和判题控制统一放在仅 root 可访问的运行管理区。",
+  "Close settings": "关闭设置",
+  "Root access is required for system management.": "系统管理仅限 root 用户访问。",
+  "Root access is required for the evaluation harness.": "质量评测仅限 root 用户访问。",
+  "Personal practice progress, recent attempts and the next deliberate training step.":
+    "查看个人练习进度、近期尝试与下一项针对性训练。",
+  "Choose one focused training task and carry its evidence into your next session.":
+    "选择一项专注训练，并把本次证据带入下一场练习。",
+  "Recent feedback": "近期反馈",
+  "Quality signals captured from your recent practice.": "从近期练习中沉淀的反馈与质量信号。",
+  "Operations console": "运行管理台",
+  "Root-only provider routing, worker health and coding judge operations.":
+    "集中管理仅 root 可访问的 Provider 路由、Worker 健康与代码判题。",
+  "Inspect one runtime lane at a time; refresh to synchronize the root-only snapshot.":
+    "逐项检查运行通道，刷新后同步 root 专属系统快照。",
+  "Sync runtime": "同步运行状态",
+  Synchronizing: "同步中",
+  "Root control plane": "Root 控制平面",
+  "Operate the runtime without entering the training flow.": "在不干扰训练流程的情况下管理运行系统。",
+  "Provider routing, asynchronous workers and the coding judge stay in a separate, permission-bound workspace.":
+    "Provider 路由、异步 Worker 与代码判题统一位于独立且受权限保护的管理空间。",
+  "Open quality lab": "打开质量实验室",
+  "Current control-plane snapshot": "当前控制平面快照",
+  "health boundary": "健康边界",
+  "Worker claims": "Worker 待确认",
+  "pending messages": "待处理消息",
+  "Judge queue": "判题队列",
+  "waiting submissions": "等待执行的提交",
+  "Providers enabled": "已启用 Provider",
+  "configured providers": "已配置 Provider",
+  "Task routes": "任务路由",
+  "routing decisions": "路由决策",
+  "awaiting execution": "等待执行",
+  "Operations map": "运行管理导航",
+  "Runtime management": "运行时管理",
+  "Select one operational surface at a time.": "每次聚焦一个运维面板。",
+  "Operations panels": "运行管理面板",
+  "Health and boundaries": "健康状态与职责边界",
+  "Models and task routes": "模型与任务路由",
+  "Queue and outbox state": "队列与 Outbox 状态",
+  "Submission execution": "提交执行状态",
+  "Root only": "仅限 Root",
+  "System overview": "系统概览",
+  "A compact health check for the deterministic business and execution boundaries.":
+    "快速检查确定性业务边界与执行边界的健康状态。",
+  "Responsibility boundaries": "职责边界",
+  "Business state, authorization, routing and audit": "业务状态、鉴权、路由与审计",
+  "Model orchestration and structured AI inference": "模型编排与结构化 AI 推理",
+  "Worker lanes": "Worker 通道",
+  "Outbox dispatch, retry and isolated code execution": "Outbox 派发、重试与隔离代码执行",
+  "Provider routing": "Provider 路由",
+  "Inspect which model providers are enabled and how runtime tasks are routed.":
+    "检查已启用的模型 Provider 以及运行时任务的路由方式。",
+  configured: "已配置",
+  decisions: "条决策",
+  "Worker pipeline": "Worker 流水线",
+  "Follow Redis claims, outbox dispatch and dead-letter pressure without exposing them in the learner workspace.":
+    "检查 Redis claim、Outbox 派发和 Dead Letter 压力，同时保持训练空间简洁。",
+  "Inspect the execution lane and submission status distribution.": "检查执行通道与提交状态分布。",
+  "Choose a question to load the problem statement.": "请选择一道题以查看题目说明。",
+  "Read from standard input or follow the question contract.": "请从标准输入读取数据，或遵循题目约定。",
+  "Use the configured judge time and memory limits.": "请在判题器设定的时间和内存限制内完成。",
+  "Write the answer to standard output.": "请将答案输出到标准输出。",
+  "Completion profile": "补全建议",
+  "Interview transcript": "面试记录",
+  "Meeting controls": "面试控制栏",
+  "OJ-style questions with hidden-case judging and async verdicts.": "支持隐藏测试用例和异步判题的 OJ 风格代码题。",
+  "Refresh completions": "刷新补全建议",
+  "Room companion": "面试辅助栏",
+  "Source code editor": "源代码编辑器",
+  "Syncing backend profile": "正在同步后端补全配置",
+  "Local fallback": "已切换到本地补全",
+  "Local suggestions": "本地补全建议",
+  "Pending judge": "等待判题",
+  Accepted: "已通过",
+  "Wrong answer": "答案错误",
+  "Runtime error": "运行错误",
+  "Time limit exceeded": "运行超时",
+  "Compile error": "编译错误",
+  "System error": "系统错误",
+  "Unknown error": "未知错误",
+  "first failed:": "首个失败用例：",
+  "all visible cases passed": "可见测试用例全部通过",
   "AI training runtime control surface": "AI 面试训练运行台",
   "AI training runtime": "AI 训练运行时",
   Email: "邮箱",
@@ -397,7 +563,29 @@ export function translate(locale: Locale, value: string): string {
 
 export function translateHtml(locale: Locale, html: string): string {
   if (locale === "en-US") return html;
-  return Object.entries(zh)
-    .sort((a, b) => b[0].length - a[0].length)
-    .reduce((output, [source, target]) => output.replaceAll(source, target), html);
+  const translateValue = (value: string): string => {
+    const content = value.trim();
+    const translated = zh[content];
+    if (!translated) return value;
+    const leading = value.slice(0, value.indexOf(content));
+    const trailing = value.slice(value.indexOf(content) + content.length);
+    return `${leading}${translated}${trailing}`;
+  };
+  const template = document.createElement("template");
+  template.innerHTML = html;
+
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode();
+  while (textNode) {
+    textNode.nodeValue = translateValue(textNode.nodeValue ?? "");
+    textNode = walker.nextNode();
+  }
+
+  for (const element of template.content.querySelectorAll("*")) {
+    for (const attribute of ["aria-label", "placeholder", "title"]) {
+      const value = element.getAttribute(attribute);
+      if (value) element.setAttribute(attribute, translateValue(value));
+    }
+  }
+  return template.innerHTML;
 }
