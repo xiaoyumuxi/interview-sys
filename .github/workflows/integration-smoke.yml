@@ -56,7 +56,7 @@ jobs:
         run: docker compose exec -T minio mc ready local
 
       - name: Check seeded database
-        run: docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ai_interview -d ai_interview -c "select count(*) from users;"
+        run: docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ai_interview -d ai_interview -c "select count(*) from app_users;"
 
       - name: Stop middleware
         if: always()
