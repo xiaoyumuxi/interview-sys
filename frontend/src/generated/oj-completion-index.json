@@ -1,6 +1,7 @@
 {
   "schema_version": "oj.completion.index.v1",
   "profile_schema_version": "oj.completion.profile.v1",
+  "profile_sha256": "8af27814481c8ab4c385d03431d13501c89a6e9f7daf13f61042dece71e282cc",
   "judge_targets": {
     "go": "1.26",
     "java": "21",

@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const index = JSON.parse(readFileSync(join(root, "src", "generated", "oj-completion-index.json"), "utf8"));
+
+execFileSync(process.execPath, [join(root, "scripts", "generate-oj-completion-index.mjs"), "--check"], {
+  env: {
+    ...process.env,
+    OJ_INDEX_JAVAP: "/missing/javap",
+    OJ_INDEX_GO: "/missing/go",
+    OJ_INDEX_PYTHON: "/missing/python",
+    OJ_INDEX_CLANG: "/missing/clang++"
+  },
+  stdio: "pipe"
+});
 
 assert.equal(index.schema_version, "oj.completion.index.v1");
 assertMember("java", "Map", "put");

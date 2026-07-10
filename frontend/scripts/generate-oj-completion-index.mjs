@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,46 +8,89 @@ import ts from "typescript";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const profilePath = join(root, "oj-completion-profile.json");
 const outputPath = join(root, "src", "generated", "oj-completion-index.json");
-const profile = JSON.parse(readFileSync(profilePath, "utf8"));
-const commands = {
-  javap: process.env.OJ_INDEX_JAVAP || "javap",
-  go: process.env.OJ_INDEX_GO || "go",
-  python: process.env.OJ_INDEX_PYTHON || firstAvailableCommand(["python3.13", "python3"]),
-  clang: process.env.OJ_INDEX_CLANG || "clang++"
-};
+const profileSource = readFileSync(profilePath, "utf8");
+const profile = JSON.parse(profileSource);
+const profileSha256 = createHash("sha256").update(profileSource).digest("hex");
+let commands;
 
-const index = {
-  schema_version: "oj.completion.index.v1",
-  profile_schema_version: profile.schema_version,
-  judge_targets: profile.judge_targets,
-  generation_toolchains: {
-    java: commandVersion(commands.javap, ["-version"]),
-    go: commandVersion(commands.go, ["version"]),
-    python: commandVersion(commands.python, ["--version"]),
-    javascript: `TypeScript ${ts.version}`,
-    typescript: `TypeScript ${ts.version}`,
-    cpp: commandVersion(commands.clang, ["--version"])
-  },
-  languages: {}
-};
+main();
 
-index.languages.java = generateJava(profile.languages.java);
-index.languages.go = generateGo(profile.languages.go);
-index.languages.python = generatePython(profile.languages.python);
-const ecmaIndex = generateTypeScript(profile.languages.javascript);
-index.languages.javascript = ecmaIndex;
-index.languages.typescript = inheritLanguage(ecmaIndex, profile.languages.typescript);
-index.languages.cpp = generateCpp(profile.languages.cpp);
-
-const output = `${JSON.stringify(index, null, 2)}\n`;
-if (process.argv.includes("--check")) {
-  if (readFileSync(outputPath, "utf8") !== output) {
-    throw new Error("generated OJ completion index is stale; run npm run generate:oj-index");
+function main() {
+  if (process.argv.includes("--check")) {
+    checkGeneratedIndex();
+    return;
   }
-} else {
+
+  commands = {
+    javap: process.env.OJ_INDEX_JAVAP || "javap",
+    go: process.env.OJ_INDEX_GO || "go",
+    python: process.env.OJ_INDEX_PYTHON || firstAvailableCommand(["python3.13", "python3"]),
+    clang: process.env.OJ_INDEX_CLANG || "clang++"
+  };
+
+  const index = {
+    schema_version: "oj.completion.index.v1",
+    profile_schema_version: profile.schema_version,
+    profile_sha256: profileSha256,
+    judge_targets: profile.judge_targets,
+    generation_toolchains: {
+      java: commandVersion(commands.javap, ["-version"]),
+      go: commandVersion(commands.go, ["version"]),
+      python: commandVersion(commands.python, ["--version"]),
+      javascript: `TypeScript ${ts.version}`,
+      typescript: `TypeScript ${ts.version}`,
+      cpp: commandVersion(commands.clang, ["--version"])
+    },
+    languages: {}
+  };
+
+  index.languages.java = generateJava(profile.languages.java);
+  index.languages.go = generateGo(profile.languages.go);
+  index.languages.python = generatePython(profile.languages.python);
+  const ecmaIndex = generateTypeScript(profile.languages.javascript);
+  index.languages.javascript = ecmaIndex;
+  index.languages.typescript = inheritLanguage(ecmaIndex, profile.languages.typescript);
+  index.languages.cpp = generateCpp(profile.languages.cpp);
+
+  const output = `${JSON.stringify(index, null, 2)}\n`;
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, output);
   process.stdout.write(`generated ${outputPath}\n`);
+}
+
+function checkGeneratedIndex() {
+  const index = JSON.parse(readFileSync(outputPath, "utf8"));
+  assertEqual(index.schema_version, "oj.completion.index.v1", "completion index schema");
+  assertEqual(index.profile_schema_version, profile.schema_version, "completion profile schema");
+  assertEqual(index.profile_sha256, profileSha256, "completion profile digest");
+  assertEqual(index.judge_targets, profile.judge_targets, "judge targets");
+
+  for (const [language, languageProfile] of Object.entries(profile.languages)) {
+    const generatedTypes = index.languages?.[language]?.types;
+    if (!generatedTypes) throw new Error(`completion index is missing language ${language}`);
+    for (const [typeName, typeProfile] of Object.entries(languageProfile.types ?? {})) {
+      const generatedType = generatedTypes[typeName];
+      if (!generatedType) throw new Error(`completion index is missing ${language}.${typeName}`);
+      assertEqual(generatedType.aliases, typeProfile.aliases ?? [], `${language}.${typeName} aliases`);
+      assertEqual(generatedType.factories, typeProfile.factories ?? [], `${language}.${typeName} factories`);
+      if (!Array.isArray(generatedType.members) || generatedType.members.length === 0) {
+        throw new Error(`completion index has no members for ${language}.${typeName}`);
+      }
+      for (const item of generatedType.members) {
+        if (!item.id || !item.label || !item.insert_text || item.source !== "oj_sdk_index") {
+          throw new Error(`completion index has an invalid member for ${language}.${typeName}`);
+        }
+      }
+    }
+  }
+
+  process.stdout.write("OJ completion index is current\n");
+}
+
+function assertEqual(actual, expected, label) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${label} is stale; run npm run generate:oj-index`);
+  }
 }
 
 function generateJava(languageProfile) {
