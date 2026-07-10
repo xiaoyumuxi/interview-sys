@@ -635,6 +635,64 @@ func (s *Service) GetSession(ctx context.Context, sessionID string) (Session, er
 	return session, nil
 }
 
+func (s *Service) ListSessions(ctx context.Context, userID string, status string, limit int) (items []Session, err error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, errors.New("user_id is required")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	query := `
+SELECT session_id, COALESCE(user_id,''), skill_id, session_status, flow_status, phase,
+       current_question_id, current_question_number, answer_round, follow_up_count, max_follow_ups,
+       total_score, metadata, last_error, created_at, updated_at, finished_at
+FROM interview_sessions
+WHERE user_id=$1`
+	args := []any{userID}
+	if status = strings.TrimSpace(status); status != "" {
+		args = append(args, status)
+		query += " AND session_status=$2"
+	}
+	args = append(args, limit)
+	query += " ORDER BY updated_at DESC LIMIT $" + strconv.Itoa(len(args))
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+	for rows.Next() {
+		var item Session
+		var metadataRaw []byte
+		var currentQuestionID sql.NullString
+		var createdAt, updatedAt time.Time
+		var finishedAt sql.NullTime
+		if err := rows.Scan(
+			&item.SessionID, &item.UserID, &item.SkillID, &item.SessionStatus, &item.FlowStatus, &item.Phase,
+			&currentQuestionID, &item.CurrentQuestionNumber, &item.AnswerRound, &item.FollowUpCount, &item.MaxFollowUps,
+			&item.TotalScore, &metadataRaw, &item.LastError, &createdAt, &updatedAt, &finishedAt,
+		); err != nil {
+			return nil, err
+		}
+		item.CurrentQuestionID = currentQuestionID.String
+		_ = json.Unmarshal(metadataRaw, &item.Metadata)
+		if item.Metadata == nil {
+			item.Metadata = map[string]any{}
+		}
+		item.CreatedAt = createdAt.Format(time.RFC3339)
+		item.UpdatedAt = updatedAt.Format(time.RFC3339)
+		if finishedAt.Valid {
+			item.FinishedAt = finishedAt.Time.Format(time.RFC3339)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Service) SubmitAnswer(ctx context.Context, sessionID string, req SubmitAnswerRequest) (map[string]any, error) {
 	answer := strings.TrimSpace(req.UserAnswer)
 	if answer == "" {

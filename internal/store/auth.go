@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,6 +129,49 @@ WHERE lower(email)=lower($1)`, normalizeEmail(email))
 		return User{}, false, err
 	}
 	return item, true, nil
+}
+
+func (s *Store) ListUsers(ctx context.Context, role string, status string, limit int) (items []User, err error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	query := `
+SELECT user_id, display_name, COALESCE(email,''), COALESCE(password_hash,''), role, status,
+       last_login_at, created_at, updated_at
+FROM app_users`
+	args := []any{}
+	clauses := []string{}
+	if role = strings.TrimSpace(role); role != "" {
+		args = append(args, role)
+		clauses = append(clauses, "role=$"+strconv.Itoa(len(args)))
+	}
+	if status = strings.TrimSpace(status); status != "" {
+		args = append(args, status)
+		clauses = append(clauses, "status=$"+strconv.Itoa(len(args)))
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	args = append(args, limit)
+	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+	for rows.Next() {
+		item, scanErr := scanUser(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Store) UpdateLastLogin(ctx context.Context, userID string) error {

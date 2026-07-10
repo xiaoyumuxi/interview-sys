@@ -50,6 +50,14 @@ type Question struct {
 	Status            string   `json:"status"`
 }
 
+// CandidateView removes authoring-only material before a question crosses the
+// learner API boundary. The full record remains available to root workflows.
+func (q Question) CandidateView() Question {
+	q.ReferenceSolution = ""
+	q.Explanation = ""
+	return q
+}
+
 type TestCase struct {
 	TestCaseID     string `json:"test_case_id"`
 	QuestionID     string `json:"question_id"`

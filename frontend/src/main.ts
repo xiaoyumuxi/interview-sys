@@ -72,10 +72,12 @@ import {
 } from "lucide";
 
 type View = "dashboard" | "interview" | "coding" | "memory" | "ops" | "evaluation";
+type AccessPortal = "candidate" | "admin";
+type AuthMode = "login" | "register";
 type LoadState<T> = { loading: boolean; error: string; data: T };
 type RoomPanel = "briefing" | "participants" | "notes";
 type RunbookState = "done" | "active" | "pending";
-type AdminPanel = "overview" | "providers" | "workers" | "judge";
+type AdminPanel = "overview" | "users" | "providers" | "workers" | "judge";
 
 interface EmptyAction {
   label: string;
@@ -91,6 +93,12 @@ interface AppState {
   accessToken: string;
   refreshToken: string;
   toast: string;
+  access: {
+    portal: AccessPortal;
+    mode: AuthMode;
+    loading: boolean;
+    error: string;
+  };
   skills: Skill[];
   settings: {
     open: boolean;
@@ -140,12 +148,13 @@ interface AppState {
 }
 
 interface DashboardData {
-  evalRuns: EvaluationRun[];
+  sessions: InterviewSession[];
   submissions: CodingSubmission[];
 }
 
 interface AdminData {
   health: JsonObject | null;
+  users: JsonObject[];
   providers: JsonObject[];
   routes: JsonObject[];
   worker: JsonObject | null;
@@ -250,11 +259,17 @@ const state: AppState = {
   accessToken: localStorage.getItem("frontend:access_token") ?? "",
   refreshToken: localStorage.getItem("frontend:refresh_token") ?? "",
   toast: "",
+  access: {
+    portal: normalizeAccessPortal(localStorage.getItem("frontend:access_portal")),
+    mode: "login",
+    loading: false,
+    error: ""
+  },
   skills: [],
   settings: {
     open: false
   },
-  dashboard: { loading: false, error: "", data: { evalRuns: [], submissions: [] } },
+  dashboard: { loading: false, error: "", data: { sessions: [], submissions: [] } },
   interview: { session: null, trace: [], report: null, answer: "", dryRun: true, error: "", loading: false },
   meeting: {
     micOn: localStorage.getItem("frontend:meeting:mic") === "on",
@@ -279,7 +294,7 @@ const state: AppState = {
     error: ""
   },
   memory: { loading: false, error: "", data: {} },
-  admin: { loading: false, error: "", panel: "overview", data: { health: null, providers: [], routes: [], worker: null, judge: null } },
+  admin: { loading: false, error: "", panel: "overview", data: { health: null, users: [], providers: [], routes: [], worker: null, judge: null } },
   evaluation: { cases: [], runs: [], selectedCaseId: "", lastRun: null, loading: false, error: "" }
 };
 
@@ -628,8 +643,10 @@ function icon(name: string, className = "ui-icon"): string {
 }
 
 function renderLogin(): string {
+  const adminPortal = state.access.portal === "admin";
+  const registering = !adminPortal && state.access.mode === "register";
   return `
-    <main class="login-screen">
+    <main class="login-screen ${adminPortal ? "admin-access" : "candidate-access"}">
       <section class="login-shell">
         <div class="login-story">
           <div class="brand-row login-brand">
@@ -640,45 +657,89 @@ function renderLogin(): string {
             </div>
           </div>
           <div class="login-thesis">
-            <span class="eyebrow">Practice intelligence</span>
-            <h1>Train the signal,<br /><em>not the script.</em></h1>
-            <p>One focused workspace for interview practice, code judging, durable memory and measurable improvement.</p>
+            <span class="eyebrow">${adminPortal ? "Operations control" : "Practice intelligence"}</span>
+            <h1>${adminPortal ? "Keep training reliable,<br /><em>without entering it.</em>" : "Train the signal,<br /><em>not the script.</em>"}</h1>
+            <p>${adminPortal ? "A protected control plane for provider routing, asynchronous workers, judge health and quality regression." : "One focused workspace for interview practice, code judging, durable memory and measurable improvement."}</p>
           </div>
-          <div class="signal-rail" aria-label="Training loop">
-            ${loginSignal("01", "Practice", "Answer with intent", "messages-square", "active")}
-            ${loginSignal("02", "Evaluate", "Make evidence visible", "activity", "")}
-            ${loginSignal("03", "Improve", "Carry insight forward", "waypoints", "")}
+          <div class="signal-rail" aria-label="${adminPortal ? "Operations boundaries" : "Training loop"}">
+            ${adminPortal ? `
+              ${loginSignal("01", "Route", "Control model traffic", "waypoints", "active")}
+              ${loginSignal("02", "Observe", "Inspect async lanes", "radio", "")}
+              ${loginSignal("03", "Verify", "Run quality checks", "clipboard-check", "")}
+            ` : `
+              ${loginSignal("01", "Practice", "Answer with intent", "messages-square", "active")}
+              ${loginSignal("02", "Evaluate", "Make evidence visible", "activity", "")}
+              ${loginSignal("03", "Improve", "Carry insight forward", "waypoints", "")}
+            `}
           </div>
           <div class="story-footnote">
             ${icon("shield-check")}
-            <span>Provider keys and business state stay behind the Go API boundary.</span>
+            <span>${adminPortal ? "Administrative APIs require the root role at the Go API boundary." : "Your sessions, submissions and reviewed memory stay scoped to your account."}</span>
           </div>
         </div>
         <div class="login-access">
+          <div class="portal-switch" role="tablist" aria-label="Choose access portal">
+            <button class="portal-option ${adminPortal ? "" : "active"}" data-action="set-access-portal" data-portal="candidate" role="tab" aria-selected="${adminPortal ? "false" : "true"}">${icon("user-round")}<span><strong>Candidate</strong><small>Practice workspace</small></span></button>
+            <button class="portal-option ${adminPortal ? "active" : ""}" data-action="set-access-portal" data-portal="admin" role="tab" aria-selected="${adminPortal ? "true" : "false"}">${icon("shield-check")}<span><strong>Administrator</strong><small>Operations console</small></span></button>
+          </div>
           <div class="access-heading">
-            <span class="access-icon">${icon("sparkles")}</span>
+            <span class="access-icon">${icon(adminPortal ? "server-cog" : registering ? "plus" : "sparkles")}</span>
             <div>
-              <span class="eyebrow">Workspace access</span>
-              <h2>Welcome back</h2>
-              <p>Continue your next focused practice loop.</p>
+              <span class="eyebrow">${adminPortal ? "Restricted access" : registering ? "Candidate account" : "Workspace access"}</span>
+              <h2>${adminPortal ? "Operations sign in" : registering ? "Create your account" : "Welcome back"}</h2>
+              <p>${adminPortal ? "Use a provisioned root account to continue." : registering ? "Start a private training workspace." : "Continue your next focused practice loop."}</p>
             </div>
           </div>
           ${languageSwitcher("login-language")}
-          <form id="login-form" class="login-form">
-            <label>
-              Email
-              <input name="email" type="email" autocomplete="email" value="root@example.local" required />
-            </label>
-            <label>
-              Password
-              <input name="password" type="password" autocomplete="current-password" value="RootChangeMe123!" required />
-            </label>
-            <button class="button primary login-submit" type="submit"><span>Sign in</span>${icon("arrow-right")}</button>
-          </form>
-          <p class="muted login-help">Use the local root account from the backend bootstrap, or any user created through the API.</p>
+          ${state.access.error ? banner(state.access.error, "error") : ""}
+          ${registering ? renderRegisterForm() : renderLoginForm(adminPortal)}
+          ${adminPortal ? `
+            <p class="muted login-help">Administrator accounts are provisioned by the backend. Public registration always creates a candidate account.</p>
+          ` : `
+            <div class="auth-mode-row">
+              <span>${registering ? "Already have an account?" : "New to InterviewOS?"}</span>
+              <button class="text-button" data-action="set-auth-mode" data-mode="${registering ? "login" : "register"}">${registering ? "Sign in" : "Create account"}</button>
+            </div>
+          `}
         </div>
       </section>
     </main>
+  `;
+}
+
+function renderLoginForm(adminPortal: boolean): string {
+  return `
+    <form id="login-form" class="login-form" aria-busy="${state.access.loading ? "true" : "false"}">
+      <label>
+        Email
+        <input name="email" type="email" autocomplete="email" placeholder="${adminPortal ? "admin@example.com" : "you@example.com"}" required />
+      </label>
+      <label>
+        Password
+        <input name="password" type="password" autocomplete="current-password" minlength="8" required />
+      </label>
+      <button class="button primary login-submit" type="submit" ${state.access.loading ? "disabled" : ""}><span>${state.access.loading ? "Signing in" : "Sign in"}</span>${icon("arrow-right")}</button>
+    </form>
+  `;
+}
+
+function renderRegisterForm(): string {
+  return `
+    <form id="register-form" class="login-form" aria-busy="${state.access.loading ? "true" : "false"}">
+      <label>
+        Display name
+        <input name="display_name" autocomplete="name" placeholder="How should we address you?" required />
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+      </label>
+      <label>
+        Password
+        <input name="password" type="password" autocomplete="new-password" minlength="8" required />
+      </label>
+      <button class="button primary login-submit" type="submit" ${state.access.loading ? "disabled" : ""}><span>${state.access.loading ? "Creating account" : "Create account"}</span>${icon("arrow-right")}</button>
+    </form>
   `;
 }
 
@@ -707,7 +768,15 @@ function renderShell(): string {
           </div>
         </div>
         <div class="sidebar-navigation">
-          <div class="nav-group">
+          ${management ? `
+          <div class="nav-group management-group active-workspace-nav">
+            <span class="nav-label">System management</span>
+            <nav class="nav-list management-nav" aria-label="System management">
+              ${navItem("ops", "Operations", "Runtime control", "server-cog")}
+              ${navItem("evaluation", "Quality lab", "Regression checks", "clipboard-check")}
+            </nav>
+          </div>
+          ` : `<div class="nav-group active-workspace-nav">
             <span class="nav-label">Training workspace</span>
             <nav class="nav-list" aria-label="Training workspace">
               ${navItem("dashboard", "Dashboard", "Your progress", "layout-dashboard")}
@@ -715,25 +784,17 @@ function renderShell(): string {
               ${navItem("coding", "Coding", "Problem solving", "code-2")}
               ${navItem("memory", "Memory", "Personal review", "database")}
             </nav>
-          </div>
-          ${rootUser ? `
-            <div class="nav-group management-group">
-              <span class="nav-label">System management</span>
-              <nav class="nav-list management-nav" aria-label="System management">
-                ${navItem("ops", "Operations", "Runtime control", "server-cog")}
-                ${navItem("evaluation", "Quality lab", "Regression checks", "clipboard-check")}
-              </nav>
-            </div>
-          ` : ""}
+          </div>`}
         </div>
-        <div class="workspace-mode-card ${management ? "management" : "training"}">
+        <button class="workspace-mode-card ${management ? "management" : "training"} ${rootUser ? "switchable" : ""}" ${rootUser ? `data-action="switch-workspace" data-workspace="${management ? "training" : "management"}"` : `aria-disabled="true"`}>
           <span>${icon(management ? "shield-check" : "sparkles")}</span>
           <div>
             <small>${management ? "Admin workspace" : "Training workspace"}</small>
             <strong>${management ? "System mode" : "Focus mode"}</strong>
-            <p>${management ? "Root-only configuration and runtime state." : "Practice, review and improve without operational noise."}</p>
+            <p>${rootUser ? (management ? "Switch to your personal training workspace." : "Switch to the root-only operations console.") : "Practice, review and improve without operational noise."}</p>
           </div>
-        </div>
+          ${rootUser ? icon("arrow-right") : ""}
+        </button>
       </aside>
       <section class="workspace">
         <header class="topbar">
@@ -790,10 +851,9 @@ function renderPage(): string {
 function renderDashboard(): string {
   const data = state.dashboard.data;
   const scoredSubmissions = data.submissions.filter((item) => Number.isFinite(Number(item.score)) && Number(item.score) > 0);
+  const acceptedSubmissions = data.submissions.filter((item) => item.status === "accepted");
+  const passRate = data.submissions.length ? Math.round((acceptedSubmissions.length / data.submissions.length) * 100) : 0;
   const bestScore = scoredSubmissions.length ? Math.max(...scoredSubmissions.map((item) => Number(item.score))) : 0;
-  const averageScore = scoredSubmissions.length
-    ? Math.round(scoredSubmissions.reduce((sum, item) => sum + Number(item.score), 0) / scoredSubmissions.length)
-    : 0;
   return `
     ${state.dashboard.error ? banner(state.dashboard.error, "error") : ""}
     <section class="console-hero training-hero">
@@ -815,10 +875,10 @@ function renderDashboard(): string {
       </div>
     </section>
     <section class="metric-grid">
-      ${metricCard("Coding attempts", String(data.submissions.length), "recent submissions", "teal", "code-2")}
+      ${metricCard("Interview sessions", String(data.sessions.length), "recent practice rooms", "teal", "messages-square")}
+      ${metricCard("Coding attempts", String(data.submissions.length), "recent submissions", "blue", "code-2")}
       ${metricCard("Best score", String(bestScore), "personal best", "blue", "flag")}
-      ${metricCard("Average score", String(averageScore), "scored attempts", "amber", "activity")}
-      ${metricCard("Review signals", String(data.evalRuns.length), "quality records", "cyan", "clipboard-check")}
+      ${metricCard("Pass rate", `${passRate}%`, "accepted attempts", "cyan", "clipboard-check")}
     </section>
     <section class="content-grid two">
       <article class="card">
@@ -832,12 +892,18 @@ function renderDashboard(): string {
       </article>
       <article class="card">
         <div class="section-head">
-          <div><h2>Recent feedback</h2><p>Quality signals captured from your recent practice.</p></div>
+          <div><h2>Recent interviews</h2><p>Resume an unfinished room or review a completed session.</p></div>
         </div>
-        ${table(
-          ["Case", "Task", "Status", "Score"],
-          data.evalRuns.map((item) => [item.case_id, item.task_type, statusBadge(item.status), String(Math.round(item.score))])
-        )}
+        <div class="session-history-list">
+          ${data.sessions.map((session) => `
+            <button class="session-history-item" data-session-id="${escapeAttr(session.session_id)}">
+              <span class="session-history-icon">${icon("messages-square")}</span>
+              <span><strong>${escapeHtml(session.skill_id)}</strong><small>${formatTime(session.updated_at)} · ${session.current_question_number} questions</small></span>
+              ${statusBadge(session.session_status)}
+              ${icon("arrow-right")}
+            </button>
+          `).join("") || emptyState("No interview history", "Start your first interview to create a resumable session.")}
+        </div>
       </article>
     </section>
     <section class="card practice-loop-card">
@@ -1717,6 +1783,7 @@ function renderAdmin(): string {
   const pendingClaims = sumMetric(arrayRecords(queue.groups), "pending");
   const judge = record(data.judge);
   const enabledProviders = data.providers.filter((item) => item.enabled === true).length;
+  const candidateCount = data.users.filter((item) => item.role === "user").length;
   const healthStatus = stringValue(data.health?.status, "unknown");
   return `
     ${state.admin.error ? banner(state.admin.error, "error") : ""}
@@ -1739,6 +1806,7 @@ function renderAdmin(): string {
     </section>
     <section class="metric-grid admin-metric-grid ops-snapshot-grid">
       ${metricCard("API status", healthStatus, "Go Core API", healthStatus.toLowerCase() === "ok" ? "teal" : "amber", "monitor-up")}
+      ${metricCard("Candidate accounts", numberLabel(candidateCount), "registered learners", "cyan", "users")}
       ${metricCard("Providers enabled", `${enabledProviders}/${data.providers.length}`, "configured providers", "blue", "server-cog")}
       ${metricCard("Task routes", numberLabel(data.routes.length), "routing decisions", "cyan", "waypoints")}
       ${metricCard("Judge queued", numberLabel(judge.queued), "awaiting execution", numericValue(judge.queued) > 0 ? "amber" : "teal", "code-2")}
@@ -1750,6 +1818,7 @@ function renderAdmin(): string {
         </div>
         <nav class="settings-nav admin-panel-nav" aria-label="Operations panels">
           ${adminPanelButton("overview", "Overview", "Health and boundaries", "layout-dashboard")}
+          ${adminPanelButton("users", "Accounts", "Candidates and access", "users")}
           ${adminPanelButton("providers", "Providers", "Models and task routes", "waypoints")}
           ${adminPanelButton("workers", "Workers", "Queue and outbox state", "radio")}
           ${adminPanelButton("judge", "Coding judge", "Submission execution", "code-2")}
@@ -1773,6 +1842,28 @@ function adminPanelButton(panel: AdminPanel, label: string, hint: string, iconNa
 
 function renderAdminPanel(): string {
   const data = state.admin.data;
+  if (state.admin.panel === "users") {
+    return `
+      <div class="settings-section">
+        ${adminPanelHeading("Account directory", "Inspect candidate and root accounts without exposing credentials or training content.", "users")}
+        <div class="settings-section-body">
+          <section class="settings-block">
+            <div class="settings-block-head"><h3>Platform accounts</h3><span>${data.users.length} accounts</span></div>
+            ${table(
+              ["Name", "Email", "Role", "Status", "Last sign in"],
+              data.users.map((item) => [
+                escapeHtml(stringValue(item.display_name, "-")),
+                escapeHtml(stringValue(item.email, "-")),
+                statusBadge(stringValue(item.role, "user")),
+                statusBadge(stringValue(item.status, "unknown")),
+                escapeHtml(formatTime(stringValue(item.last_login_at, "") || undefined))
+              ])
+            )}
+          </section>
+        </div>
+      </div>
+    `;
+  }
   if (state.admin.panel === "providers") {
     return `
       <div class="settings-section">
@@ -1914,6 +2005,24 @@ function bindEvents(): void {
     const form = new FormData(event.currentTarget as HTMLFormElement);
     void handleLogin(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
   });
+  document.querySelector<HTMLFormElement>("#register-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget as HTMLFormElement);
+    void handleRegister(
+      String(form.get("display_name") ?? ""),
+      String(form.get("email") ?? ""),
+      String(form.get("password") ?? "")
+    );
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-access-portal']").forEach((button) => {
+    button.addEventListener("click", () => setAccessPortal(normalizeAccessPortal(button.dataset.portal)));
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-action='set-auth-mode']").forEach((button) => {
+    button.addEventListener("click", () => setAuthMode(button.dataset.mode === "register" ? "register" : "login"));
+  });
+  document.querySelector<HTMLButtonElement>("[data-action='switch-workspace']")?.addEventListener("click", () => {
+    void switchWorkspace();
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-action='set-locale']").forEach((button) => {
     button.addEventListener("click", () => {
       setLocale(normalizeLocale(button.dataset.locale));
@@ -2024,6 +2133,9 @@ function bindEvents(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-action='run-evaluation']").forEach((button) => {
     button.addEventListener("click", () => void runEvaluation(button.dataset.caseId ?? ""));
   });
+  document.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => {
+    button.addEventListener("click", () => void resumeInterviewSession(button.dataset.sessionId ?? ""));
+  });
 }
 
 async function navigate(view: View): Promise<void> {
@@ -2070,16 +2182,71 @@ async function handleLogin(email: string, password: string): Promise<void> {
     toast(ui("Enter email and password"));
     return;
   }
+  state.access.loading = true;
+  state.access.error = "";
+  render();
   try {
     const auth = await api.login(email, password);
+    if (state.access.portal === "admin" && auth.user.role !== "root") {
+      await api.logout().catch(() => undefined);
+      api.clearTokens();
+      throw new Error("This account does not have administrator access.");
+    }
+    state.view = state.access.portal === "admin" ? "ops" : "dashboard";
+    localStorage.setItem("frontend:view", state.view);
     saveAuth(auth);
     enforceViewAccess();
     await loadInitialData();
     toast(ui("Signed in"));
   } catch (error) {
-    toast(errorMessage(error));
+    state.access.error = errorMessage(error);
+  } finally {
+    state.access.loading = false;
   }
   render();
+}
+
+async function handleRegister(displayName: string, email: string, password: string): Promise<void> {
+  if (!displayName.trim() || !email.trim() || password.length < 8) {
+    state.access.error = "Enter a display name, a valid email and a password with at least 8 characters.";
+    render();
+    return;
+  }
+  state.access.loading = true;
+  state.access.error = "";
+  render();
+  try {
+    const auth = await api.register(displayName, email, password);
+    state.view = "dashboard";
+    localStorage.setItem("frontend:view", state.view);
+    saveAuth(auth);
+    await loadInitialData();
+    toast(ui("Account created"));
+  } catch (error) {
+    state.access.error = errorMessage(error);
+  } finally {
+    state.access.loading = false;
+  }
+  render();
+}
+
+function setAccessPortal(portal: AccessPortal): void {
+  state.access.portal = portal;
+  state.access.mode = "login";
+  state.access.error = "";
+  localStorage.setItem("frontend:access_portal", portal);
+  render();
+}
+
+function setAuthMode(mode: AuthMode): void {
+  state.access.mode = state.access.portal === "admin" ? "login" : mode;
+  state.access.error = "";
+  render();
+}
+
+async function switchWorkspace(): Promise<void> {
+  if (!canManageSystem()) return;
+  await navigate(isManagementView(state.view) ? "dashboard" : "ops");
 }
 
 async function handleLogout(): Promise<void> {
@@ -2104,16 +2271,33 @@ async function loadDashboard(): Promise<void> {
   state.dashboard.loading = true;
   state.dashboard.error = "";
   render();
-  const [evalRuns, submissions] = await Promise.allSettled([
-    api.listEvaluationRuns(),
+  const [sessions, submissions] = await Promise.allSettled([
+    api.listInterviewSessions(),
     api.listCodingSubmissions()
   ]);
   state.dashboard.data = {
-    evalRuns: settledValue(evalRuns, []),
+    sessions: settledValue(sessions, []),
     submissions: settledValue(submissions, [])
   };
-  state.dashboard.error = firstError([evalRuns, submissions]);
+  state.dashboard.error = firstError([sessions, submissions]);
   state.dashboard.loading = false;
+  render();
+}
+
+async function resumeInterviewSession(sessionID: string): Promise<void> {
+  if (!sessionID) return;
+  state.interview.loading = true;
+  state.interview.error = "";
+  render();
+  try {
+    state.interview.session = await api.getInterviewSession(sessionID);
+    state.view = "interview";
+    localStorage.setItem("frontend:view", state.view);
+  } catch (error) {
+    state.interview.error = errorMessage(error);
+  } finally {
+    state.interview.loading = false;
+  }
   render();
 }
 
@@ -2219,8 +2403,9 @@ async function loadAdmin(): Promise<void> {
   state.admin.loading = true;
   state.admin.error = "";
   render();
-  const [health, providers, routes, worker, judge] = await Promise.allSettled([
+  const [health, users, providers, routes, worker, judge] = await Promise.allSettled([
     api.health(),
+    api.listAdminUsers(),
     api.listProviders(),
     api.listProviderRoutes(),
     api.workerSummary(),
@@ -2228,12 +2413,13 @@ async function loadAdmin(): Promise<void> {
   ]);
   state.admin.data = {
     health: settledValue(health, null),
+    users: settledValue(users, []),
     providers: settledValue(providers, []),
     routes: settledValue(routes, []),
     worker: settledValue(worker, null),
     judge: settledValue(judge, null)
   };
-  state.admin.error = firstError([health, providers, routes, worker, judge]);
+  state.admin.error = firstError([health, users, providers, routes, worker, judge]);
   state.admin.loading = false;
   render();
 }
@@ -2608,8 +2794,8 @@ function clearAuth(): void {
     state.view = "dashboard";
     localStorage.setItem("frontend:view", state.view);
   }
-  state.dashboard = { loading: false, error: "", data: { evalRuns: [], submissions: [] } };
-  state.admin = { loading: false, error: "", panel: "overview", data: { health: null, providers: [], routes: [], worker: null, judge: null } };
+  state.dashboard = { loading: false, error: "", data: { sessions: [], submissions: [] } };
+  state.admin = { loading: false, error: "", panel: "overview", data: { health: null, users: [], providers: [], routes: [], worker: null, judge: null } };
   state.evaluation = { cases: [], runs: [], selectedCaseId: "", lastRun: null, loading: false, error: "" };
   localStorage.removeItem("frontend:access_token");
   localStorage.removeItem("frontend:refresh_token");
@@ -2987,8 +3173,12 @@ function normalizeView(value: string | null | undefined): View {
   return "dashboard";
 }
 
+function normalizeAccessPortal(value: string | null | undefined): AccessPortal {
+  return value === "admin" ? "admin" : "candidate";
+}
+
 function normalizeAdminPanel(value: string | null | undefined): AdminPanel {
-  if (value === "providers" || value === "workers" || value === "judge") {
+  if (value === "users" || value === "providers" || value === "workers" || value === "judge") {
     return value;
   }
   return "overview";

@@ -59,6 +59,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.PUT("/providers/:provider_id", api.requireRoot(), api.updateProvider)
 	group.DELETE("/providers/:provider_id", api.requireRoot(), api.deleteProvider)
 	group.POST("/providers/test", api.requireRoot(), api.testProvider)
+	group.GET("/admin/users", api.requireRoot(), api.listAdminUsers)
 	group.GET("/provider-routes", api.requireRoot(), api.listProviderRoutes)
 	group.PUT("/provider-routes/:task_type", api.requireRoot(), api.updateProviderRoute)
 	group.GET("/skills", api.listSkills)
@@ -76,6 +77,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	group.GET("/memory/profile", api.getMemoryProfile)
 	group.GET("/memory/search", api.searchMemory)
 	group.GET("/memory/reviews/due", api.listDueMemoryReviews)
+	group.GET("/interview-sessions", api.listInterviewSessions)
 	group.POST("/interview-sessions", api.createInterviewSession)
 	group.GET("/interview-sessions/:session_id", api.getInterviewSession)
 	group.POST("/interview-sessions/:session_id/answers", api.submitInterviewAnswer)
@@ -115,6 +117,16 @@ func (h apiHandler) health(c *gin.Context) {
 		"app_env":        h.deps.Config.AppEnv,
 		"time":           time.Now().Format(time.RFC3339),
 	})
+}
+
+func (h apiHandler) listAdminUsers(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	items, err := h.deps.Store.ListUsers(c.Request.Context(), c.Query("role"), c.Query("status"), limit)
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "admin_users_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "admin.users.v1", "items": items})
 }
 
 func (h apiHandler) listProviders(c *gin.Context) {
@@ -403,6 +415,16 @@ func (h apiHandler) createInterviewSession(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"schema_version": "interview.session.v1", "item": item})
 }
 
+func (h apiHandler) listInterviewSessions(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	items, err := h.deps.InterviewService.ListSessions(c.Request.Context(), currentUserID(c), c.Query("status"), limit)
+	if err != nil {
+		writeGinError(c, http.StatusInternalServerError, "interview_sessions_failed", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"schema_version": "interview.session.list.v1", "items": items})
+}
+
 func (h apiHandler) getInterviewSession(c *gin.Context) {
 	item, err := h.deps.InterviewService.GetSession(c.Request.Context(), c.Param("session_id"))
 	if err != nil {
@@ -550,6 +572,13 @@ func (h apiHandler) getQuestion(c *gin.Context) {
 	if !ok {
 		writeGinError(c, http.StatusNotFound, "coding_question_not_found", "question_id is not registered")
 		return
+	}
+	if currentRole(c) != "root" {
+		if item.Status != "published" {
+			writeGinError(c, http.StatusNotFound, "coding_question_not_found", "question_id is not published or does not exist")
+			return
+		}
+		item = item.CandidateView()
 	}
 	c.JSON(http.StatusOK, item)
 }

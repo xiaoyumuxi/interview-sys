@@ -196,6 +196,20 @@ export class ApiClient {
     };
   }
 
+  async register(displayName: string, email: string, password: string): Promise<ApiState> {
+    const response = await this.request<{ user: User; tokens: TokenPair }>("/api/auth/register", {
+      method: "POST",
+      auth: false,
+      body: { display_name: displayName, email, password }
+    });
+    this.setTokens(response.tokens.access_token, response.tokens.refresh_token);
+    return {
+      user: response.user,
+      accessToken: response.tokens.access_token,
+      refreshToken: response.tokens.refresh_token
+    };
+  }
+
   async me(): Promise<User> {
     const response = await this.request<{ user: User }>("/api/auth/me");
     return response.user;
@@ -224,6 +238,10 @@ export class ApiClient {
       }
     });
     return response.item;
+  }
+
+  async listInterviewSessions(): Promise<InterviewSession[]> {
+    return this.items<InterviewSession>("/api/interview-sessions?limit=12");
   }
 
   async getInterviewSession(sessionId: string): Promise<InterviewSession> {
@@ -320,6 +338,10 @@ export class ApiClient {
 
   async listProviders(): Promise<JsonObject[]> {
     return this.items<JsonObject>("/api/providers");
+  }
+
+  async listAdminUsers(): Promise<JsonObject[]> {
+    return this.items<JsonObject>("/api/admin/users?limit=100");
   }
 
   async listProviderRoutes(): Promise<JsonObject[]> {
