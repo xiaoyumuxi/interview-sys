@@ -4,14 +4,14 @@
 
 ## 当前定位
 
-本项目是个人 AI 面试训练平台单体工程，当前已经从后端闭环推进到“可用工作台 + 异步运行时 + 代码判题”的产品闭环雏形。Go Core API 负责确定性业务事实、状态机、幂等和审计；Python AI Runtime 负责模型调用、Prompt、结构化输出、memory 和后续 RAG/Agent 推理；Web Frontend 负责把面试、代码题、记忆审核、设置和评测串成可操作流程。
+本项目是个人 AI 面试训练平台单体工程，当前已经从后端闭环推进到“候选人训练工作区 + root 运营工作区 + 异步运行时 + 代码判题”的产品闭环雏形。Go Core API 负责确定性业务事实、状态机、用户隔离、权限、幂等和审计；Python AI Runtime 负责模型调用、Prompt、结构化输出、memory 和后续 RAG/Agent 推理；Web Frontend 负责把个人训练与系统运维分区呈现。
 
 当前不做招聘 SaaS、组织协作、候选人邀请和反作弊。这些能力只保留接口和设计余量。前端当前采用轻量 Vanilla TypeScript 工作台，先服务个人训练闭环，不引入重型前端框架或复杂组件体系。
 
 ## 已完成
 
 - Go Core API、Gin 路由、健康检查和基础 HTTP API。
-- Auth/User：JWT 双 Token、bcrypt 密码哈希、refresh token 哈希存储、默认 root。
+- Auth/User：候选人公开注册、JWT 双 Token、bcrypt 密码哈希、refresh token 哈希存储、默认 root、root-only 用户目录。
 - Docker Compose 中间件：PostgreSQL + pgvector、Redis、MinIO。
 - 跨平台 bootstrap、init-db 和 middleware manifest 检查脚本。
 - Provider 配置入库，支持 DeepSeek 和 OpenAI-compatible。
@@ -27,6 +27,7 @@
 - Memory context admission rules：Go Context Engine 可按 user、task_type、skill、query 和 token budget 引入 approved memory，并返回 evidence/source/reason 级别的 `memory_admission` trace。
 - CodeTop100 / 后端工程题库 schema、seed、OJ 题面字段和查询 API。
 - Interview Runtime session / flow / turn 三层状态机。
+- 当前用户面试会话列表：`GET /api/interview-sessions` 支持 status/limit 过滤，供 dashboard 恢复历史会话。
 - Answer 提交异步化：API 返回 `202 Accepted`，worker 消费 Redis Stream 后评估。
 - PostgreSQL local outbox `async_messages`，支持 Redis Stream 补投、重试和 dedup。
 - Redis single-flight、短 TTL Redis 协调、stale turn reclaim 和数据库幂等。
@@ -40,7 +41,7 @@
 - Coding judge worker MVP：Go 支持 queued submission claim、running/terminal 状态推进、`code_evaluation_traces` 写入和 `GET /api/ops/coding-judge/summary`；`docker` 每次创建临时禁网容器，`docker_warm` 复用按语言命名的 stopped container 并用 tmpfs 回到初始状态，二者都支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序和可配置镜像；`native_trusted` 可直接调用本机工具链加快本地可信开发，默认 disabled evaluator 不执行用户代码。
 - Coding completion profile API：`POST /api/coding/completions` 根据语言、题目标签、源码和前缀返回 starter、后端数据化标准库 catalog、局部符号和常见题型模式；这是确定性建议服务，不调用模型、不写数据库，不替代完整 LSP。
 - Evaluation Harness MVP：root-only `/api/evaluation/*` 支持样例 case 管理、dry-run 或真实 runtime 运行、`required_fields/contains/equals` 可配置断言、质量分数、错误 run 记录和 agent trace 关联。
-- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite + Monaco Editor，支持登录、中文/英文切换、lucide 图标、工作台概览、会议式面试房间、代码题、memory review、admin 和 evaluation harness 接入；交互层包含状态条、loading/disabled 状态、表单校验、输入保留、空状态动作、危险操作确认、本地可配置会议控制条和 Companion 面板；代码题 IDE 支持语言草稿切换、OJ 题面规格块、verdict 摘要、当前文件符号扫描、编辑快捷 snippets、completion profile 有界缓存和 Go API `POST /api/coding/completions` 返回的题目感知建议；标准库建议从后端数据化 catalog 读取，不再由前端维护 API 表。完整语义补全仍需后续接 LSP。
+- Web Frontend Workbench MVP：`frontend` 使用 Vanilla TypeScript + CSS + Vite + Monaco Editor，提供候选人/管理员双入口；候选人可注册并进入训练工作区，dashboard 展示个人会话与提交历史并支持会话恢复；root 可在训练与运营工作区间切换，运营区包含用户目录、Provider、worker、judge 和 Quality Lab。面试房间、memory review、中英文切换、状态反馈、会议控制层和代码题轻量语义补全保持可用；完整语义补全仍需后续接 LSP。
 
 ## 下一批任务
 
@@ -52,7 +53,9 @@
    - 面试房间继续接入真实音视频、ASR/TTS、共享题面同步和后端 notes API；当前麦克风、摄像头、字幕、共享题面和笔记是本地可配置状态。
    - Evaluation Harness 增加 assertion 明细、失败解释、批量回归汇总和 latency/cost 指标。
    - Admin 增加 Provider route 编辑、连通性测试入口、worker health drill-down 和 coding judge 配置可视化。
-   - 增加前端 smoke 测试，覆盖登录页、语言切换、Monaco 代码题 IDE、导航、关键按钮状态和核心表单校验。
+   - 用户目录从只读列表扩展到受审计的状态管理；保持公开注册只能创建普通用户。
+   - 评估 token 存储从 `localStorage` 迁移到 HttpOnly Cookie/BFF 会话的收益与改造成本。
+   - 增加前端 smoke 测试，覆盖候选人注册、管理员入口、角色隔离、工作区切换、语言切换、Monaco 代码题 IDE 和核心表单校验。
 
 2. Coding judge runner 增强。
    - 当前 Docker sandbox MVP 支持 Go、Java、Python、JavaScript、TypeScript、C++ 完整程序。

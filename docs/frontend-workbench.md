@@ -1,17 +1,26 @@
 # 前端工作台
 
-`frontend` 是面向用户的训练工作台，不是后端 API 调试页。它使用 Vanilla TypeScript、CSS、Vite、Monaco Editor 和少量图标依赖，目标是在不引入重型前端框架和语言服务进程的前提下，把 Go Core API、Worker、Python Runtime 和 Evaluation Harness 串成可操作的训练流程。
+`frontend` 是面向候选人和管理员的双工作区产品界面，不是后端 API 调试页。它使用 Vanilla TypeScript、CSS、Vite、Monaco Editor 和少量图标依赖：候选人工作区承载个人训练闭环，root-only 运营工作区承载系统运维与质量回归，两者都只通过 Go Core API 访问业务能力。
+
+## 访问与权限模型
+
+- 登录页提供 `Candidate` 和 `Administrator` 两个入口，并把最近选择保存到 `localStorage`。
+- 候选人入口支持登录和注册；`POST /api/auth/register` 只创建普通 `user`，密码至少 8 个字符。
+- 管理员入口只允许 `root` 登录。普通用户即使凭据正确，也会被前端立即登出；真正的授权仍由 Go API 的 root middleware 强制执行。
+- 普通用户只能看到训练工作区。root 可以通过侧边栏工作区卡片在训练工作区和运营工作区之间切换。
+- 访问令牌和 refresh token 当前保存在 `localStorage`；API client 在受保护请求中发送 Bearer token，登出时撤销 refresh token 并清理本地凭据。
 
 ## 当前页面
 
 | 页面 | 目的 | 主要交互 |
 |---|---|---|
-| 工作台 | 给用户一个全局入口和运行概览 | 查看 API、队列、outbox、judge 状态；跳转到面试、代码题和 memory review |
+| 训练概览 | 展示当前用户的训练事实 | 查看最近 12 个面试会话和最近代码提交；恢复未完成会话或回看已完成会话 |
 | 面试 | 以直播会议房间的方式完成一次异步面试训练 | 主舞台展示 AI 面试官和题目，参会者小窗展示候选人/Runtime，底部控制条提供静音、摄像头、笔记、共享题面和结束入口；右侧面板管理 session、trace 和 report |
 | 代码题 | 练习并提交完整程序到 judge | 浏览题库、使用 Monaco 轻量 IDE 编辑代码、切换语言草稿、格式化/插入模板/轻量联想补全、提交判题、查看异步 verdict |
 | 记忆 | 审核 Runtime 产出的候选记忆 | 加载 pending candidates、approve/reject，避免未审核 memory 进入 Prompt |
-| 评测 | 维护轻量质量样例 | 保存 evaluation case、dry-run 执行、查看 run 记录和最近结果 |
-| 设置中心 | 管理系统配置和运维信号 | 通过顶部设置按钮打开弹窗，查看 Provider route、Provider 列表、worker summary、coding judge summary 和质量门禁信号 |
+| 运营控制台 | root-only 系统状态与配置入口 | 分面板查看用户目录、Provider/route、worker/outbox/queue 和 coding judge 状态 |
+| 质量实验室 | root-only 轻量质量回归 | 保存 evaluation case、dry-run 执行、查看 run 记录和最近结果 |
+| 设置中心 | 查看当前工作区相关设置与信号 | 通过顶部设置按钮打开弹窗；root 可查看 Provider、Worker、Judge 和质量门禁摘要 |
 
 ## 交互原则
 
@@ -24,7 +33,8 @@
 - 空状态可行动：无题目、无候选记忆等状态会给出明确说明和可点击动作。
 - 危险动作确认：结束面试会话前使用确认对话，避免误触。
 - 双语可切换：语言按钮直接切换中文 / 英文，并保存到 `localStorage`。
-- 配置解耦：Provider、Worker、Judge 等运维配置放到设置弹窗，不混入普通训练导航。
+- 权限分区：普通用户导航只包含 Dashboard、Interview、Coding 和 Memory；Operations 与 Quality Lab 只在 root 运营工作区出现。
+- 配置解耦：Provider、Worker、Judge 等运维能力不混入普通训练导航。
 - 不绕过 Go：前端只通过 Go API 读写业务事实，不直接推进 Python Runtime 或数据库状态。
 
 这些原则对应 Nielsen Norman Group 的可用性启发式中“系统状态可见、错误预防、识别而非记忆、帮助用户恢复错误”等基础要求。
@@ -41,6 +51,7 @@
 - 房间流程：右侧栏用 runbook 展示配置房间、开启题目、发送回答、Runtime 评估和生成报告的当前状态，减少用户对异步后端状态的猜测。
 - 右侧 Companion 面板：提供简报、成员和笔记三个 tab。简报汇总当前题目和本地控制状态；成员展示 AI 面试官、候选人和 Runtime；笔记区域先本地保存，后续可接后端 notes API。
 - 后端事实：创建 session、提交答案、轮询 trace、生成 report 和结束会话仍全部走 Go API，前端不会自行推进业务状态。
+- 会话恢复：训练概览通过 `GET /api/interview-sessions?limit=12` 读取当前用户的会话列表，点击记录后重新加载完整 session 并进入面试房间。Go 按当前认证用户隔离会话。
 
 当前会议控件是轻量状态层，目的是先把用户操作路径、状态反馈和布局稳定性做出来；真正的音视频采集、字幕转写和共享题面同步会作为独立接口继续接入。
 
@@ -63,18 +74,20 @@
 
 Tree-sitter 运行时和六种 grammar 是独立静态资源；页面只请求当前语言 grammar。主线程只处理 Monaco，AST 解析、增量 tree 更新、作用域扫描和候选过滤全部在 Worker 内完成。
 
-## 设置中心
+## 运营工作区与设置中心
 
-系统配置从训练页面中移出，顶部设置按钮会打开类似桌面应用的居中弹窗：
+root 的系统管理从训练导航中移出，运营工作区包含 Overview、Users、Providers、Workers 和 Coding Judge 面板；Quality Lab 单独承载 Evaluation Harness。顶部设置按钮仍会打开类似桌面应用的居中弹窗：
 
-- 左侧分类：General、Providers、Workers、Coding judge、Quality gates。
-- 右侧内容：读取 Go API 返回的 provider route、provider registry、worker summary、judge summary 和质量信号，但默认展示用户可读摘要，不直接暴露 JSON payload。
+- 用户目录：`GET /api/admin/users?limit=100` 返回普通用户与 root 账号的角色、状态和登录信息，仅 root 可访问。
+- 运行状态：运营页并行读取 health、用户、Provider、route、worker summary 和 judge summary，单项失败不会抹掉其他已加载数据。
+- 设置分类：General、Providers、Workers、Coding judge、Quality gates。
+- 设置内容：读取 Go API 返回的 provider route、provider registry、worker summary、judge summary 和质量信号，但默认展示用户可读摘要，不直接暴露完整 JSON payload。
 - 关闭方式：点击弹窗外部不会自动关闭，只能通过关闭按钮或键盘 `Esc` 手动关闭，避免配置时误触丢失上下文。
-- 交互边界：设置中心负责查看和后续配置入口，不改变面试、代码题、memory review 或 evaluation 的用户训练流程。
+- 交互边界：运营工作区和设置中心不改变面试、代码题或 memory review 的用户训练流程；root 切回训练工作区后仍以自己的用户身份访问个人训练事实。
 
 ## 本地启动
 
-前端需要 Node.js 运行 Vite：
+前端需要 Node.js 运行 Vite；CI 当前使用 Node.js 22：
 
 ```bash
 make run-frontend
@@ -94,7 +107,7 @@ make run-runtime
 
 说明：
 
-- 登录、题库、Provider、memory、evaluation 等 API 依赖 Go API。
+- 登录/注册、会话列表、题库、Provider、memory、admin users 和 evaluation 等 API 依赖 Go API。
 - 面试异步评估和代码判题依赖 worker。
 - 非 dry-run 的 Runtime task 和 memory API 依赖 Python Runtime。
 - `make run-frontend` 会通过 Vite dev server 把 `/api` 代理到 Go API。
@@ -114,12 +127,14 @@ make build-frontend
 
 ## 当前限制
 
-- 还不是完整产品级前端：memory、settings 和 evaluation 的细节视图仍需要继续产品化。
+- 还不是完整产品级前端：memory、settings、用户管理和 evaluation 的细节视图仍需要继续产品化。
 - 目前没有路由库，页面切换由本地 state 和 `localStorage` 管理。
-- 没有引入复杂组件库；除 Monaco Editor 和 lucide 图标外，样式集中在 `frontend/src/styles.css`。
+- 没有引入复杂组件库；除 Monaco Editor 和 lucide 图标外，基础样式位于 `frontend/src/styles.css`，双工作区设计系统位于 `frontend/src/design-system.css`。
 - report、trace、worker summary 等仍保留部分 JSON 预览，后续应继续转成更适合用户阅读的结构化视图。
 - 会议房间的麦克风、摄像头、字幕和共享题面当前是本地可配置状态，还没有接入真实设备、ASR/TTS 或同步服务。
-- 暂未实现批量操作、搜索过滤和可配置 dashboard；代码题 IDE 只提供 Monaco 基础快捷键和轻量联想，不提供完整 LSP 语义分析。
+- 管理员用户面板当前只读；暂未实现用户状态/角色变更、批量操作、搜索过滤和可配置 dashboard。
+- 登录 token 当前存放在 `localStorage`，还没有切换为更严格的 HttpOnly Cookie/BFF 会话方案。
+- 代码题 IDE 只提供 Monaco 基础快捷键和轻量联想，不提供完整 LSP 语义分析。
 
 ## 后续方向
 
@@ -127,5 +142,5 @@ make build-frontend
 2. 把 Interview Report 做成正式报告页，减少 raw JSON 暴露。
 3. 给直播面试房间补真实音视频/ASR/TTS 接口契约，当前麦克风、摄像头和共享题面是会议式状态控件。
 4. 给 Evaluation Harness 增加 assertion 明细、失败解释和批量回归汇总。
-5. 给设置中心增加 Provider route 编辑、连通性测试入口和 worker health drill-down。
-6. 增加前端 smoke 测试，覆盖登录页渲染、语言切换、导航和关键按钮状态。
+5. 给运营工作区增加用户状态管理、Provider route 编辑、连通性测试入口和 worker health drill-down。
+6. 增加前端 smoke 测试，覆盖候选人注册、管理员入口、角色隔离、工作区切换、语言切换和关键按钮状态。

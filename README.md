@@ -12,7 +12,7 @@
 ![Queue](https://img.shields.io/badge/Queue-Redis%20Streams-DC382D?logo=redis&logoColor=white)
 ![Database](https://img.shields.io/badge/Database-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
-本仓库是个人 AI 面试训练平台重写工程。Go Core API 负责确定性业务事实、状态机、幂等、审计和对外 API；Python AI Runtime 负责模型调用、Prompt 安全、结构化输出、memory 和后续 Agent/RAG 推理；Web Frontend 提供训练工作台，把面试、代码题、记忆审核、管理和评测串成可操作的用户流程。
+本仓库是个人 AI 面试训练平台重写工程。Go Core API 负责确定性业务事实、状态机、幂等、审计和对外 API；Python AI Runtime 负责模型调用、Prompt 安全、结构化输出、memory 和后续 Agent/RAG 推理；Web Frontend 将候选人训练工作区与 root-only 运营工作区分离，把面试、代码题、记忆审核和系统运维串成清晰的用户流程。
 
 ## 为什么做
 
@@ -29,7 +29,7 @@
 | Go API | `cmd/api` | HTTP 入口、鉴权、Provider、Skill、面试会话、代码题、评测和运维 API |
 | Worker | `cmd/worker` | Redis Stream 消费、outbox 派发、pending reclaim、dead-letter 和可选 coding judge loop |
 | Go 内部包 | `internal` | auth、provider、skill、interview runtime、memory orchestration、context/retrieval、coding、evaluation harness、workqueue、store、routing |
-| Web Frontend | `frontend` | Vanilla TypeScript + Monaco 工作台 UI，内置中英文切换，负责训练、会议式面试房间、代码题、memory review、admin、settings 和 evaluation harness 接入 |
+| Web Frontend | `frontend` | Vanilla TypeScript + Monaco 双工作区 UI：候选人训练工作区与 root-only 运营/质量工作区，内置中英文切换 |
 | AI Runtime | `python-runtime` | FastAPI task endpoint、Prompt 边界、结构化输出和 memory API |
 | 数据库 | `migrations` | PostgreSQL schema、pgvector 扩展和默认 seed |
 | Skill Pack | `skills` | 本地技能包，目前包含 `java-backend` |
@@ -39,7 +39,7 @@
 
 | 能力 | 状态 |
 |---|---|
-| Auth/User | JWT access + refresh token、bcrypt 密码哈希、root-only 管理接口 |
+| Auth/User | 候选人注册、JWT access + refresh token、bcrypt 密码哈希、root-only 用户目录与管理接口 |
 | Provider | DB 驱动配置、模型切换、任务路由、连通性测试、AES-GCM key 保存 |
 | Skill | 本地 Skill Pack 加载、reload、context preview |
 | Interview Runtime | session / flow / turn 状态机，answer 提交返回 `202 Accepted` |
@@ -51,7 +51,7 @@
 | Coding completion | `POST /api/coding/completions` 提供确定性题目感知补全画像，覆盖 starter、后端数据化标准库 catalog、局部符号和常见题目模式 |
 | Memory orchestration | Go `/api/memory/*` 统一入口，负责鉴权、用户隔离、trace/audit；Python 承载 memory 主逻辑 |
 | Memory admission | Context Engine 只把 approved memory 作为 `memory_context` 放入 Prompt，并返回 `memory_admission` 解释 |
-| Web Frontend | Vanilla TypeScript + CSS + Monaco 工作台，Vite 代理 `/api`，支持中英文切换、lucide 图标、会议式面试房间、代码题 IDE、OJ 题面规格块、语言草稿、前后端组合轻量联想补全、本地可配置控制条、Companion 面板、状态条、loading/disabled、表单校验、空状态动作和任务导向下一步 |
+| Web Frontend | 候选人/管理员双入口；训练工作区提供个人会话历史、可恢复面试房间、代码题 IDE 与 memory review；root 运营工作区提供用户目录、Provider、worker、judge 和 Evaluation Harness；保留中英文切换、Monaco 轻量联想和会议式控制层 |
 | Python Runtime | task endpoint、Prompt safety boundary、structured output、memory APIs |
 | Middleware | PostgreSQL + pgvector、Redis、MinIO、可选 Python runtime container |
 
@@ -59,6 +59,7 @@
 
 - Go 1.26 或更高版本
 - Python 3.13 或更高版本
+- Node.js 22（与前端 CI 基线一致）
 - Docker Compose v2
 - `uv`，用于本地 Python Runtime 开发
 - 目标 Provider 的 API key，或 OpenAI-compatible endpoint
@@ -112,22 +113,23 @@ make run-frontend
 
 ## 前端工作台
 
-`frontend` 是给用户使用的训练操作台，不是 API 调试集合。它不引入重型框架，主要依赖 Vanilla TypeScript、CSS、Vite、Monaco Editor 和 `lucide` 图标，把后端能力整理成稳定的训练流程。
+`frontend` 是产品工作台，不是 API 调试集合。它不引入重型框架，主要依赖 Vanilla TypeScript、CSS、Vite、Monaco Editor 和 `lucide` 图标，并按权限拆成候选人训练工作区与 root-only 运营工作区。
 
 当前主要交互：
 
-- 工作台概览：展示 API、worker、outbox、judge 和 evaluation run 状态，并给出下一步入口。
+- 访问入口：候选人入口支持登录和公开注册；管理员入口只允许已由后端 provision 的 `root` 账号登录。公开注册始终创建普通 `user`。
+- 训练概览：展示当前用户最近的面试会话和代码提交，可恢复未完成会话或回看已完成记录。
 - 面试房间：采用会议式布局，包含主舞台、候选人/Runtime 小窗、底部控制条和右侧 Companion 面板。
 - 本地可配置控制：麦克风、摄像头、字幕、共享题面、房间 tab 和笔记会保存到 `localStorage`，方便快速启动和关闭前端会话。
 - 代码题：题库选择、OJ 题面规格块、Monaco 代码编辑、语言草稿切换、前端局部符号/快捷片段 + Go completion profile 组合补全、异步提交和 verdict 展示。
 - 记忆审核：pending candidate 加载、approve/reject，保证只有 approved memory 进入 Prompt。
-- 管理与评测：Provider/worker/judge 概览、evaluation case 保存、dry-run 和 run 记录查看。
+- 运营与评测：root 可在独立工作区查看用户目录、Provider/route、worker/judge 状态，并维护 evaluation case、dry-run 和 run 记录。
 
 面试房间里的控制条当前是用户交互状态层，不会直接采集设备或绕过 Go；创建 session、提交答案、轮询 trace、生成 report 和结束会话仍全部通过 Go API 推进。
 
 ## 默认登录
 
-API 启动时会补齐本地 root 账号：
+API 启动时会补齐本地 root 账号；普通候选人可从前端候选人入口注册：
 
 ```text
 ROOT_EMAIL=root@example.local
@@ -194,12 +196,13 @@ curl -s -X POST http://localhost:8080/api/context/preview \
 |---|---|
 | Health | `GET /healthz` |
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me` |
+| Admin users | `GET /api/admin/users?role=&status=&limit=`（root-only） |
 | Providers | `GET/POST /api/providers`, `GET/PUT/DELETE /api/providers/{provider_id}`, `POST /api/providers/test` |
 | Routes | `GET /api/provider-routes`, `PUT /api/provider-routes/{task_type}` |
 | Skills | `GET/POST /api/skills`, `POST /api/skills/reload`, `GET /api/skills/{skill_id}` |
 | Context, Retrieval & Agent | `POST /api/context/preview`, `POST /api/retrieval/search`, `POST /api/agent/tasks` |
 | Memory | `GET/POST /api/memory/candidates`, `POST /api/memory/candidates/{candidate_id}/approve`, `POST /api/memory/candidates/{candidate_id}/reject`, `POST /api/memory/candidates/{candidate_id}/edit`, `GET /api/memory/profile`, `GET /api/memory/search`, `GET /api/memory/reviews/due` |
-| Interview | `POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
+| Interview | `GET/POST /api/interview-sessions`, `GET /api/interview-sessions/{session_id}`, `POST /api/interview-sessions/{session_id}/answers`, `POST /api/interview-sessions/{session_id}/finalize`, `GET /api/interview-sessions/{session_id}/trace`, `GET/POST /api/interview-sessions/{session_id}/report` |
 | Coding | `GET /api/coding/question-sets`, `GET /api/coding/questions`, `GET /api/coding/questions/{question_id}`, `POST /api/coding/completions`, `POST /api/coding/submissions`, `GET /api/coding/submissions`, `GET /api/coding/submissions/{submission_id}` |
 | Evaluation | `GET/POST /api/evaluation/cases`, `GET /api/evaluation/cases/{case_id}`, `POST /api/evaluation/cases/{case_id}/run`, `GET /api/evaluation/runs` |
 | Ops | `GET /api/ops/dead-letters/summary`, `GET /api/ops/dead-letters`, `GET /api/ops/dead-letters/{dead_letter_id}`, `GET /api/ops/workers/summary`, `GET /api/ops/coding-judge/summary` |
@@ -228,7 +231,7 @@ Python Runtime:
 | Worker | API 进程负责入队和查询；`cmd/worker` 消费 Redis Stream 事件 |
 | Coding judge | `CODING_JUDGE_ENABLED=true` 才会在 `cmd/worker` 中启动 coding judge loop；`CODING_JUDGE_MODE=docker` 每次创建临时禁网容器；`docker_warm` 复用按语言命名的 stopped container，通过 tmpfs 回到初始状态；镜像可配置且可用 `make pull-judge-images` 预拉取；`native_trusted` 直接调用本机工具链，启动快但不隔离，只适合本地可信代码；默认 disabled evaluator 不执行用户代码 |
 | Coding completion | `POST /api/coding/completions` 是 Go 内的确定性建议服务，不调用模型、不写数据库；根据语言、题目标签、源码和前缀返回 starter、后端数据化标准库 catalog、局部符号和常见题型模式，作为 Monaco 局部符号/快捷片段的补充，不替代完整 LSP |
-| Frontend workbench | `frontend` 是面向用户的操作台，不直接写内部状态；登录后通过 Go API 使用训练工作台、会议式面试房间、代码题、memory review、admin、settings 和 evaluation harness。交互层负责展示系统状态、下一步动作、表单校验、空状态引导、本地可配置会议控件，以及 Monaco 代码题 IDE 的语言草稿和轻量联想补全 |
+| Frontend workbench | 普通用户只能进入训练工作区；root 可在训练与运营工作区间切换。候选人 dashboard 读取当前用户的会话/提交历史，运营工作区读取 root-only 用户、Provider、worker、judge 和 evaluation API；前端不直接写内部状态 |
 | Embedded worker | `ENABLE_EMBEDDED_WORKER=true` 仅用于本地兼容模式 |
 | Memory context | Context Preview 和 answer evaluation 会按当前 user、task_type、skill、query 和 token budget 引入 approved memory；`memory_extraction` 不引入长期 memory |
 
@@ -288,6 +291,7 @@ make check-middleware
 
 - 不要提交真实 API key。
 - 本地配置从 `.env.example` 复制到 `.env`。
-- Provider 写操作和 Skill 写操作需要 `root` 角色。
+- `/api/admin/users`、Provider、Provider route、Skill 写操作、Evaluation Harness 和 Ops API 需要 `root` 角色。
+- 公开注册只创建普通 `user`；管理员账号由后端 provision，不能通过公开注册获得 root 权限。
 - `AUTH_DISABLED=true` 仅用于本地调试，不应作为正常开发、测试或部署依赖。
 - Python Runtime 使用 Go 为当前任务传入的 Provider 配置，不持久化 API key，也不绕过 Go 推进业务状态。

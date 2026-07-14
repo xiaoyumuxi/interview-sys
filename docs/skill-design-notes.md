@@ -43,7 +43,7 @@ skills/{skill_id}/
 ## 参考来源
 
 - OpenAI Codex Agent Skills：Skill 是包含 instructions、resources 和可选 scripts 的目录；采用 progressive disclosure；`SKILL.md` 需要 name 和 description；最佳实践包括 focused skill、明确输入输出、测试触发描述。
-- DeepSeek API：OpenAI format base URL 为 `https://api.deepseek.com`，Chat endpoint 为 `/chat/completions`，当前模型为 `deepseek-v4-flash` / `deepseek-v4-pro`。
+- 仓库默认 DeepSeek 配置：base URL 为 `https://api.deepseek.com`，Chat endpoint 为 `/chat/completions`，`.env.example` 当前默认模型为 `deepseek-v4-flash`；外部 Provider 实际可用模型以其官方文档和运行时配置为准。
 - Agent Skill 近期研究提示：Skill 检索和选择在真实大规模集合里会变脆弱，且 `SKILL.md` 可能成为语义供应链攻击面，所以需要简洁 metadata、质量检查和安全治理。
 
 参考链接：

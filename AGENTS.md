@@ -9,7 +9,7 @@
 - `internal`：Go 业务包，包含 auth、provider、skill、interview runtime、memory orchestration、context/retrieval、coding、evaluation harness、workqueue、store、HTTP routing 等模块。
 - `migrations`：PostgreSQL schema 和默认 seed SQL。
 - `python-runtime`：FastAPI AI Runtime，负责 LLM 调用、Prompt 安全、结构化输出和 memory API。
-- `frontend`：Vanilla TypeScript + Vite + Monaco Editor 工作台，负责登录、会议式面试房间、代码题、memory review、settings 和 evaluation harness UI。
+- `frontend`：Vanilla TypeScript + Vite + Monaco Editor 双工作区，负责候选人注册/登录、个人训练、会议式面试房间、代码题、memory review，以及 root-only 用户/运维/evaluation UI。
 - `skills`：本地 Skill Pack，目前包含 `java-backend`。
 - `docs`：路线图、架构、部署、运行时、Go/Python 职责边界和设计说明；当前计划入口是 `docs/roadmap.md`。
 - `scripts`：本地 bootstrap、数据库初始化和中间件检查脚本。
@@ -71,7 +71,7 @@ Go 代码必须使用 `gofmt`。包名保持短小、小写，并贴合 `interna
 
 Python 代码遵循常规 PEP 8 风格，runtime 逻辑放在 `python-runtime/app`。不要把 Go 业务状态推进、Provider 路由、代码判题或主业务表写入逻辑放进 Python。
 
-前端代码使用 TypeScript，入口位于 `frontend/src/main.ts`，API client 位于 `frontend/src/api.ts`，样式集中在 `frontend/src/styles.css`。改动应保持现有 Vanilla TypeScript、Monaco 和 lucide 图标体系，不为局部页面引入重型框架或组件库。
+前端代码使用 TypeScript，入口位于 `frontend/src/main.ts`，API client 位于 `frontend/src/api.ts`，基础样式位于 `frontend/src/styles.css`，工作区设计系统位于 `frontend/src/design-system.css`。改动应保持现有 Vanilla TypeScript、Monaco 和 lucide 图标体系，并维持普通用户只能进入训练工作区、root 才能进入运营/评测工作区的权限分区。
 
 改动应优先沿用现有模块、store、状态机和路由模式。避免为局部需求引入跨边界抽象，除非它能显著减少重复或已经符合仓库既有设计。
 
@@ -105,7 +105,7 @@ Provider API key 支持两种来源：
 
 未设置 `PROVIDER_KEY_ENCRYPTION_SECRET` 时，不应允许把 API key 写入数据库。
 
-本地可用 `AUTH_DISABLED=true` 调试受保护接口，但正常开发、测试和部署不要依赖该配置。Provider 配置和 Skill 写操作需要 `root` 角色。
+本地可用 `AUTH_DISABLED=true` 调试受保护接口，但正常开发、测试和部署不要依赖该配置。公开注册只创建普通 `user`；`/api/admin/users`、Provider/route、Skill 写操作、Evaluation Harness 和 Ops API 需要 `root` 角色。
 
 ## 文件追踪与忽略
 

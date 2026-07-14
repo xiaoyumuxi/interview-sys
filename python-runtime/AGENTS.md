@@ -61,7 +61,7 @@ uv run python -m unittest discover -s tests -p 'test_*.py' -v
 
 ## 配置与安全
 
-不要提交真实密钥。本地配置可使用父级项目约定的 `.env`。Provider key 应通过 Go 管理的 Provider 配置流转；Python Runtime 不持久化 API key。
+不要提交真实密钥。Docker Compose profile 会从父级 `.env` 注入配置；直接在 `python-runtime` 目录运行时，Pydantic 读取该目录下的 `.env`，不会自动读取父级文件。Provider key 应通过 Go 管理的 Provider 配置流转；Python Runtime 不持久化 API key。
 
 Runtime 日志、错误信息和 trace 中不得输出 API key、敏感 header 或包含凭据的原始 payload。未设置加密密钥时，是否允许写入 Provider key 的判断属于 Go，不应在 Python 中实现替代路径。
 

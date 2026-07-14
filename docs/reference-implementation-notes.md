@@ -50,7 +50,7 @@
 
 当前落地：
 
-- `frontend` 已建立 Vanilla TypeScript + Vite + Monaco 工作台，支持登录、中英文切换、工作台概览、会议式面试房间、代码题、memory review、settings 和 evaluation harness。
+- `frontend` 已建立 Vanilla TypeScript + Vite + Monaco 双工作区：候选人入口支持注册/登录、个人训练概览和会话恢复；管理员入口限制 root，并把用户目录、Provider/worker/judge 与 Evaluation Harness 放在独立运营工作区。
 - 面试房间已有主舞台、候选人/Runtime 小窗、底部控制条、Companion 面板、trace/report 操作和本地 notes 状态。
 - 真实音视频、ASR/TTS、共享题面同步和后端 notes API 仍作为后续产品化增强。
 
@@ -72,7 +72,7 @@
 已完成：
 
 - Gin API 基础。
-- Auth/User：JWT access token + JWT refresh token，密码 bcrypt 哈希，refresh token 只保存哈希。
+- Auth/User：候选人公开注册、JWT access token + JWT refresh token、密码 bcrypt 哈希、refresh token 只保存哈希、默认 root 和 root-only 用户列表。
 - PostgreSQL 连接。
 - Provider 配置启动同步入库。
 - Skill Pack 扫描、热加载、创建、lint。
@@ -87,6 +87,7 @@
 - Docker Compose 中间件固定版本和初始化脚本。
 - Provider 配置的 CRUD API 和加密存储。
 - Go Interview Runtime session / flow / turn 状态机。
+- 当前用户面试会话列表与前端历史会话恢复。
 - Go 侧 answer idempotency 和 Redis single-flight。
 - PostgreSQL local message outbox, row-level claim, and short TTL Redis coordination without persisted lock fields.
 - Redis Stream interview event queue。

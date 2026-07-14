@@ -61,6 +61,18 @@ uv sync
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
 
+`make run-runtime` 会先进入 `python-runtime`，因此 Pydantic 默认读取 `python-runtime/.env`，不会自动读取仓库根目录 `.env`；没有子目录配置时使用代码默认值。Docker Compose 的 `python-runtime` profile 则通过根目录 `env_file: .env` 注入配置。
+
+常用 Runtime 配置：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `APP_ENV` | `local` | 健康检查返回的环境标识 |
+| `RUNTIME_HOST` / `RUNTIME_PORT` | `0.0.0.0` / `8090` | Runtime 监听配置；`make run-runtime` 当前显式使用 `8090` |
+| `LLM_TIMEOUT_SECONDS` | `30` | Provider HTTP 请求超时 |
+| `MEMORY_DB_PATH` | `data/runtime_memory.sqlite3` | Runtime-local memory SQLite 路径 |
+| `DEEPSEEK_*` / `OPENAI_COMPATIBLE_*` | 见 `.env.example` | 仅作本地 fallback；正常任务以 Go 请求传入的 Provider 配置为准 |
+
 测试：
 
 ```bash

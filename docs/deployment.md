@@ -31,7 +31,29 @@ make run-runtime
 make run-frontend
 ```
 
-前端默认监听 `5173`，并通过 Vite 代理把 `/api` 转发到 Go API。面试异步评估、代码判题、memory review 和 evaluation run 需要对应的 worker / Runtime 服务。
+前端默认监听 `5173`，并通过 Vite 代理把 `/api` 转发到 Go API。候选人入口支持注册/登录，管理员入口只允许 root；面试异步评估、代码判题、memory review 和 evaluation run 需要对应的 worker / Runtime 服务。
+
+## 认证与工作区
+
+本地开发至少应修改 JWT secret 和 root 密码；默认值只用于首次本地启动：
+
+```text
+AUTH_DISABLED=false
+JWT_ACCESS_SECRET=local-dev-access-secret-change-me
+JWT_REFRESH_SECRET=local-dev-refresh-secret-change-me
+ACCESS_TOKEN_TTL_MINUTES=15
+REFRESH_TOKEN_TTL_DAYS=30
+ROOT_EMAIL=root@example.local
+ROOT_PASSWORD=RootChangeMe123!
+ROOT_DISPLAY_NAME=Root
+```
+
+- API 启动时会按上述配置补齐 root 账号，但不会用默认值把已有账号降级为普通用户。
+- `POST /api/auth/register` 只创建普通候选人账号；管理员账号不能从公开注册入口获得。
+- `GET /api/interview-sessions`、代码提交和 memory API 按当前认证用户隔离。
+- `GET /api/admin/users`、Provider/route、Skill 写操作、Evaluation Harness 和 Ops API 都需要 root。
+- `AUTH_DISABLED=true` 仅用于本地诊断；正常开发、测试和部署应保持关闭。
+- 前端当前把 access/refresh token 保存在浏览器 `localStorage`。面向不可信网络部署前，应评估 TLS、CSP 与 HttpOnly Cookie/BFF 会话方案。
 
 ## Skill 热加载
 
