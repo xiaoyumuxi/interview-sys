@@ -42,6 +42,12 @@ type RunResult struct {
 }
 
 func (s *Service) SaveCase(ctx context.Context, req SaveCaseRequest) (Case, error) {
+	if err := validateJudgeConfiguration(req.Expected); err != nil {
+		return Case{}, err
+	}
+	if err := validateCalibrationConfiguration(req.Expected); err != nil {
+		return Case{}, err
+	}
 	return s.store.SaveCase(ctx, req)
 }
 
@@ -208,14 +214,17 @@ func (s *Service) RunCase(ctx context.Context, req RunCaseRequest) (RunResult, e
 		output["judge_trace_id"] = judgeTraceID
 		output["scoring_mode"] = "hybrid"
 		output["score_breakdown"] = map[string]any{
-			"rule_score":      ruleScore,
-			"judge_score":     llmScore,
-			"final_score":     score,
-			"rule_weight":     cfg.RuleWeight,
-			"judge_weight":    cfg.JudgeWeight,
-			"pass_score":      cfg.PassScore,
-			"prompt_version":  cfg.PromptVersion,
-			"rubric_version":  cfg.RubricVersion,
+			"rule_score":     ruleScore,
+			"judge_score":    llmScore,
+			"final_score":    score,
+			"rule_weight":    cfg.RuleWeight,
+			"judge_weight":   cfg.JudgeWeight,
+			"pass_score":     cfg.PassScore,
+			"prompt_version": cfg.PromptVersion,
+			"rubric_version": cfg.RubricVersion,
+		}
+		if calibration, calibrated := calibrationResult(item.Expected, llmScore, cfg); calibrated {
+			output["calibration"] = calibration
 		}
 		judgeResp = &judgeTaskResp
 	}
