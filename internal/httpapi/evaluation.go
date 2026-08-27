@@ -97,15 +97,25 @@ func (h apiHandler) listEvaluationRuns(c *gin.Context) {
 		writeGinError(c, http.StatusServiceUnavailable, "evaluation_unavailable", "evaluation harness is not configured")
 		return
 	}
-	items, err := h.deps.Evaluation.ListRuns(c.Request.Context(), c.Query("case_id"), c.Query("task_type"), intQuery(c, "limit", 100))
+	limit := intQuery(c, "limit", 100)
+	items, err := h.deps.Evaluation.ListRuns(c.Request.Context(), c.Query("case_id"), c.Query("task_type"), limit)
 	if err != nil {
 		writeGinError(c, http.StatusInternalServerError, "evaluation_runs_failed", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	payload := gin.H{
 		"schema_version": "evaluation.run.list.v1",
 		"items":          items,
-	})
+	}
+	if c.Query("include_calibration_summary") == "true" {
+		summary, err := h.deps.Evaluation.CalibrationSummary(c.Request.Context(), c.Query("suite"), c.Query("task_type"), limit)
+		if err != nil {
+			writeGinError(c, http.StatusInternalServerError, "evaluation_calibration_summary_failed", err.Error())
+			return
+		}
+		payload["calibration_summary"] = summary
+	}
+	c.JSON(http.StatusOK, payload)
 }
 
 func intQuery(c *gin.Context, key string, fallback int) int {
