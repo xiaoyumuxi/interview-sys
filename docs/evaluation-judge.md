@@ -1,6 +1,6 @@
 # Evaluation Judge V2
 
-Evaluation Harness V2 在现有确定性断言之上增加可选的 LLM-as-a-Judge。Rule Evaluator 继续负责字段、格式和确定性回归；Judge 负责开放式答案的事实正确性、知识点覆盖度和技术深度。
+Evaluation Harness V2 在现有确定性断言之上增加可选的 LLM-as-a-Judge，并支持 Human Golden Set 校准。Rule Evaluator 继续负责字段、格式和确定性回归；Judge 负责开放式答案的事实正确性、知识点覆盖度和技术深度；人工标注用于检查 Judge 与人的评分是否一致。
 
 ## 设计原则
 
@@ -9,6 +9,7 @@ Evaluation Harness V2 在现有确定性断言之上增加可选的 LLM-as-a-Jud
 - Judge 输入显式包含参考答案、关键知识点、常见错误和 rubric，而不是只要求模型“打一个总分”。
 - Judge 必须返回结构化 JSON，至少包含 `total_score`、`dimensions`、`summary` 和 `fatal_error`。
 - Evaluation Run 同时保留 `rule_score`、`judge_score`、最终分、权重和版本元数据，便于后续回放与比较。
+- Golden Case 可额外配置人工分，Run 自动计算 Judge 偏差、绝对误差和容差命中情况。
 
 ## Case 示例
 
@@ -47,6 +48,17 @@ Evaluation Harness V2 在现有确定性断言之上增加可选的 LLM-as-a-Jud
       "pass_score": 70,
       "prompt_version": "judge.v1",
       "rubric_version": "redis-answer.v1"
+    },
+    "calibration": {
+      "human_score": 82,
+      "tolerance": 8,
+      "annotation_version": "java-backend-golden.v1",
+      "human_dimensions": {
+        "correctness": 36,
+        "completeness": 22,
+        "depth": 15,
+        "clarity": 9
+      }
     }
   },
   "tags": ["redis", "llm-judge", "golden"],
@@ -54,7 +66,7 @@ Evaluation Harness V2 在现有确定性断言之上增加可选的 LLM-as-a-Jud
 }
 ```
 
-如果 `rule_weight` 与 `judge_weight` 都未配置，默认使用 `0.4 / 0.6`。`pass_score` 默认 `70`。
+如果 `rule_weight` 与 `judge_weight` 都未配置，默认使用 `0.4 / 0.6`。`pass_score` 默认 `70`。人工标注的 `calibration.tolerance` 默认 `10` 分；配置 calibration 时必须同时开启 Judge。
 
 ## Judge 输出
 
@@ -109,18 +121,61 @@ Run 的 `output` 中会记录：
 - `judge_trace_id`
 - `scoring_mode`
 - `score_breakdown`
+- `calibration`（仅 Golden Case）
 
 `score_breakdown` 同时记录 `prompt_version` 与 `rubric_version`，便于后续 Judge Prompt、Rubric 和模型版本发生变化时定位分数差异来源。
 
+## Human Golden Set 校准
+
+当 `expected.calibration.human_score` 存在时，Evaluation Run 会额外记录：
+
+```json
+{
+  "human_score": 82,
+  "judge_score": 86,
+  "signed_error": 4,
+  "absolute_error": 4,
+  "tolerance": 8,
+  "within_tolerance": true,
+  "annotation_version": "java-backend-golden.v1",
+  "prompt_version": "judge.v1",
+  "rubric_version": "redis-answer.v1"
+}
+```
+
+其中：
+
+- `signed_error = judge_score - human_score`，正数表示 Judge 偏高，负数表示 Judge 偏低。
+- `absolute_error` 用于衡量单条样例的评分误差。
+- `within_tolerance` 表示 Judge 是否落在人工分允许的误差范围内。
+
+Golden Set 的人工分应由人工阅读答案后给出，而不是由另一个模型生成。`annotation_version` 用于标记人工标注规则或数据集版本。
+
+## 校准汇总
+
+已有的 Run 查询接口支持附带校准汇总：
+
+```text
+GET /api/evaluation/runs?task_type=answer_evaluation&suite=java-backend-golden&include_calibration_summary=true
+```
+
+返回的 `calibration_summary` 包含：
+
+- `sample_count`：参与校准的最新 Golden Run 数量。
+- `mean_absolute_error`：Judge 与人工评分的平均绝对误差（MAE）。
+- `mean_signed_error`：Judge 整体偏高或偏低的平均趋势。
+- `within_tolerance_rate`：落在人工容差范围内的样例比例。
+- `items`：每个 Case 最近一次具有 calibration 结果的 Run。
+
+建议先用 20～50 条人工标注样例观察 MAE 和偏差方向，再迭代 Judge Prompt。不要为了让 Judge 贴合某一批样例而不断手工特化 Prompt；Golden Set 应保留一部分未用于调 Prompt 的验证样例。
+
 ## Dry Run
 
-`dry_run=true` 时只验证被测 Runtime 调用链路，不执行第二次 Judge 模型调用，因此不会产生额外模型成本。
+`dry_run=true` 时只验证被测 Runtime 调用链路，不执行第二次 Judge 模型调用，因此不会产生额外模型成本，也不会生成 calibration 结果。
 
-## 下一阶段
+## 后续演进
 
-V2 先解决“规则评分无法判断语义正确性”的问题。后续建议按以下顺序继续：
-
-1. 建立人工标注 Golden Set，保存人工分和关键错误标签。
-2. 对比 Human Score 与 Judge Score，分析偏差并迭代 Judge Prompt。
-3. 增加 Pairwise Evaluator，用于比较 Prompt/Model V1 与 V2 的胜率。
-4. 将 generator model、judge model、dataset version 独立版本化，形成稳定的离线回归基线。
+1. 将 Golden Set 拆分为 calibration / validation 两部分，避免 Judge Prompt 对测试集过拟合。
+2. 增加 Pairwise Evaluator，用于比较 Prompt/Model V1 与 V2 的胜率。
+3. 将 generator model、judge model、dataset version 独立版本化，形成稳定的离线回归基线。
+4. 在样例规模扩大后补充相关系数、分桶误差等统计，进一步判断 Judge 与人工的一致性。
