@@ -10,6 +10,7 @@ const (
 	defaultRuleWeight   = 0.4
 	defaultJudgeWeight  = 0.6
 	defaultJudgeVersion = "judge.v1"
+	defaultPassScore    = 70.0
 )
 
 type JudgeConfig struct {
@@ -20,6 +21,7 @@ type JudgeConfig struct {
 	Rubric           map[string]any `json:"rubric,omitempty"`
 	RuleWeight       float64        `json:"rule_weight,omitempty"`
 	JudgeWeight      float64        `json:"judge_weight,omitempty"`
+	PassScore        float64        `json:"pass_score,omitempty"`
 	PromptVersion    string         `json:"prompt_version,omitempty"`
 	RubricVersion    string         `json:"rubric_version,omitempty"`
 }
@@ -41,6 +43,9 @@ func judgeConfig(expected map[string]any) (JudgeConfig, bool) {
 		cfg.RuleWeight = defaultRuleWeight
 		cfg.JudgeWeight = defaultJudgeWeight
 	}
+	if cfg.PassScore <= 0 {
+		cfg.PassScore = defaultPassScore
+	}
 	if cfg.PromptVersion == "" {
 		cfg.PromptVersion = defaultJudgeVersion
 	}
@@ -49,16 +54,16 @@ func judgeConfig(expected map[string]any) (JudgeConfig, bool) {
 
 func buildJudgeInput(item Case, userInput string, generated map[string]any, cfg JudgeConfig) string {
 	payload := map[string]any{
-		"case_id":          item.CaseID,
-		"task_type":        item.TaskType,
+		"case_id":           item.CaseID,
+		"task_type":         item.TaskType,
 		"question_or_input": userInput,
-		"generated_output": generated,
-		"reference_answer": cfg.ReferenceAnswer,
-		"key_points":       cfg.KeyPoints,
-		"common_errors":    cfg.CommonErrors,
-		"rubric":           cfg.Rubric,
-		"prompt_version":   cfg.PromptVersion,
-		"rubric_version":   cfg.RubricVersion,
+		"generated_output":  generated,
+		"reference_answer":  cfg.ReferenceAnswer,
+		"key_points":        cfg.KeyPoints,
+		"common_errors":     cfg.CommonErrors,
+		"rubric":            cfg.Rubric,
+		"prompt_version":    cfg.PromptVersion,
+		"rubric_version":    cfg.RubricVersion,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -69,7 +74,7 @@ func buildJudgeInput(item Case, userInput string, generated map[string]any, cfg 
 
 func judgeOutputSchema() map[string]any {
 	return map[string]any{
-		"type": "object",
+		"type":     "object",
 		"required": []string{"total_score", "dimensions", "summary"},
 		"properties": map[string]any{
 			"total_score": map[string]any{"type": "number", "minimum": 0, "maximum": 100},
