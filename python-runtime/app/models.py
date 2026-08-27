@@ -9,6 +9,7 @@ TaskType = Literal[
     "follow_up_decision",
     "summary",
     "memory_extraction",
+    "evaluation_judge",
 ]
 
 ProviderType = Literal["deepseek", "openai_compatible"]
