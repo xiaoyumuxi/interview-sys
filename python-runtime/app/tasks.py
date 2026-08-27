@@ -10,6 +10,13 @@ TASK_INSTRUCTIONS = {
     "follow_up_decision": "判断是否追问，输出 JSON: {\"should_follow_up\":true,\"question\":\"...\",\"reason\":\"...\"}",
     "summary": "总结本次会话，输出 JSON: {\"summary\":\"...\",\"key_points\":[],\"risks\":[]}",
     "memory_extraction": "只提取候选记忆，必须 pending，输出 JSON: {\"candidates\":[]}",
+    "evaluation_judge": (
+        "你是离线评测 Judge。输入包含被测任务、模型输出、参考答案、关键知识点、常见错误和评分 rubric。"
+        "必须只基于这些评测材料评分，不要因为答案更长、措辞更自信或与自身风格相似而加分。"
+        "逐维度判断事实正确性、覆盖度和技术深度；若发现核心事实性错误，在 fatal_error 中明确标记。"
+        "输出 JSON，至少包含 total_score(0-100)、dimensions(object)、summary(string)、fatal_error(boolean)。"
+        "dimensions 中每个维度应包含 score、max_score、reason。"
+    ),
 }
 
 
