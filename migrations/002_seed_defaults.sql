@@ -59,7 +59,8 @@ VALUES
     ('answer_evaluation', 'deepseek-default', 'openai-compatible-default'),
     ('follow_up_decision', 'deepseek-default', 'openai-compatible-default'),
     ('summary', 'deepseek-default', 'openai-compatible-default'),
-    ('memory_extraction', 'deepseek-default', 'openai-compatible-default')
+    ('memory_extraction', 'deepseek-default', 'openai-compatible-default'),
+    ('evaluation_judge', 'deepseek-default', 'openai-compatible-default')
 ON CONFLICT (task_type) DO NOTHING;
 
 INSERT INTO code_question_sets (set_id, display_name, description, source, source_url, question_type)
