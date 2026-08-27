@@ -2,6 +2,7 @@ package evalharness
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"ai-interview-platform/internal/contextengine"
@@ -37,6 +38,7 @@ type RunResult struct {
 	Run             Run                            `json:"run"`
 	ContextPreview  *contextengine.PreviewResponse `json:"context_preview,omitempty"`
 	RuntimeResponse *airuntime.TaskResponse        `json:"runtime_response,omitempty"`
+	JudgeResponse   *airuntime.TaskResponse        `json:"judge_response,omitempty"`
 }
 
 func (s *Service) SaveCase(ctx context.Context, req SaveCaseRequest) (Case, error) {
@@ -92,7 +94,7 @@ func (s *Service) RunCase(ctx context.Context, req RunCaseRequest) (RunResult, e
 		if recordErr != nil {
 			return RunResult{}, recordErr
 		}
-		return RunResult{SchemaVersion: "evaluation.run.v1", Case: item, Run: run}, nil
+		return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run}, nil
 	}
 
 	provider, err := s.coreStore.RuntimeProviderForTask(ctx, item.TaskType)
@@ -101,7 +103,7 @@ func (s *Service) RunCase(ctx context.Context, req RunCaseRequest) (RunResult, e
 		if recordErr != nil {
 			return RunResult{}, recordErr
 		}
-		return RunResult{SchemaVersion: "evaluation.run.v1", Case: item, Run: run, ContextPreview: &preview}, nil
+		return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run, ContextPreview: &preview}, nil
 	}
 
 	runtimeResp, err := s.runtimeClient.RunTask(ctx, airuntime.TaskRequest{
@@ -117,7 +119,7 @@ func (s *Service) RunCase(ctx context.Context, req RunCaseRequest) (RunResult, e
 		if recordErr != nil {
 			return RunResult{}, recordErr
 		}
-		return RunResult{SchemaVersion: "evaluation.run.v1", Case: item, Run: run, ContextPreview: &preview}, nil
+		return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run, ContextPreview: &preview}, nil
 	}
 
 	traceID := corestore.NewID("trace")
@@ -133,10 +135,91 @@ func (s *Service) RunCase(ctx context.Context, req RunCaseRequest) (RunResult, e
 	}
 
 	assertions := EvaluateAssertions(runtimeResp.Output, item.Expected)
-	status, score := StatusAndScore(assertions)
+	status, ruleScore := StatusAndScore(assertions)
+	score := ruleScore
 	output := map[string]any{
 		"runtime_response": runtimeResp,
+		"rule_score":       ruleScore,
+		"scoring_mode":     "rule",
 	}
+
+	var judgeResp *airuntime.TaskResponse
+	if cfg, enabled := judgeConfig(item.Expected); enabled && !req.DryRun {
+		judgeProvider, providerErr := s.coreStore.RuntimeProviderForTask(ctx, judgeTaskType)
+		if providerErr != nil {
+			run, recordErr := s.recordError(ctx, item, req, started, "judge_provider_resolution_failed: "+providerErr.Error())
+			if recordErr != nil {
+				return RunResult{}, recordErr
+			}
+			return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run, ContextPreview: &preview, RuntimeResponse: &runtimeResp}, nil
+		}
+		if judgeProvider == nil {
+			run, recordErr := s.recordError(ctx, item, req, started, "judge_provider_resolution_failed: no provider route for evaluation_judge")
+			if recordErr != nil {
+				return RunResult{}, recordErr
+			}
+			return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run, ContextPreview: &preview, RuntimeResponse: &runtimeResp}, nil
+		}
+
+		judgeTaskResp, judgeErr := s.runtimeClient.RunTask(ctx, airuntime.TaskRequest{
+			TaskType:     judgeTaskType,
+			Provider:     judgeProvider,
+			ContextItems: nil,
+			UserInput:    buildJudgeInput(item, userInput, runtimeResp.Output, cfg),
+			OutputSchema: judgeOutputSchema(),
+			DryRun:       false,
+		})
+		if judgeErr != nil {
+			run, recordErr := s.recordError(ctx, item, req, started, "judge_runtime_failed: "+judgeErr.Error())
+			if recordErr != nil {
+				return RunResult{}, recordErr
+			}
+			return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run, ContextPreview: &preview, RuntimeResponse: &runtimeResp}, nil
+		}
+		llmScore, ok := judgeScore(judgeTaskResp.Output)
+		if !ok {
+			run, recordErr := s.recordError(ctx, item, req, started, "judge_output_invalid: total_score is missing or not numeric")
+			if recordErr != nil {
+				return RunResult{}, recordErr
+			}
+			return RunResult{SchemaVersion: "evaluation.run.v2", Case: item, Run: run, ContextPreview: &preview, RuntimeResponse: &runtimeResp, JudgeResponse: &judgeTaskResp}, nil
+		}
+
+		judgeTraceID := corestore.NewID("trace")
+		if err := s.coreStore.InsertAgentTrace(ctx, corestore.TraceRecord{
+			TraceID:      judgeTraceID,
+			TaskType:     judgeTaskType,
+			SkillID:      item.SkillID,
+			Input:        map[string]any{"case_id": item.CaseID, "judge_config": cfg},
+			ContextItems: []any{},
+			Output:       judgeTaskResp,
+		}); err != nil {
+			judgeTraceID = ""
+		}
+
+		score = combineScores(ruleScore, llmScore, cfg)
+		if score >= cfg.PassScore {
+			status = "passed"
+		} else {
+			status = "failed"
+		}
+		output["judge_response"] = judgeTaskResp
+		output["judge_score"] = llmScore
+		output["judge_trace_id"] = judgeTraceID
+		output["scoring_mode"] = "hybrid"
+		output["score_breakdown"] = map[string]any{
+			"rule_score":      ruleScore,
+			"judge_score":     llmScore,
+			"final_score":     score,
+			"rule_weight":     cfg.RuleWeight,
+			"judge_weight":    cfg.JudgeWeight,
+			"pass_score":      cfg.PassScore,
+			"prompt_version":  cfg.PromptVersion,
+			"rubric_version":  cfg.RubricVersion,
+		}
+		judgeResp = &judgeTaskResp
+	}
+
 	run, err := s.store.RecordRun(ctx, RecordRunRequest{
 		CaseID:     item.CaseID,
 		TaskType:   item.TaskType,
@@ -152,11 +235,12 @@ func (s *Service) RunCase(ctx context.Context, req RunCaseRequest) (RunResult, e
 		return RunResult{}, err
 	}
 	return RunResult{
-		SchemaVersion:   "evaluation.run.v1",
+		SchemaVersion:   "evaluation.run.v2",
 		Case:            item,
 		Run:             run,
 		ContextPreview:  &preview,
 		RuntimeResponse: &runtimeResp,
+		JudgeResponse:   judgeResp,
 	}, nil
 }
 
@@ -167,7 +251,7 @@ func (s *Service) recordError(ctx context.Context, item Case, req RunCaseRequest
 		Status:     "error",
 		Score:      0,
 		Input:      runInput(item, req),
-		Output:     map[string]any{},
+		Output:     map[string]any{"evaluation_error": message},
 		Assertions: []Assertion{},
 		ErrorText:  message,
 		DurationMS: int(time.Since(started).Milliseconds()),
@@ -205,4 +289,15 @@ func outputSchema(expected map[string]any) map[string]any {
 		return nil
 	}
 	return schema
+}
+
+func validateJudgeConfiguration(expected map[string]any) error {
+	cfg, enabled := judgeConfig(expected)
+	if !enabled {
+		return nil
+	}
+	if len(cfg.Rubric) == 0 {
+		return fmt.Errorf("judge.rubric is required when judge is enabled")
+	}
+	return nil
 }
