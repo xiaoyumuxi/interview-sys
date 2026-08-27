@@ -14,16 +14,16 @@ const (
 )
 
 type JudgeConfig struct {
-	Enabled          bool           `json:"enabled"`
-	ReferenceAnswer  any            `json:"reference_answer,omitempty"`
-	KeyPoints        []string       `json:"key_points,omitempty"`
-	CommonErrors     []string       `json:"common_errors,omitempty"`
-	Rubric           map[string]any `json:"rubric,omitempty"`
-	RuleWeight       float64        `json:"rule_weight,omitempty"`
-	JudgeWeight      float64        `json:"judge_weight,omitempty"`
-	PassScore        float64        `json:"pass_score,omitempty"`
-	PromptVersion    string         `json:"prompt_version,omitempty"`
-	RubricVersion    string         `json:"rubric_version,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	ReferenceAnswer any            `json:"reference_answer,omitempty"`
+	KeyPoints       []string       `json:"key_points,omitempty"`
+	CommonErrors    []string       `json:"common_errors,omitempty"`
+	Rubric          map[string]any `json:"rubric,omitempty"`
+	RuleWeight      float64        `json:"rule_weight,omitempty"`
+	JudgeWeight     float64        `json:"judge_weight,omitempty"`
+	PassScore       float64        `json:"pass_score,omitempty"`
+	PromptVersion   string         `json:"prompt_version,omitempty"`
+	RubricVersion   string         `json:"rubric_version,omitempty"`
 }
 
 func judgeConfig(expected map[string]any) (JudgeConfig, bool) {
